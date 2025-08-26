@@ -1,0 +1,46 @@
+credentials:
+  usernames:
+    Kartik Rana:
+      email: kartik711111@gmail.com
+      name: 'Kartik '
+      password: $2b$12$r5bOoQYcdt5Mq00EywUdse2wlT3tjjlwox7LDMzThE8Qeb53NP.OS
+    admin:
+      email: admin@casetracker.com
+      name: Admin User
+      password: $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iQ2i
+    jane_smith:
+      email: jane@casetracker.com
+      name: Jane Smith
+      password: $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iQ2i
+    john_doe:
+      email: john@casetracker.com
+      name: John Doe
+      password: $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iQ2i
+    Samarth:
+      email: Samarth@samarth.com
+      name: Samarth Datakernels
+      password: $2b$12$cCCAUf8gPSwKdI7VlgSZT.q.5zxfLTQUSfe31RQTlOzv7gzXktwZS
+    kartik123:
+      email: kartik@kartik.com
+      name: kartik123
+      password: $2b$12$e55NiDGLmLwP1r4vR3hkMOVmwrt.IHKKe/4GIzc5A0XB/sY4vM366
+    kartik1233:
+      email: kartik@kartik.com
+      name: kartik1234
+      password: $2b$12$.AvEsElh.eNyHfC/bHBH9eqykHWoN9rcZhaDYGLUx6Yv2WhTsNM3W
+    kartikkaka:
+      email: kartik@kartik.com
+      name: akfkasldkfaj
+      password: $2b$12$lveXirWG8z53P9MO6AsD9ODMrc/nNhcNv4aYuPLaspG4P27BM1KBm
+    Kartik@123.com:
+      email: Kartik@123.com
+      name: Kartik Rana
+      password: $2b$12$otGCcN7XxlFzYe9pwOz3BOP0SOCh9inci2DZps.i4uCFCbe5g6H0.
+    abc@gmail.com:
+      email: abc@gmail.com
+      name: acbd
+      password: $2b$12$nRN41LtlewZTS4uRyUITP.5R0/CUQ82.orIFb581K/kG7nEt4YGmy
+    Navpreet:
+      email: Navpreet@gmail.com
+      name: Navpreet Singh
+      password: $2b$12$7G0tejANQ5JKgJL41ISBHeG4.k0o/80vtREelI62FeI2gZSyVc8gm

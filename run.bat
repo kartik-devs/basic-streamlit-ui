@@ -1,0 +1,9 @@
+@echo off
+echo Starting CaseTracker Pro...
+echo.
+echo Installing dependencies...
+pip install -r requirements.txt
+echo.
+echo Starting Streamlit application...
+streamlit run main.py
+pause
