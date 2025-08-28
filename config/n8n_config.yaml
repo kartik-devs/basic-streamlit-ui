@@ -1,0 +1,185 @@
+# n8n Integration Configuration
+# This file contains configuration settings for the n8n workflow integration
+
+n8n:
+  # Base URL for n8n instance
+  base_url: "http://localhost:5678"
+  
+  # API key for n8n authentication (if enabled)
+  api_key: ""
+  
+  # Webhook endpoints for different workflows
+  webhooks:
+    ocr_text_extraction: "/webhook/ocr-text-extraction"
+    section_1: "/webhook/section-1"
+    section_2: "/webhook/section-2"
+    section_3: "/webhook/section-3"
+    section_4: "/webhook/section-4"
+    section_5: "/webhook/section-5"
+    section_6: "/webhook/section-6"
+    section_7: "/webhook/section-7"
+    section_8: "/webhook/section-8"
+    complete_report: "/webhook/complete-report-generation"
+  
+  # Timeout settings (in seconds)
+  timeouts:
+    webhook_trigger: 30
+    status_check: 10
+    result_fetch: 15
+  
+  # Retry settings
+  retries:
+    max_attempts: 3
+    backoff_factor: 1.8
+    initial_delay: 0.8
+
+# Workflow configuration
+workflows:
+  # OCR workflow settings
+  ocr:
+    enabled: true
+    timeout: 300  # 5 minutes
+    retry_on_failure: true
+  
+  # Section workflow settings
+  sections:
+    enabled: true
+    parallel_execution: false  # Set to true for parallel processing
+    timeout_per_section: 180  # 3 minutes per section
+    retry_on_failure: true
+  
+  # Final report generation
+  final:
+    enabled: true
+    timeout: 600  # 10 minutes
+    retry_on_failure: true
+
+# External service endpoints
+external_services:
+  # OCR service
+  ocr_service: "http://54.198.187.195:80"
+  
+  # Section 2 service
+  section_2_service: "http://98.82.36.138:80"
+  
+  # Section 4 service
+  section_4_service: "http://54.198.187.195:80"
+  
+  # Final accuracy metrics service
+  accuracy_service: "http://3.92.236.248:80"
+
+# AI Model configurations
+ai_models:
+  # Google Gemini Chat Model
+  gemini:
+    model_name: "gemini-pro"
+    temperature: 0.7
+    max_tokens: 2048
+  
+  # Google Vertex Chat Models
+  vertex:
+    model_name: "chat-bison"
+    temperature: 0.7
+    max_tokens: 2048
+
+# Database configurations
+database:
+  # Airtable configuration (for storing results)
+  airtable:
+    base_id: ""
+    api_key: ""
+    tables:
+      page_classification: "Page Classification"
+      section_2_results: "Section 2 Results"
+      section_4_results: "Section 4 Results"
+      accuracy_metrics: "Accuracy Metrics"
+  
+  # Snowflake configuration (for patient data)
+  snowflake:
+    account: ""
+    warehouse: ""
+    database: ""
+    schema: ""
+    username: ""
+    password: ""
+
+# S3 configuration
+s3:
+  bucket_name: "medical-reports"
+  region: "us-east-1"
+  access_key: ""
+  secret_key: ""
+  
+  # File paths
+  paths:
+    documents: "documents/{patient_id}/"
+    reports: "reports/{patient_id}/"
+    artifacts: "artifacts/{report_id}/"
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/n8n_integration.log"
+  max_size: "10MB"
+  backup_count: 5
+
+# Monitoring and alerting
+monitoring:
+  # Health check intervals (in seconds)
+  health_check_interval: 60
+  
+  # Alert thresholds
+  thresholds:
+    workflow_timeout: 600  # 10 minutes
+    error_rate: 0.1  # 10%
+    response_time: 30  # 30 seconds
+  
+  # Notification settings
+  notifications:
+    email:
+      enabled: false
+      smtp_server: ""
+      smtp_port: 587
+      username: ""
+      password: ""
+      recipients: []
+    
+    slack:
+      enabled: false
+      webhook_url: ""
+      channel: "#alerts"
+
+# Security settings
+security:
+  # API key validation
+  require_api_key: false
+  
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+  
+  # CORS settings
+  cors:
+    allowed_origins: ["http://localhost:8501", "http://localhost:8000"]
+    allowed_methods: ["GET", "POST"]
+    allowed_headers: ["Content-Type", "Authorization"]
+
+# Development settings
+development:
+  # Enable debug mode
+  debug: false
+  
+  # Mock responses for testing
+  mock_responses: false
+  
+  # Test data
+  test_data:
+    patient_id: "1234"
+    report_id: "test_report_1234"
+  
+  # Local file storage (for development)
+  local_storage:
+    enabled: true
+    base_path: "./artifacts"

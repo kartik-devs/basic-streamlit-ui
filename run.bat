@@ -4,6 +4,9 @@ echo.
 echo Installing dependencies...
 pip install -r requirements.txt
 echo.
+echo Starting backend (FastAPI)...
+start "backend" cmd /c uvicorn backend.main:app --host 0.0.0.0 --port 8001
+echo.
 echo Starting Streamlit application...
 streamlit run main.py
 pause

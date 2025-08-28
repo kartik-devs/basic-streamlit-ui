@@ -47,6 +47,9 @@ def inject_base_styles() -> None:
           border-radius: 14px;
           padding: 1rem 1.25rem 1.25rem 1.25rem;
           box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+          position: relative;
+          z-index: 0;
+          overflow: hidden;
         }}
 
         /* Tab bar styling */

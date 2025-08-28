@@ -1,13 +1,31 @@
 import streamlit as st
+st.set_page_config(page_title="Results", page_icon="📑", layout="wide")
+
 from datetime import datetime, timedelta
 from app.ui import inject_base_styles, theme_provider
+from app.s3_utils import get_s3_manager, mock_s3_data_for_demo
 from pathlib import Path
 import base64
+import os
+import requests
 
 
 def ensure_authenticated() -> bool:
-    if st.session_state.get("authentication_status") is True:
+    # Check multiple possible authentication indicators
+    auth_status = st.session_state.get("authentication_status")
+    name = st.session_state.get("name")
+    username = st.session_state.get("username")
+    
+    # Debug info (remove this after fixing)
+    st.write("🔍 Debug - Session State Keys:", list(st.session_state.keys()))
+    st.write("🔍 Debug - Auth Status:", auth_status)
+    st.write("🔍 Debug - Name:", name)
+    st.write("🔍 Debug - Username:", username)
+    
+    # Check if user is authenticated (multiple indicators)
+    if (auth_status is True) or (name is not None) or (username is not None):
         return True
+    
     st.warning("Please login to access this page.")
     st.stop()
 
@@ -21,6 +39,7 @@ def header_actions(case_id: str) -> None:
     # Prefer computed processing seconds from generation page
     elapsed_seconds = st.session_state.get("processing_seconds", elapsed_seconds)
     elapsed_str = f"{elapsed_seconds // 60}m {elapsed_seconds % 60}s" if elapsed_seconds else "0s"
+    
     st.markdown(
         f"""
         <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
@@ -41,28 +60,46 @@ def header_actions(case_id: str) -> None:
     )
 
 
-def pdf_card(title: str, subtitle: str, pdf_path: Path | None) -> None:
+def display_pdf_column(title: str, subtitle: str, pdf_data: str = None, pdf_key: str = None, s3_manager=None) -> None:
+    """Display a PDF column with title, subtitle, and PDF content"""
     st.markdown(f"**{title}**")
     st.caption(subtitle)
+    
     with st.container():
-        st.markdown('<div class="section-bg">', unsafe_allow_html=True)
-        if pdf_path and pdf_path.exists():
-            with pdf_path.open("rb") as f:
-                data = f.read()
-                b64 = base64.b64encode(data).decode("utf-8")
+        # st.markdown('<div class="section-bg">', unsafe_allow_html=True)
+        
+        if pdf_data:
+            # Display PDF from base64 data
+            st.markdown(
+                f"""
+                <iframe src="data:application/pdf;base64,{pdf_data}" 
+                        width="100%" height="520px" 
+                        style="border:none;border-radius:10px;"></iframe>
+                """,
+                unsafe_allow_html=True,
+            )
+        elif pdf_key and s3_manager:
+            # Try to fetch from S3
+            pdf_data = s3_manager.get_pdf_base64(pdf_key)
+            if pdf_data:
                 st.markdown(
                     f"""
-                    <iframe src="data:application/pdf;base64,{b64}" width="100%" height="520px" style="border:none;border-radius:10px;"></iframe>
+                    <iframe src="data:application/pdf;base64,{pdf_data}" 
+                            width="100%" height="520px" 
+                            style="border:none;border-radius:10px;"></iframe>
                     """,
                     unsafe_allow_html=True,
                 )
+            else:
+                st.info("PDF not available from S3.")
         else:
-            st.info("PDF not found.")
+            st.info("PDF not available.")
+            
         st.markdown('</div>', unsafe_allow_html=True)
 
 
 def summary_footer(rep_no: int | None = None) -> None:
-    # Single Analysis Summary footer with accuracy, differences, and processing time
+    """Display analysis summary footer with accuracy, differences, and processing time"""
     # Processing time from session if available
     total_seconds = st.session_state.get("processing_seconds")
     if isinstance(total_seconds, int) and total_seconds >= 0:
@@ -105,91 +142,220 @@ def summary_footer(rep_no: int | None = None) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Results", page_icon="📑", layout="wide")
     theme_provider()
     inject_base_styles()
     ensure_authenticated()
 
-    case_id = st.session_state.get("last_case_id", "0000")
-    # no report_id anymore
-
-    # Discover all PDFs and paginate: newest first, 3 per page mapped to the three cards
-    results_dir = Path("results")
-    all_pdfs = []
-    if results_dir.exists():
-        all_pdfs = sorted(results_dir.glob("*.pdf"), key=lambda x: x.stat().st_mtime, reverse=True)
-
-    # Demo: ensure multiple pages exist by padding with placeholders
-    MIN_REPORTS_DEMO = 9  # 3 pages x 3 cards
-    if len(all_pdfs) < MIN_REPORTS_DEMO:
-        all_pdfs = all_pdfs + [None] * (MIN_REPORTS_DEMO - len(all_pdfs))
-
-    # Page index via query param `p` (1-based for display)
-    qp = st.experimental_get_query_params() or {}
-    try:
-        current_page = max(1, int(qp.get("p", ["1"])[0]))
-    except Exception:
-        current_page = 1
-
-    page_size = 3
-    total_pages = max(1, (len(all_pdfs) + page_size - 1) // page_size)
-    if current_page > total_pages:
-        current_page = total_pages
-
-    # Override displayed Case ID for demo pages 2 and 3
-    display_case_id = case_id
-    if current_page == 2:
-        display_case_id = "1042"
-    elif current_page == 3:
-        display_case_id = "1111"
-
-    # Header now that we know the page and display id
-    header_actions(display_case_id)
-
-    start_idx = (current_page - 1) * page_size
-    page_items = all_pdfs[start_idx:start_idx + page_size]
-
-    # Report numbers: 1 is newest overall
-    def report_number_from_index(global_index: int) -> int:
-        return global_index + 1
-
-    # Assign to cards
-    items_with_labels = [
-        ("Ground Truth", "Original reference document"),
-        ("Generated Report", "AI-generated analysis report"),
-        ("Comparison Report", "Detailed comparison analysis"),
-    ]
-    cols = st.columns(3)
-    for idx, col in enumerate(cols):
-        with col:
-            pdf_path = page_items[idx] if idx < len(page_items) else None
-            if pdf_path is not None:
-                global_idx = start_idx + idx
-                rep_no = report_number_from_index(global_idx)
-                title, subtitle = items_with_labels[idx]
-                pdf_card(f"{title} • Report #{rep_no}", subtitle, pdf_path)
+    # Get case ID from session or query params
+    case_id = (st.session_state.get("last_case_id") or 
+               st.session_state.get("current_case_id") or 
+               "0000")
+    
+    # Initialize S3 manager
+    s3_manager = get_s3_manager()
+    
+    # Get case files from S3 (or mock data if S3 not available)
+    if s3_manager.s3_client:
+        case_files = s3_manager.get_case_files(case_id)
+    else:
+        # Use mock data for demo purposes
+        case_files = mock_s3_data_for_demo(case_id)
+    
+    # Get comparison reports for dropdown
+    comparison_reports = []
+    if s3_manager.s3_client:
+        comparison_reports = s3_manager.get_comparison_reports(case_id)
+    else:
+        # Mock comparison reports
+        comparison_reports = [
+            {"key": f"case_{case_id}/comparison/report_v1.pdf", "filename": "Report v1", "size": 1024000},
+            {"key": f"case_{case_id}/comparison/report_v2.pdf", "filename": "Report v2", "size": 1024000},
+            {"key": f"case_{case_id}/comparison/report_v3.pdf", "filename": "Report v3", "size": 1024000},
+        ]
+    
+    # Header section
+    header_actions(case_id)
+    
+    # Main content - Three PDFs side by side
+    st.markdown("## Report Comparison")
+    st.markdown("Compare the ground truth, generated report, and historical reports side by side.")
+    
+    # Create three columns for PDFs
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Ground Truth PDF
+        ground_truth_key = case_files.get('ground_truth')
+        display_pdf_column(
+            title="Ground Truth",
+            subtitle="Original document for comparison",
+            pdf_key=ground_truth_key,
+            s3_manager=s3_manager
+        )
+    
+    with col2:
+        # Complete Generated Report PDF
+        complete_report_key = case_files.get('complete_report')
+        if complete_report_key:
+            display_pdf_column(
+                title="Complete AI Generated Report",
+                subtitle="All sections combined from n8n workflow",
+                pdf_key=complete_report_key,
+                s3_manager=s3_manager
+            )
+        else:
+            # Fallback to individual sections
+            st.markdown("**AI Generated Report Sections**")
+            st.caption("Individual sections generated by n8n workflow")
+            
+            output_reports = case_files.get('output_reports', [])
+            if output_reports:
+                # Show sections in a dropdown
+                section_options = []
+                for report in output_reports:
+                    # Extract section name from filename
+                    filename = report.split('/')[-1]
+                    if 'section' in filename.lower():
+                        section_num = filename.split('section_')[1].split('_')[0] if 'section_' in filename.lower() else 'Unknown'
+                        section_options.append(f"Section {section_num}")
+                    else:
+                        section_options.append(filename.replace('.pdf', ''))
+                
+                section_options.insert(0, "Select a section...")
+                
+                selected_section = st.selectbox(
+                    "Choose section to view:",
+                    options=section_options,
+                    key="section_dropdown"
+                )
+                
+                if selected_section and selected_section != "Select a section...":
+                    section_idx = section_options.index(selected_section) - 1
+                    section_key = output_reports[section_idx]
+                    
+                    with st.container():
+                        # st.markdown('<div class="section-bg">', unsafe_allow_html=True)
+                        pdf_data = s3_manager.get_pdf_base64(section_key) if s3_manager.s3_client else None
+                        if pdf_data:
+                            st.markdown(
+                                f"""
+                                <iframe src="data:application/pdf;base64,{pdf_data}" 
+                                        width="100%" height="520px" 
+                                        style="border:none;border-radius:10px;"></iframe>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.info("PDF not available.")
+                        st.markdown('</div>', unsafe_allow_html=True)
+                else:
+                    st.info("Please select a section from the dropdown above.")
             else:
-                title, subtitle = items_with_labels[idx]
-                pdf_card(title, subtitle, None)
+                st.info("No generated sections available yet.")
+    
+    with col3:
+        # Input Files (fed to LLM)
+        st.markdown("**Input Files**")
+        st.caption("Documents fed to LLM via n8n workflow")
+        
+        input_files = case_files.get('input_files', [])
+        if input_files:
+            # Show input files in a dropdown
+            input_options = []
+            for input_file in input_files:
+                filename = input_file.split('/')[-1]
+                input_options.append(filename)
+            
+            input_options.insert(0, "Select an input file...")
+            
+            selected_input = st.selectbox(
+                "Choose input file to view:",
+                options=input_options,
+                key="input_dropdown"
+            )
+            
+            if selected_input and selected_input != "Select an input file...":
+                # Find the selected input file
+                selected_idx = input_options.index(selected_input) - 1
+                input_key = input_files[selected_idx]
+                
+                # Display the selected input PDF
+                with st.container():
+                    # st.markdown('<div class="section-bg">', unsafe_allow_html=True)
+                    pdf_data = s3_manager.get_pdf_base64(input_key) if s3_manager.s3_client else None
+                    if pdf_data:
+                        st.markdown(
+                            f"""
+                            <iframe src="data:application/pdf;base64,{pdf_data}" 
+                                    width="100%" height="520px" 
+                                    style="border:none;border-radius:10px;"></iframe>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.info("PDF not available.")
+                    st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.info("Please select an input file from the dropdown above.")
+        else:
+            st.info("No input files available.")
+    
+    # Summary footer
+    summary_footer(1)
+    
+    # Additional information section
+    st.markdown("---")
+    st.markdown("## Report Details")
+    
+    # Display case information
+    col_info1, col_info2 = st.columns(2)
+    
+    with col_info1:
+        st.markdown("**Case Information**")
+        st.markdown(f"- **Case ID:** {case_id}")
+        st.markdown(f"- **Status:** Completed")
+        st.markdown(f"- **Generated:** {datetime.now().strftime('%B %d, %Y at %I:%M %p')}")
+        
+        if s3_manager.s3_client:
+            st.markdown(f"- **Storage:** S3 Bucket: {s3_manager.bucket_name}")
+        else:
+            st.markdown("- **Storage:** Demo Mode (Mock Data)")
+    
+    with col_info2:
+        st.markdown("**Available Files**")
+        if case_files.get('ground_truth'):
+            st.markdown(f"- ✅ Ground Truth: Available")
+        else:
+            st.markdown("- ❌ Ground Truth: Not found")
+            
+        complete_report = case_files.get('complete_report')
+        output_sections = case_files.get('output_reports', [])
+        input_files = case_files.get('input_files', [])
+        
+        if complete_report:
+            st.markdown(f"- ✅ Complete Report: Available")
+        elif output_sections:
+            st.markdown(f"- ✅ Generated Sections: {len(output_sections)} available")
+        else:
+            st.markdown("- ❌ Generated Reports: Not found")
+            
+        st.markdown(f"- 📄 Input Files: {len(input_files)} available")
+        
+        # Show metadata files
+        metadata_files = case_files.get('metadata', {})
+        if metadata_files:
+            st.markdown(f"- 📋 Metadata Files: {len(metadata_files)} available")
+    
+    # S3 connection status
+    if not s3_manager.s3_client:
+        st.warning(
+            "⚠️ **Demo Mode**: S3 connection not available. "
+            "Displaying mock data. To connect to real S3, set environment variables: "
+            "`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET_NAME`"
+        )
 
-    # Pager controls
-    prev_col, info_col, next_col = st.columns([1, 2, 1])
-    with prev_col:
-        if current_page > 1 and st.button("← Newer", key="pager_prev"):
-            st.experimental_set_query_params(p=str(current_page - 1))
-            st.experimental_rerun()
-    with info_col:
-        st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {current_page} of {total_pages}</div>", unsafe_allow_html=True)
-    with next_col:
-        if current_page < total_pages and st.button("Older →", key="pager_next"):
-            st.experimental_set_query_params(p=str(current_page + 1))
-            st.experimental_rerun()
 
-    # Footer reflects the most recent report number shown in the first card of the page
-    first_rep_no = start_idx + 1 if page_items else None
-    summary_footer(first_rep_no)
-
-
-main()
+if __name__ == "__main__":
+    main()
 
 

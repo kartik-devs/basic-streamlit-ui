@@ -1,8 +1,12 @@
 import streamlit as st
 import time
 import random
+import os
+import requests
 from datetime import datetime
 from app.ui import inject_base_styles, show_header, top_nav, hero_section, feature_grid, footer_section, theme_provider
+import os
+import requests
 from streamlit_extras.switch_page_button import switch_page
 
 
@@ -28,14 +32,27 @@ def main() -> None:
     )
 
     ensure_authenticated()
+    # Backend base URL
+    params = st.query_params if hasattr(st, "query_params") else {}
+    BACKEND_BASE = (
+        params.get("api", [None])[0]
+        or os.getenv("BACKEND_BASE")
+        or "http://localhost:8000"
+    ).rstrip("/")
+
+    # Backend base URL
+    params = st.query_params if hasattr(st, "query_params") else {}
+    BACKEND_BASE = (
+        params.get("api", [None])[0]
+        or os.getenv("BACKEND_BASE")
+        or "http://localhost:8000"
+    ).rstrip("/")
 
     with st.container():
-        st.markdown('<div class="section-bg slide-up" style="max-width:900px;margin:0 auto;">', unsafe_allow_html=True)
+        st.markdown('<div class="section-bg slide-up" style="max-width:560px;margin:0 auto;">', unsafe_allow_html=True)
         st.caption("Case ID (4 digits)")
         case_id = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id")
-        c_left, c_center, c_right = st.columns([1, 1, 1])
-        with c_center:
-            generate = st.button("Generate Report", type="primary", use_container_width=True)
+        generate = st.button("Generate Report", type="primary", use_container_width=True)
         if generate:
             cid = case_id.strip()
             if not cid or not cid.isdigit() or len(cid) != 4:
@@ -46,6 +63,30 @@ def main() -> None:
                 st.session_state["generation_start"] = datetime.now()
                 st.session_state["generation_in_progress"] = True
                 st.session_state["nav_to_generating"] = True
+                
+                # For now, we'll simulate the report generation process
+                # Later this will be replaced with actual n8n integration
+                username = st.session_state.get("username") or st.session_state.get("name") or "demo"
+                
+                # Store case ID for S3 fetching in results page
+                st.session_state["current_case_id"] = cid
+                st.session_state["username"] = username
+                
+                # Simulate successful report generation start
+                st.success(f"Report generation started for Case ID: {cid}")
+                
+                # Create a simple backend cycle for this user and case (legacy support)
+                try:
+                    r = requests.post(
+                        f"{BACKEND_BASE}/cycles",
+                        json={"username": username, "case_id": cid, "status": "processing"},
+                        timeout=8,
+                    )
+                    if r.ok:
+                        st.session_state["current_cycle_id"] = r.json().get("id")
+                except Exception:
+                    pass
+                
                 # Pass case/report ids via URL as well for robustness
                 try:
                     st.experimental_set_query_params(case_id=cid)
@@ -97,18 +138,6 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-
-    st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
-    st.markdown("<div style='text-align:center'>", unsafe_allow_html=True)
-    st.subheader("Comprehensive Case Analysis")
-    st.caption("Our platform provides detailed insights and analytics for every case.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    feature_grid([
-        ("🕒", "Real-time Processing", "Get instant access to case data and real-time updates as information becomes available."),
-        ("🛡️", "Secure & Compliant", "Enterprise-grade security with full compliance to industry standards and regulations."),
-        ("⬇️", "Export Options", "Download reports in multiple formats including PDF, Excel, and CSV for easy sharing."),
-    ])
 
     footer_section()
 
