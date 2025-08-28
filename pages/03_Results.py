@@ -60,40 +60,76 @@ def header_actions(case_id: str) -> None:
     )
 
 
-def display_pdf_column(title: str, subtitle: str, pdf_data: str = None, pdf_key: str = None, s3_manager=None) -> None:
-    """Display a PDF column with title, subtitle, and PDF content"""
+def display_file_column(title: str, subtitle: str, file_data: str = None, file_key: str = None, s3_manager=None) -> None:
+    """Display a file column with title, subtitle, and file content (PDF or Word)"""
     st.markdown(f"**{title}**")
     st.caption(subtitle)
     
     with st.container():
         # st.markdown('<div class="section-bg">', unsafe_allow_html=True)
         
-        if pdf_data:
-            # Display PDF from base64 data
-            st.markdown(
-                f"""
-                <iframe src="data:application/pdf;base64,{pdf_data}" 
-                        width="100%" height="520px" 
-                        style="border:none;border-radius:10px;"></iframe>
-                """,
-                unsafe_allow_html=True,
-            )
-        elif pdf_key and s3_manager:
-            # Try to fetch from S3
-            pdf_data = s3_manager.get_pdf_base64(pdf_key)
-            if pdf_data:
+        if file_data:
+            # Display file from base64 data
+            if file_key and file_key.lower().endswith('.docx'):
+                # For Word documents, show download link and preview info
+                st.success("📄 Word Document Available")
+                st.info("Word documents (.docx) cannot be previewed directly in the browser.")
+                st.markdown("**File Details:**")
+                st.markdown(f"- **Filename:** {file_key.split('/')[-1]}")
+                st.markdown(f"- **Type:** Microsoft Word Document")
+                st.markdown(f"- **Size:** {len(file_data)} bytes")
+                
+                # Create a download button
+                st.download_button(
+                    label="📥 Download Word Document",
+                    data=file_data,
+                    file_name=file_key.split('/')[-1],
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+            else:
+                # For PDFs, show in iframe
                 st.markdown(
                     f"""
-                    <iframe src="data:application/pdf;base64,{pdf_data}" 
+                    <iframe src="data:application/pdf;base64,{file_data}" 
                             width="100%" height="520px" 
                             style="border:none;border-radius:10px;"></iframe>
                     """,
                     unsafe_allow_html=True,
                 )
+        elif file_key and s3_manager:
+            # Try to fetch from S3
+            file_data = s3_manager.get_file_base64(file_key)
+            if file_data:
+                if file_key.lower().endswith('.docx'):
+                    # For Word documents, show download link and preview info
+                    st.success("📄 Word Document Available")
+                    st.info("Word documents (.docx) cannot be previewed directly in the browser.")
+                    st.markdown("**File Details:**")
+                    st.markdown(f"- **Filename:** {file_key.split('/')[-1]}")
+                    st.markdown(f"- **Type:** Microsoft Word Document")
+                    st.markdown(f"- **Size:** {len(file_data)} bytes")
+                    
+                    # Create a download button
+                    st.download_button(
+                        label="📥 Download Word Document",
+                        data=file_data,
+                        file_name=file_key.split('/')[-1],
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+                else:
+                    # For PDFs, show in iframe
+                    st.markdown(
+                        f"""
+                        <iframe src="data:application/pdf;base64,{file_data}" 
+                                width="100%" height="520px" 
+                                style="border:none;border-radius:10px;"></iframe>
+                        """,
+                        unsafe_allow_html=True,
+                    )
             else:
-                st.info("PDF not available from S3.")
+                st.info("File not available from S3.")
         else:
-            st.info("PDF not available.")
+            st.info("File not available.")
             
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -161,17 +197,7 @@ def main() -> None:
         # Use mock data for demo purposes
         case_files = mock_s3_data_for_demo(case_id)
     
-    # Get comparison reports for dropdown
-    comparison_reports = []
-    if s3_manager.s3_client:
-        comparison_reports = s3_manager.get_comparison_reports(case_id)
-    else:
-        # Mock comparison reports
-        comparison_reports = [
-            {"key": f"case_{case_id}/comparison/report_v1.pdf", "filename": "Report v1", "size": 1024000},
-            {"key": f"case_{case_id}/comparison/report_v2.pdf", "filename": "Report v2", "size": 1024000},
-            {"key": f"case_{case_id}/comparison/report_v3.pdf", "filename": "Report v3", "size": 1024000},
-        ]
+
     
     # Header section
     header_actions(case_id)
@@ -186,122 +212,68 @@ def main() -> None:
     with col1:
         # Ground Truth PDF
         ground_truth_key = case_files.get('ground_truth')
-        display_pdf_column(
+        display_file_column(
             title="Ground Truth",
             subtitle="Original document for comparison",
-            pdf_key=ground_truth_key,
+            file_key=ground_truth_key,
             s3_manager=s3_manager
         )
     
     with col2:
-        # Complete Generated Report PDF
-        complete_report_key = case_files.get('complete_report')
-        if complete_report_key:
-            display_pdf_column(
-                title="Complete AI Generated Report",
-                subtitle="All sections combined from n8n workflow",
-                pdf_key=complete_report_key,
+        # AI Generated Report (from n8n workflow)
+        ai_report_key = case_files.get('ai_generated_report')
+        if ai_report_key:
+            display_file_column(
+                title="AI Generated Report",
+                subtitle="Output from n8n workflow",
+                file_key=ai_report_key,
                 s3_manager=s3_manager
             )
         else:
-            # Fallback to individual sections
-            st.markdown("**AI Generated Report Sections**")
-            st.caption("Individual sections generated by n8n workflow")
-            
-            output_reports = case_files.get('output_reports', [])
-            if output_reports:
-                # Show sections in a dropdown
-                section_options = []
-                for report in output_reports:
-                    # Extract section name from filename
-                    filename = report.split('/')[-1]
-                    if 'section' in filename.lower():
-                        section_num = filename.split('section_')[1].split('_')[0] if 'section_' in filename.lower() else 'Unknown'
-                        section_options.append(f"Section {section_num}")
-                    else:
-                        section_options.append(filename.replace('.pdf', ''))
-                
-                section_options.insert(0, "Select a section...")
-                
-                selected_section = st.selectbox(
-                    "Choose section to view:",
-                    options=section_options,
-                    key="section_dropdown"
-                )
-                
-                if selected_section and selected_section != "Select a section...":
-                    section_idx = section_options.index(selected_section) - 1
-                    section_key = output_reports[section_idx]
-                    
-                    with st.container():
-                        # st.markdown('<div class="section-bg">', unsafe_allow_html=True)
-                        pdf_data = s3_manager.get_pdf_base64(section_key) if s3_manager.s3_client else None
-                        if pdf_data:
-                            st.markdown(
-                                f"""
-                                <iframe src="data:application/pdf;base64,{pdf_data}" 
-                                        width="100%" height="520px" 
-                                        style="border:none;border-radius:10px;"></iframe>
-                                """,
-                                unsafe_allow_html=True,
-                            )
-                        else:
-                            st.info("PDF not available.")
-                        st.markdown('</div>', unsafe_allow_html=True)
-                else:
-                    st.info("Please select a section from the dropdown above.")
-            else:
-                st.info("No generated sections available yet.")
+            st.info("AI Generated Report not available yet. The n8n workflow may still be processing.")
     
     with col3:
-        # Input Files (fed to LLM)
-        st.markdown("**Input Files**")
-        st.caption("Documents fed to LLM via n8n workflow")
-        
-        input_files = case_files.get('input_files', [])
-        if input_files:
-            # Show input files in a dropdown
-            input_options = []
-            for input_file in input_files:
-                filename = input_file.split('/')[-1]
-                input_options.append(filename)
+        # Doctor/LLM Reports (previous versions for comparison)
+        doctor_reports = case_files.get('doctor_reports', [])
+        if doctor_reports:
+            # Show doctor reports in a dropdown
+            report_options = []
+            for report in doctor_reports:
+                filename = report.split('/')[-1]
+                report_options.append(filename)
             
-            input_options.insert(0, "Select an input file...")
+            report_options.insert(0, "Select a report to compare...")
             
-            selected_input = st.selectbox(
-                "Choose input file to view:",
-                options=input_options,
-                key="input_dropdown"
+            selected_report = st.selectbox(
+                "Doctor/LLM Reports:",
+                options=report_options,
+                key="doctor_report_dropdown"
             )
             
-            if selected_input and selected_input != "Select an input file...":
-                # Find the selected input file
-                selected_idx = input_options.index(selected_input) - 1
-                input_key = input_files[selected_idx]
+            if selected_report and selected_report != "Select a report to compare...":
+                # Find the selected report
+                selected_idx = report_options.index(selected_report) - 1
+                report_key = doctor_reports[selected_idx]
                 
-                # Display the selected input PDF
-                with st.container():
-                    # st.markdown('<div class="section-bg">', unsafe_allow_html=True)
-                    pdf_data = s3_manager.get_pdf_base64(input_key) if s3_manager.s3_client else None
-                    if pdf_data:
-                        st.markdown(
-                            f"""
-                            <iframe src="data:application/pdf;base64,{pdf_data}" 
-                                    width="100%" height="520px" 
-                                    style="border:none;border-radius:10px;"></iframe>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.info("PDF not available.")
-                    st.markdown('</div>', unsafe_allow_html=True)
+                # Display the selected report directly without extra spacing
+                file_data = s3_manager.get_file_base64(report_key) if s3_manager.s3_client else None
+                if file_data:
+                    st.markdown(
+                        f"""
+                        <iframe src="data:application/pdf;base64,{file_data}" 
+                                width="100%" height="520px" 
+                                style="border:none;border-radius:10px;"></iframe>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.info("PDF not available.")
             else:
-                st.info("Please select an input file from the dropdown above.")
+                st.info("Please select a report from the dropdown above.")
         else:
-            st.info("No input files available.")
+            st.info("No doctor/LLM reports available for comparison.")
     
-    # Summary footer
-    summary_footer(1)
+
     
     # Additional information section
     st.markdown("---")
@@ -328,23 +300,18 @@ def main() -> None:
         else:
             st.markdown("- ❌ Ground Truth: Not found")
             
-        complete_report = case_files.get('complete_report')
-        output_sections = case_files.get('output_reports', [])
-        input_files = case_files.get('input_files', [])
+        ai_report = case_files.get('ai_generated_report')
         
-        if complete_report:
-            st.markdown(f"- ✅ Complete Report: Available")
-        elif output_sections:
-            st.markdown(f"- ✅ Generated Sections: {len(output_sections)} available")
+        if ai_report:
+            st.markdown(f"- ✅ AI Generated Report: Available")
         else:
-            st.markdown("- ❌ Generated Reports: Not found")
+            st.markdown("- ❌ AI Generated Report: Not found")
             
-        st.markdown(f"- 📄 Input Files: {len(input_files)} available")
-        
-        # Show metadata files
-        metadata_files = case_files.get('metadata', {})
-        if metadata_files:
-            st.markdown(f"- 📋 Metadata Files: {len(metadata_files)} available")
+        doctor_reports = case_files.get('doctor_reports', [])
+        if doctor_reports:
+            st.markdown(f"- ✅ Doctor/LLM Reports: {len(doctor_reports)} available")
+        else:
+            st.markdown("- ❌ Doctor/LLM Reports: Not found")
     
     # S3 connection status
     if not s3_manager.s3_client:
