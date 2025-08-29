@@ -44,3 +44,7 @@ credentials:
       email: Navpreet@gmail.com
       name: Navpreet Singh
       password: $2b$12$7G0tejANQ5JKgJL41ISBHeG4.k0o/80vtREelI62FeI2gZSyVc8gm
+    Kartik1:
+      email: kartik1@gmail.com
+      name: Kartik123
+      password: $2b$12$ICwsh4Bb7vizireuvL31peAb82rASaOK.2XjaRsRhSz2iIYCFWSvC

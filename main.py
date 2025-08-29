@@ -109,7 +109,12 @@ def main() -> None:
                     switch_page("Case_Report")
                 except Exception:
                     # Fallback when switch_page is unavailable
-                    st.experimental_set_query_params(page="case")
+                    try:
+                        qp = st.query_params if hasattr(st, "query_params") else None
+                        if qp is not None:
+                            qp["page"] = "case"
+                    except Exception:
+                        pass
                     st.info("Use the sidebar to navigate to 'Case Report'.")
         with c2:
             authenticator.logout("Log out", "main")

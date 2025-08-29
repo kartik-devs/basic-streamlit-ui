@@ -11,6 +11,13 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+ 
+# Load environment from .env if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 
 # Initialize FastAPI early so decorators below can reference it
 app = FastAPI(title="Reports API", version="0.2.0")
@@ -24,6 +31,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Ensure database schema is initialized on startup
+@app.on_event("startup")
+def _startup_init_db() -> None:
+    try:
+        init_db()
+    except Exception:
+        # Best-effort init; errors will surface on first DB access
+        pass
+
 # Import n8n integration
 from .n8n_integration import report_generator, n8n_manager
 
@@ -35,8 +51,8 @@ def health() -> Dict[str, Any]:
 import boto3
 from botocore.client import Config as BotoConfig
 
-S3_BUCKET = os.getenv("S3_BUCKET", "case-reports")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+S3_BUCKET = os.getenv("S3_BUCKET_NAME") or os.getenv("S3_BUCKET") or "finallcpreports"
+AWS_REGION = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
 
 def s3_client():
     return boto3.client(
@@ -46,17 +62,40 @@ def s3_client():
     )
 
 def s3_list_versions(case_id: str) -> list[str]:
-    prefix = f"reports/{case_id}/"
     client = s3_client()
-    paginator = client.get_paginator("list_objects_v2")
     versions: set[str] = set()
-    for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix, Delimiter="/"):
+    # Manifest first: {case_id}/Output/index.json (no List required beyond GetObject)
+    try:
+        man_key = f"{case_id}/Output/index.json"
+        obj = client.get_object(Bucket=S3_BUCKET, Key=man_key)
+        text = obj["Body"].read().decode("utf-8")
+        data = json.loads(text) if text else {}
+        for r in (data.get("runs") or []):
+            v = (r.get("version") or "").strip()
+            if v:
+                versions.add(v)
+    except Exception:
+        pass
+    # Standard layout
+    prefix_std = f"reports/{case_id}/"
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix_std, Delimiter="/"):
         for cp in page.get("CommonPrefixes", []):
             key = cp.get("Prefix", "")
-            # key like reports/<case_id>/<report_id>/
             parts = key.strip("/").split("/")
             if len(parts) >= 3:
                 versions.add(parts[2])
+    # Observed layout: {case_id}/Output/{YYYYMMDDHHMM}-{case}-{patient}-CompleteAIGenerated.pdf
+    import re
+    ai_re = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-.+?-CompleteAIGenerated\\.pdf$", re.IGNORECASE)
+    for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=f"{case_id}/Output/"):
+        for obj in page.get("Contents", []):
+            key = obj.get("Key", "")
+            if ai_re.match(key):
+                # version is timestamp-case-patient
+                name = key.split("/")[-1]
+                version = name.replace("-CompleteAIGenerated.pdf", "")
+                versions.add(version)
     return sorted(list(versions), reverse=True)
 
 def s3_list_cases() -> list[str]:
@@ -80,6 +119,130 @@ def s3_presign(key: str, expires: int = 900) -> str:
         ExpiresIn=expires,
     )
 
+# Ensure a given object has a PDF representation (for docx inputs)
+@app.get("/s3/ensure-pdf")
+def api_s3_ensure_pdf(key: Optional[str] = None, url: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Given an S3 key, if it is a DOCX, attempt to convert and return the PDF URL.
+    If it is already a PDF, return the presigned PDF URL.
+    """
+    if not key and not url:
+        raise HTTPException(status_code=400, detail="key or url required")
+    client = s3_client()
+    # If url provided, derive key from URL path
+    if url and not key:
+        try:
+            from urllib.parse import urlparse, unquote
+            p = urlparse(url)
+            # Expecting /<key>
+            key = unquote(p.path.lstrip("/"))
+        except Exception:
+            key = None
+    if not key:
+        raise HTTPException(status_code=400, detail="could not derive key from url")
+    lower = key.lower()
+    if lower.endswith(".pdf"):
+        return {"url": s3_presign(key), "format": "pdf"}
+    if lower.endswith(".docx"):
+        # Reuse helper from assets flow
+        try:
+            # Download, convert locally, then upload sibling PDF
+            import tempfile
+            from pathlib import Path as _Path
+            with tempfile.TemporaryDirectory() as tmpdir:
+                docx_path = _Path(tmpdir) / "input.docx"
+                pdf_path = _Path(tmpdir) / "output.pdf"
+                obj = client.get_object(Bucket=S3_BUCKET, Key=key)
+                data = obj["Body"].read()
+                with open(docx_path, "wb") as f:
+                    f.write(data)
+                if _convert_docx_to_pdf_local(str(docx_path), str(pdf_path)):
+                    pdf_key = key[:-5] + ".pdf"
+                    with open(pdf_path, "rb") as f:
+                        client.put_object(Bucket=S3_BUCKET, Key=pdf_key, Body=f.read(), ContentType="application/pdf")
+                else:
+                    pdf_key = None
+        except Exception:
+            pdf_key = None
+        if pdf_key:
+            return {"url": s3_presign(pdf_key), "format": "pdf"}
+        # Fallback to docx download
+        return {"url": s3_presign(key), "format": "docx"}
+    # Unknown extension, just presign
+    return {"url": s3_presign(key), "format": "other"}
+
+# Simple file-based cache helpers (used by older pages)
+def _cache_path_for(case_id: str) -> Path:
+    return ARTIFACTS_DIR / f"outputs_cache_{case_id}.json"
+
+@app.get("/cache/cases")
+def api_cache_cases() -> Dict[str, Any]:
+    cases: list[str] = []
+    for p in ARTIFACTS_DIR.glob("outputs_cache_*.json"):
+        name = p.stem.replace("outputs_cache_", "")
+        if name and name not in cases:
+            cases.append(name)
+    cases.sort(reverse=True)
+    return {"cases": cases}
+
+@app.get("/cache/{case_id}/outputs")
+def api_cache_outputs(case_id: str) -> Dict[str, Any]:
+    path = _cache_path_for(case_id)
+    if path.exists():
+        try:
+            text = path.read_text(encoding="utf-8")
+            data = json.loads(text) if text else {}
+            return {"case_id": case_id, "items": data.get("items", []), "ground_truth_key": data.get("ground_truth_key")}
+        except Exception:
+            pass
+    return {"case_id": case_id, "items": [], "ground_truth_key": None}
+
+@app.post("/cache/{case_id}/refresh")
+def api_cache_refresh(case_id: str) -> Dict[str, Any]:
+    scan = api_s3_outputs(case_id)
+    # Ground truth key
+    client = s3_client()
+    gt_key = None
+    for folder in (f"{case_id}/Ground Truth/", f"{case_id}/GroundTruth/"):
+        try:
+            paginator = client.get_paginator("list_objects_v2")
+            newest = None
+            newest_time = None
+            for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=folder):
+                for obj in page.get("Contents", []):
+                    key = obj.get("Key", "")
+                    if not key or key.endswith("/"):
+                        continue
+                    low = key.lower()
+                    if not (low.endswith(".pdf") or low.endswith(".docx")):
+                        continue
+                    lm = obj.get("LastModified")
+                    if newest_time is None or (lm and lm > newest_time):
+                        newest_time = lm
+                        newest = key
+            if newest:
+                gt_key = newest
+                if newest.lower().endswith(".pdf"):
+                    break
+        except Exception:
+            continue
+    path = _cache_path_for(case_id)
+    items = [
+        {"label": it.get("label"), "ai_key": it.get("ai_key"), "doctor_key": it.get("doctor_key")}
+        for it in (scan.get("items") or [])
+    ]
+    try:
+        path.write_text(json.dumps({"items": items, "ground_truth_key": gt_key}, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+    return {"case_id": case_id, "count": len(items)}
+
+@app.get("/cache/presign")
+def api_cache_presign(key: str) -> Dict[str, Any]:
+    if not key:
+        raise HTTPException(status_code=400, detail="key required")
+    return {"url": s3_presign(key)}
+
 @app.get("/s3/{case_id}/versions")
 def api_s3_versions(case_id: str) -> Dict[str, Any]:
     return {"case_id": case_id, "versions": s3_list_versions(case_id)}
@@ -87,6 +250,61 @@ def api_s3_versions(case_id: str) -> Dict[str, Any]:
 @app.get("/s3/cases")
 def api_s3_cases() -> Dict[str, Any]:
     return {"cases": s3_list_cases()}
+
+@app.get("/s3/{case_id}/outputs")
+def api_s3_outputs(case_id: str) -> Dict[str, Any]:
+    """
+    List all AI Generated outputs under {case_id}/Output/ and pair with Doctor-as-LLM when available.
+    Returns presigned URLs so the frontend can render directly without extra lookups.
+    """
+    client = s3_client()
+    prefix = f"{case_id}/Output/"
+    items: list[dict[str, str]] = []
+
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj.get("Key", "")
+            if not key or not key.lower().endswith(".pdf"):
+                continue
+            name = key.split("/")[-1]
+            lower = name.lower()
+            # Consider files that look like AI generated reports
+            if "completeaigenerated" in lower or "ai_generated" in lower:
+                # Attempt to derive a matching doctor report
+                base = name
+                for token in ("-CompleteAIGenerated.pdf", "_CompleteAIGenerated.pdf", "-AI_Generated.pdf", "_AI_Generated.pdf"):
+                    if name.endswith(token):
+                        base = name[: -len(token)]
+                        break
+
+                # Candidate doctor names
+                doctor_candidates = [
+                    f"{prefix}{base}_LLM_As_Doctor.pdf",
+                    f"{prefix}{base}-LLM_As_Doctor.pdf",
+                ]
+                doctor_key = None
+                for dk in doctor_candidates:
+                    try:
+                        client.head_object(Bucket=S3_BUCKET, Key=dk)
+                        doctor_key = dk
+                        break
+                    except Exception:
+                        continue
+
+                items.append({
+                    "label": name,
+                    "ai_url": s3_presign(key),
+                    "doctor_url": s3_presign(doctor_key) if doctor_key else "",
+                    "ai_key": key,
+                    "doctor_key": doctor_key or "",
+                })
+
+    # Sort newest first by LastModified if available; fallback to name
+    def _key_sort(it: dict[str, str]) -> str:
+        return it.get("ai_key", it.get("label", ""))
+    items = sorted(items, key=_key_sort, reverse=True)
+    return {"case_id": case_id, "items": items}
 
 @app.get("/s3/{case_id}/{report_id}/assets")
 def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
@@ -125,12 +343,85 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
     gen_html1 = newest_under(f"{base1}/", ("generated.html",))
     gen_pdf1 = newest_under(f"{base1}/", ("generated.pdf",))
 
-    # Try observed layout
+    # Try observed layout (Output/ folder)
     base2 = f"{case_id}/"
     gt2 = None
     for p in (f"{base2}Ground Truth/", f"{base2}GroundTruth/"):
         gt2 = newest_under(p, (".pdf", ".docx")) or gt2
-    gen2 = newest_under(f"{base2}Output/", (".pdf", ".html"))
+    import re
+    ai_re = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-.+?-CompleteAIGenerated\\.pdf$", re.IGNORECASE)
+    doc_re = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-.+?_LLM_As_Doctor\\.pdf$", re.IGNORECASE)
+
+    # Resolve AI/Doctor by requested report_id if it looks like observed version
+    gen2 = None
+    doc2 = None
+    if report_id and report_id != "latest":
+        cand_ai = f"{base2}Output/{report_id}-CompleteAIGenerated.pdf"
+        cand_doc = f"{base2}Output/{report_id}_LLM_As_Doctor.pdf"
+        try:
+            client.head_object(Bucket=S3_BUCKET, Key=cand_ai)
+            gen2 = cand_ai
+        except Exception:
+            gen2 = None
+        try:
+            client.head_object(Bucket=S3_BUCKET, Key=cand_doc)
+            doc2 = cand_doc
+        except Exception:
+            doc2 = None
+    else:
+        # latest: prefer manifest index.json if present
+        used_manifest = False
+        try:
+            obj = client.get_object(Bucket=S3_BUCKET, Key=f"{base2}Output/index.json")
+            text = obj["Body"].read().decode("utf-8")
+            data = json.loads(text) if text else {}
+            runs = data.get("runs") or []
+            if runs:
+                version = (runs[-1].get("version") or "").strip()
+                if version:
+                    cand_ai = f"{base2}Output/{version}-CompleteAIGenerated.pdf"
+                    cand_doc = f"{base2}Output/{version}_LLM_As_Doctor.pdf"
+                    try:
+                        client.head_object(Bucket=S3_BUCKET, Key=cand_ai)
+                        gen2 = cand_ai
+                    except Exception:
+                        gen2 = None
+                    try:
+                        client.head_object(Bucket=S3_BUCKET, Key=cand_doc)
+                        doc2 = cand_doc
+                    except Exception:
+                        doc2 = None
+                    used_manifest = True
+        except Exception:
+            used_manifest = False
+
+        if not used_manifest:
+            # Fallback: scan Output and pick newest AI and matching Doctor
+            newest_ai_key = None
+            newest_ai_time = None
+            paginator = client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=f"{base2}Output/"):
+                for obj in page.get("Contents", []):
+                    key = obj.get("Key", "")
+                    if not key or not key.lower().endswith(".pdf"):
+                        continue
+                    if not ai_re.match(key):
+                        continue
+                    lm = obj.get("LastModified")
+                    if newest_ai_time is None or (lm and lm > newest_ai_time):
+                        newest_ai_time = lm
+                        newest_ai_key = key
+            if newest_ai_key:
+                gen2 = newest_ai_key
+                # Build doctor key from the same prefix
+                name = newest_ai_key.split("/")[-1]
+                version = name.replace("-CompleteAIGenerated.pdf", "")
+                cand_doc = f"{base2}Output/{version}_LLM_As_Doctor.pdf"
+                try:
+                    client.head_object(Bucket=S3_BUCKET, Key=cand_doc)
+                    doc2 = cand_doc
+                except Exception:
+                    doc2 = None
 
     # Prefer standard if present, else observed
     if gt1:
@@ -147,6 +438,8 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
             response["generated_html"] = s3_presign(gen2)
         else:
             response["generated_pdf"] = s3_presign(gen2)
+    if doc2:
+        response["doctor_pdf"] = s3_presign(doc2)
 
     # Optional comparison under standard layout
     comps: list[str] = []
@@ -329,6 +622,32 @@ def init_db() -> None:
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_cycle ON report_files(cycle_id)")
+
+        # History of outputs per user+case (S3 keys only; URLs are presigned on demand)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS outputs_history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              user_id INTEGER,
+              case_id TEXT NOT NULL,
+              label TEXT,
+              ai_key TEXT,
+              doctor_key TEXT,
+              ground_truth_key TEXT,
+              created_at TEXT
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_hist_case ON outputs_history(case_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_hist_user_case ON outputs_history(user_id, case_id)")
+        # Lightweight migration: add user_id to existing DBs if missing
+        try:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(outputs_history)").fetchall()]
+            if "user_id" not in cols:
+                conn.execute("ALTER TABLE outputs_history ADD COLUMN user_id INTEGER")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_hist_user_case ON outputs_history(user_id, case_id)")
+        except Exception:
+            pass
         conn.commit()
     finally:
         conn.close()
@@ -381,6 +700,27 @@ def get_user(username: str) -> UserOut:
         )
     finally:
         conn.close()
+
+
+def _ensure_user(conn: sqlite3.Connection, username: Optional[str], user_id: Optional[int], email: Optional[str], full_name: Optional[str]) -> int:
+    """Return a user id for the given identity, creating a user if needed."""
+    if user_id:
+        row = conn.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
+        if row:
+            return int(row[0])
+    uname = (username or "anonymous").strip().lower()
+    row = conn.execute("SELECT id FROM users WHERE username=?", (uname,)).fetchone()
+    if row:
+        return int(row[0])
+    now = datetime.utcnow().isoformat()
+    conn.execute(
+        "INSERT INTO users (username, email, full_name, created_at) VALUES (?, ?, ?, ?)",
+        (uname, email, full_name, now),
+    )
+    conn.commit()
+    row2 = conn.execute("SELECT id FROM users WHERE username=?", (uname,)).fetchone()
+    assert row2 is not None
+    return int(row2[0])
 
 
 # --- Report cycles ---
@@ -606,251 +946,99 @@ def download_file(file_id: int):
         return FileResponse(path=path, filename=filename)
     finally:
         conn.close()
-class ReportIn(BaseModel):
-    case_id: str
-    email: Optional[str] = None
-    status: Optional[str] = "queued"
-    started_at: Optional[str] = None
-    finished_at: Optional[str] = None
-    s3_key: Optional[str] = None
-    file_path: Optional[str] = None
-    file_size: Optional[int] = None
-    checksum: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
 
 
-class ReportOut(BaseModel):
-    id: int
-    case_id: str
-    email: Optional[str]
-    status: Optional[str]
-    started_at: Optional[str]
-    finished_at: Optional[str]
-    s3_key: Optional[str]
-    file_path: Optional[str]
-    file_size: Optional[int]
-    checksum: Optional[str]
-    metadata: Optional[Dict[str, Any]]
-
-
-class UserIn(BaseModel):
-    username: str
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-
-
-class UserOut(BaseModel):
-    id: int
-    username: str
-    email: Optional[str]
-    full_name: Optional[str]
-    created_at: str
-
-
-class CycleIn(BaseModel):
-    username: Optional[str] = None
-    user_id: Optional[int] = None
-    case_id: str
-    status: Optional[str] = "processing"
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class CycleOut(BaseModel):
-    id: int
-    user_id: int
-    case_id: str
-    status: Optional[str]
-    started_at: Optional[str]
-    finished_at: Optional[str]
-    metadata: Optional[Dict[str, Any]]
-
-
-class FileOut(BaseModel):
-    id: int
-    cycle_id: int
-    kind: Optional[str]
-    file_name: Optional[str]
-    file_path: Optional[str]
-    file_size: Optional[int]
-    checksum: Optional[str]
-    created_at: Optional[str]
-
-
- 
-
-
-@app.on_event("startup")
-def _startup() -> None:  # noqa: D401
-    init_db()
-
-
-def row_to_out(row: sqlite3.Row) -> ReportOut:
-    metadata_obj = None
-    if row["metadata"]:
+@app.post("/history/{case_id}/sync")
+def history_sync(case_id: str, username: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
+    scan = api_s3_outputs(case_id)
+    # determine ground truth key
+    client = s3_client()
+    gt_key = None
+    for folder in (f"{case_id}/Ground Truth/", f"{case_id}/GroundTruth/"):
         try:
-            metadata_obj = json.loads(row["metadata"])  # type: ignore[assignment]
+            paginator = client.get_paginator("list_objects_v2")
+            newest = None
+            newest_time = None
+            for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=folder):
+                for obj in page.get("Contents", []):
+                    key = obj.get("Key", "")
+                    if not key or key.endswith("/"):
+                        continue
+                    low = key.lower()
+                    if not (low.endswith(".pdf") or low.endswith(".docx")):
+                        continue
+                    lm = obj.get("LastModified")
+                    if newest_time is None or (lm and lm > newest_time):
+                        newest_time = lm
+                        newest = key
+            if newest:
+                gt_key = newest
+                if newest.lower().endswith(".pdf"):
+                    break
         except Exception:
-            metadata_obj = None
-    return ReportOut(
-        id=row["id"],
-        case_id=row["case_id"],
-        email=row["email"],
-        status=row["status"],
-        started_at=row["started_at"],
-        finished_at=row["finished_at"],
-        s3_key=row["s3_key"],
-        file_path=row["file_path"],
-        file_size=row["file_size"],
-        checksum=row["checksum"],
-        metadata=metadata_obj,
-    )
+            continue
 
-
-def _ensure_user(conn: sqlite3.Connection, username: Optional[str], user_id: Optional[int], email: Optional[str], full_name: Optional[str]) -> int:
-    if user_id:
-        return int(user_id)
-    if not username:
-        raise HTTPException(status_code=400, detail="username or user_id required")
-    row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
-    if row:
-        return int(row[0])
-    now = datetime.utcnow().isoformat()
-    conn.execute(
-        "INSERT INTO users (username, email, full_name, created_at) VALUES (?, ?, ?, ?)",
-        (username, email, full_name, now),
-    )
-    conn.commit()
-    created = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
-    assert created is not None
-    return int(created[0])
-
-
-@app.post("/reports", response_model=ReportOut)
-def create_or_update_report(report: ReportIn) -> ReportOut:
     now = datetime.utcnow().isoformat()
     conn = get_conn()
     try:
-        conn.execute(
-            """
-            INSERT INTO reports (case_id, email, status, started_at, finished_at, s3_key, file_path, file_size, checksum, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                report.case_id,
-                report.email,
-                report.status,
-                report.started_at or now,
-                report.finished_at,
-                report.s3_key,
-                report.file_path,
-                report.file_size,
-                report.checksum,
-                json.dumps(report.metadata or {}),
-            ),
-        )
+        uid = _ensure_user(conn, username, user_id, None, None)
+        for it in (scan.get("items") or []):
+            conn.execute(
+                "INSERT INTO outputs_history (user_id, case_id, label, ai_key, doctor_key, ground_truth_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uid, case_id, it.get("label"), it.get("ai_key"), it.get("doctor_key"), gt_key, now),
+            )
+        if not (scan.get("items") or []) and gt_key:
+            conn.execute(
+                "INSERT INTO outputs_history (user_id, case_id, label, ai_key, doctor_key, ground_truth_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uid, case_id, None, None, None, gt_key, now),
+            )
         conn.commit()
-        row = conn.execute(
-            "SELECT * FROM reports WHERE case_id=? ORDER BY id DESC LIMIT 1",
-            (report.case_id,),
-        ).fetchone()
-        assert row is not None
-        return row_to_out(row)
+        return {"case_id": case_id, "count": conn.execute("SELECT COUNT(1) FROM outputs_history WHERE user_id=? AND case_id=?", (uid, case_id)).fetchone()[0]}
     finally:
         conn.close()
 
 
-@app.get("/reports/{case_id}", response_model=ReportOut)
-def get_latest_report(case_id: str) -> ReportOut:
+@app.get("/history/cases")
+def history_cases(username: Optional[str] = None, user_id: Optional[int] = None) -> JSONResponse:
     conn = get_conn()
     try:
-        row = conn.execute(
-            "SELECT * FROM reports WHERE case_id=? ORDER BY id DESC LIMIT 1",
-            (case_id,),
-        ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Report not found")
-        return row_to_out(row)
-    finally:
-        conn.close()
-
-
-@app.get("/reports/{case_id}/history", response_model=List[ReportOut])
-def get_history(case_id: str) -> List[ReportOut]:
-    conn = get_conn()
-    try:
+        uid = _ensure_user(conn, username, user_id, None, None)
         rows = conn.execute(
-            "SELECT * FROM reports WHERE case_id=? ORDER BY id DESC",
-            (case_id,),
+            "SELECT DISTINCT case_id FROM outputs_history WHERE user_id=? ORDER BY case_id DESC",
+            (uid,),
         ).fetchall()
-        return [row_to_out(r) for r in rows]
+        cases = [r[0] for r in rows]
+        return JSONResponse({"cases": cases})
     finally:
         conn.close()
 
 
-@app.post("/reports/{case_id}/artifact", response_model=ReportOut)
-def upload_artifact(
-    case_id: str,
-    file: UploadFile = File(...),
-    email: Optional[str] = Form(None),
-) -> ReportOut:
-    suffix = Path(file.filename or "artifact.bin").suffix
-    safe_name = f"{case_id}_{int(datetime.utcnow().timestamp())}{suffix}"
-    target = ARTIFACTS_DIR / safe_name
-    with target.open("wb") as out:
-        out.write(file.file.read())
-    size = target.stat().st_size
-
+@app.get("/history/{case_id}")
+def history_list(case_id: str, username: Optional[str] = None, user_id: Optional[int] = None) -> Dict[str, Any]:
     conn = get_conn()
     try:
-        conn.execute(
-            """
-            INSERT INTO reports (case_id, email, status, started_at, finished_at, s3_key, file_path, file_size, checksum, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                case_id,
-                email,
-                "done",
-                datetime.utcnow().isoformat(),
-                datetime.utcnow().isoformat(),
-                None,
-                str(target),
-                size,
-                None,
-                json.dumps({"source": "upload"}),
-            ),
-        )
-        conn.commit()
-        row = conn.execute(
-            "SELECT * FROM reports WHERE case_id=? ORDER BY id DESC LIMIT 1",
-            (case_id,),
-        ).fetchone()
-        assert row is not None
-        return row_to_out(row)
+        uid = _ensure_user(conn, username, user_id, None, None)
+        rows = conn.execute(
+            "SELECT label, ai_key, doctor_key, ground_truth_key, created_at FROM outputs_history WHERE user_id=? AND case_id=? ORDER BY id DESC",
+            (uid, case_id),
+        ).fetchall()
+        items = []
+        for r in rows:
+            items.append(
+                {
+                    "label": r[0],
+                    "ai_key": r[1],
+                    "doctor_key": r[2],
+                    "ground_truth_key": r[3],
+                    "created_at": r[4],
+                }
+            )
+        return {"case_id": case_id, "items": items}
     finally:
         conn.close()
 
 
-@app.get("/reports/{case_id}/download")
-def download(case_id: str):
-    conn = get_conn()
-    try:
-        row = conn.execute(
-            "SELECT * FROM reports WHERE case_id=? ORDER BY id DESC LIMIT 1",
-            (case_id,),
-        ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Report not found")
-        file_path = row["file_path"]
-        if file_path and Path(file_path).exists():
-            return FileResponse(path=file_path, filename=Path(file_path).name)
-        s3_key = row["s3_key"]
-        if s3_key:
-            # Placeholder: when S3 enabled, return a presigned URL or redirect
-            return JSONResponse({"s3_key": s3_key, "note": "Use presigned URL in S3 mode."})
-        raise HTTPException(status_code=404, detail="No artifact available")
-    finally:
-        conn.close()
+## (static route declared above to avoid shadowing by /history/{case_id})
 
 
 # n8n Workflow Integration Endpoints
@@ -993,3 +1181,43 @@ def cleanup_seeds() -> Dict[str, int]:
         return {"deleted_cycles": len(ids)}
     finally:
         conn.close()
+
+
+def _convert_docx_to_pdf_local(docx_path: str, out_pdf_path: str) -> bool:
+    """Try to convert DOCX to PDF locally using docx2pdf or LibreOffice.
+    Returns True if out_pdf_path was created with content.
+    """
+    try:
+        from docx2pdf import convert as _docx2pdf
+    except Exception:
+        _docx2pdf = None
+    from pathlib import Path as _Path
+    import subprocess, shutil
+
+    pdf_path = _Path(out_pdf_path)
+    # Try docx2pdf first
+    if _docx2pdf is not None:
+        try:
+            _docx2pdf(docx_path, out_pdf_path)
+            if pdf_path.exists() and pdf_path.stat().st_size > 0:
+                return True
+        except Exception:
+            pass
+    # Try LibreOffice fallback
+    try:
+        soffice = shutil.which("soffice") or shutil.which("soffice.exe")
+        if soffice:
+            tmpdir = str(_Path(out_pdf_path).parent)
+            subprocess.run(
+                [soffice, "--headless", "--convert-to", "pdf", "--outdir", tmpdir, docx_path],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            lo_pdf = _Path(docx_path).with_suffix(".pdf")
+            if lo_pdf.exists() and lo_pdf.stat().st_size > 0:
+                lo_pdf.rename(pdf_path)
+                return True
+    except Exception:
+        pass
+    return False

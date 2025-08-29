@@ -7,18 +7,18 @@ def inject_base_styles() -> None:
     theme = st.session_state.get("theme", "dark")
     if theme == "light":
         bg = "#f8fafc"  # slate-50
-        panel = "rgba(0,0,0,0.04)"
-        panel_border = "rgba(0,0,0,0.12)"
-        accent = "#111827"
-        primary = "#111827"
+        panel = "rgba(0,0,0,0.06)"
+        panel_border = "rgba(0,0,0,0.15)"
+        accent = "#3b82f6"  # blue-500 for better contrast
+        primary = "#1e40af"  # blue-700
         text = "#0f172a"  # slate-900 for readability on light bg
         panel_bg = "#ffffff"
     else:
         bg = "#0f172a"  # slate-900
         panel = "rgba(255,255,255,0.06)"
         panel_border = "rgba(255,255,255,0.12)"
-        accent = "#111827"
-        primary = "#111827"
+        accent = "#3b82f6"  # blue-500
+        primary = "#60a5fa"  # blue-400
         text = "#e5e7eb"  # slate-200 on dark bg
         panel_bg = "rgba(255,255,255,0.04)"
 
@@ -35,9 +35,19 @@ def inject_base_styles() -> None:
           --panel-bg: {panel_bg};
         }}
 
-        body, .stApp {{ background: var(--bg) !important; color: var(--text) !important; }}
-        .markdown-text-container, .stMarkdown, [data-testid="stMarkdownContainer"] {{ color: var(--text) !important; }}
-        h1, h2, h3, h4, h5, h6, p, span, label {{ color: var(--text); }}
+        body, .stApp {{ 
+          background: var(--bg) !important; 
+          color: var(--text) !important; 
+          transition: background-color 0.3s ease, color 0.3s ease;
+        }}
+        .markdown-text-container, .stMarkdown, [data-testid="stMarkdownContainer"] {{ 
+          color: var(--text) !important; 
+          transition: color 0.3s ease;
+        }}
+        h1, h2, h3, h4, h5, h6, p, span, label {{ 
+          color: var(--text); 
+          transition: color 0.3s ease;
+        }}
 
         .main .block-container {{padding-top: 2.5rem;}}
         
@@ -69,6 +79,55 @@ def inject_base_styles() -> None:
           border: 1px solid var(--panel-border);
         }}
 
+        /* Button styling for both themes */
+        .stButton > button {{
+          background: var(--panel-bg) !important;
+          color: var(--text) !important;
+          border: 1px solid var(--panel-border) !important;
+          transition: all 0.3s ease !important;
+        }}
+        .stButton > button:hover {{
+          background: var(--panel) !important;
+          border-color: var(--accent) !important;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }}
+        .stButton > button:disabled {{
+          opacity: 0.5 !important;
+          cursor: not-allowed !important;
+        }}
+        
+        /* Download button styling */
+        .stDownloadButton > button {{
+          background: var(--panel-bg) !important;
+          color: var(--text) !important;
+          border: 1px solid var(--panel-border) !important;
+          transition: all 0.3s ease !important;
+        }}
+        .stDownloadButton > button:hover {{
+          background: var(--panel) !important;
+          border-color: var(--accent) !important;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }}
+        
+        /* Theme toggle button styling */
+        [data-testid="baseButton-secondary"] {{
+          background: var(--panel-bg) !important;
+          color: var(--text) !important;
+          border: 1px solid var(--panel-border) !important;
+          border-radius: 8px !important;
+          padding: 8px 12px !important;
+          font-size: 16px !important;
+          transition: all 0.3s ease !important;
+        }}
+        [data-testid="baseButton-secondary"]:hover {{
+          background: var(--panel) !important;
+          border-color: var(--accent) !important;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }}
+
         .fade-in {{animation: fadeIn .6s ease-out both;}}
         .slide-up {{animation: slideUp .6s ease-out both;}}
 
@@ -83,9 +142,6 @@ def inject_base_styles() -> None:
 def theme_provider() -> None:
     if "theme" not in st.session_state:
         st.session_state["theme"] = "dark"
-    with st.sidebar:
-        is_dark = st.toggle("Dark mode", value=st.session_state["theme"] == "dark")
-    st.session_state["theme"] = "dark" if is_dark else "light"
 
 
 def show_header(title: str, subtitle: str | None = None, icon: str | None = None) -> None:
@@ -125,7 +181,10 @@ def _perform_logout() -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.experimental_set_query_params()
+    try:
+        st.query_params.clear()
+    except Exception:
+        pass
     st.session_state["__just_logged_out__"] = True
     st.success("Logged out. Please sign in again to continue.")
     st.rerun()
@@ -133,7 +192,7 @@ def _perform_logout() -> None:
 
 def top_nav(active: str = "Dashboard") -> None:
     with st.container():
-        left, right = st.columns([5, 2])
+        left, center, right = st.columns([4, 1, 2])
         with left:
             st.markdown(
                 """
@@ -148,6 +207,13 @@ def top_nav(active: str = "Dashboard") -> None:
                 """,
                 unsafe_allow_html=True,
             )
+        with center:
+            # Theme toggle
+            current_theme = st.session_state.get("theme", "dark")
+            theme_icon = "🌙" if current_theme == "dark" else "☀️"
+            if st.button(theme_icon, key="theme_toggle", help=f"Switch to {'light' if current_theme == 'dark' else 'dark'} mode"):
+                st.session_state["theme"] = "light" if current_theme == "dark" else "dark"
+                st.rerun()
         with right:
             st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
             if st.button("Log out", use_container_width=True):

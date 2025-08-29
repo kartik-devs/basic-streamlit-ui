@@ -2,10 +2,13 @@ import boto3
 import os
 import yaml
 from typing import Optional, List, Dict, Any
-from botocore.exceptions import ClientError, NoCredentialsError
+from botocore.exceptions import ClientError, NoCredentialsError, ReadTimeoutError, EndpointConnectionError
+from botocore.config import Config
 import streamlit as st
 import tempfile
 import base64
+import subprocess
+import io
 
 # Load environment variables from .env file
 try:
@@ -36,11 +39,18 @@ class S3Manager:
         
         # Try to initialize S3 client
         try:
+            # Configure robust timeouts/retries to avoid ReadTimeouts on large files
+            boto_cfg = Config(
+                connect_timeout=10,
+                read_timeout=120,
+                retries={"max_attempts": 5, "mode": "standard"},
+            )
             self.s3_client = boto3.client(
                 's3',
                 aws_access_key_id=aws_access_key,
                 aws_secret_access_key=aws_secret_key,
-                region_name=self.region
+                region_name=self.region,
+                config=boto_cfg,
             )
             # Test connection
             self.s3_client.head_bucket(Bucket=self.bucket_name)
@@ -124,18 +134,78 @@ class S3Manager:
             return base64.b64encode(file_bytes).decode('utf-8')
         return None
     
+    def convert_word_to_pdf(self, word_bytes: bytes) -> Optional[bytes]:
+        """Convert Word document to PDF using Python libraries (fastest)"""
+        try:
+            # Try to import required libraries
+            try:
+                from docx import Document
+                from reportlab.pdfgen import canvas
+                from reportlab.lib.pagesizes import letter, A4
+                from reportlab.lib.styles import getSampleStyleSheet
+                from reportlab.platypus import SimpleDocTemplate, Paragraph
+                from reportlab.lib.units import inch
+            except ImportError:
+                st.warning("📦 Install required packages: pip install python-docx reportlab")
+                return None
+            
+            # Extract text from Word document
+            doc = Document(io.BytesIO(word_bytes))
+            text_content = []
+            
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    text_content.append(paragraph.text)
+            
+            # Create PDF in memory
+            pdf_buffer = io.BytesIO()
+            doc_pdf = SimpleDocTemplate(pdf_buffer, pagesize=A4)
+            styles = getSampleStyleSheet()
+            story = []
+            
+            # Add text to PDF
+            for text in text_content:
+                p = Paragraph(text, styles['Normal'])
+                story.append(p)
+            
+            # Build PDF
+            doc_pdf.build(story)
+            pdf_bytes = pdf_buffer.getvalue()
+            pdf_buffer.close()
+            
+            return pdf_bytes
+            
+        except Exception as e:
+            st.error(f"Error converting Word to PDF: {str(e)}")
+            return None
+    
     def get_pdf_base64(self, s3_key: str) -> Optional[str]:
         """Get PDF from S3 as base64 encoded string for iframe display (deprecated, use get_file_base64)"""
         return self.get_file_base64(s3_key)
     
     def download_file(self, s3_key: str) -> Optional[bytes]:
-        """Download any file from S3 and return as bytes"""
+        """Download any file from S3 and return as bytes (resilient)."""
         if not self.s3_client:
             return None
-        
         try:
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=s3_key)
-            return response['Body'].read()
+            # Stream-read in chunks to avoid long blocking reads
+            body = response.get('Body')
+            if not body:
+                return None
+            chunks: list[bytes] = []
+            while True:
+                data = body.read(1024 * 1024)  # 1MB
+                if not data:
+                    break
+                chunks.append(data)
+            return b"".join(chunks)
+        except ReadTimeoutError:
+            st.warning(f"S3 read timed out for {s3_key}. Skipping this file in export.")
+            return None
+        except EndpointConnectionError as e:
+            st.error(f"S3 endpoint connection error: {e}")
+            return None
         except ClientError as e:
             st.error(f"Error downloading file {s3_key}: {str(e)}")
             return None

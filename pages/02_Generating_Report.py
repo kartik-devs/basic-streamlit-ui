@@ -18,7 +18,7 @@ def main() -> None:
     top_nav()
  
     # --- Query params / state
-    params = st.experimental_get_query_params()
+    params = st.query_params if hasattr(st, "query_params") else {}
     url_start = params.get("start", ["0"])[0] == "1"
     case_id = (st.session_state.get("last_case_id") or params.get("case_id", [""])[0]).strip() or "0000"
  
@@ -28,7 +28,13 @@ def main() -> None:
         st.session_state["generation_in_progress"] = True
         st.session_state["n8n_triggered"] = False  # Reset n8n status
         st.session_state["n8n_trigger_time"] = None
-        st.experimental_set_query_params(**{**params, "start": "0", "case_id": case_id})
+        try:
+            qp = st.query_params if hasattr(st, "query_params") else None
+            if qp is not None:
+                qp["start"] = "0"
+                qp["case_id"] = case_id
+        except Exception:
+            pass
  
     if not st.session_state.get("generation_in_progress"):
         st.markdown('<div class="section-bg" style="max-width:900px;margin:0 auto;text-align:center;">', unsafe_allow_html=True)
@@ -38,7 +44,13 @@ def main() -> None:
         if start_click:
             st.session_state["last_case_id"] = (new_id or case_id).strip()
             st.session_state["generation_in_progress"] = True
-            st.experimental_set_query_params(case_id=st.session_state["last_case_id"], start="0")
+            try:
+                qp = st.query_params if hasattr(st, "query_params") else None
+                if qp is not None:
+                    qp["case_id"] = st.session_state["last_case_id"]
+                    qp["start"] = "0"
+            except Exception:
+                pass
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
         return
@@ -186,7 +198,13 @@ def main() -> None:
  
     st.markdown("<div style='text-align:center;margin-top:.5rem;'>", unsafe_allow_html=True)
     if st.button("View Results", type="primary"):
-        st.experimental_set_query_params(page="Results", case_id=case_id)
+        try:
+            qp = st.query_params if hasattr(st, "query_params") else None
+            if qp is not None:
+                qp["page"] = "Results"
+                qp["case_id"] = case_id
+        except Exception:
+            pass
         st.markdown(
             f"""
             <script>

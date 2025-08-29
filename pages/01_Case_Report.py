@@ -89,12 +89,18 @@ def main() -> None:
                 
                 # Pass case/report ids via URL as well for robustness
                 try:
-                    st.experimental_set_query_params(case_id=cid)
+                    qp = st.query_params if hasattr(st, "query_params") else None
+                    if qp is not None:
+                        qp["case_id"] = cid
                 except Exception:
                     pass
                 # Set URL params first so the target page reads start=1 deterministically
                 try:
-                    st.experimental_set_query_params(page="02_Generating_Report", case_id=cid, start="1")
+                    qp = st.query_params if hasattr(st, "query_params") else None
+                    if qp is not None:
+                        qp["page"] = "02_Generating_Report"
+                        qp["case_id"] = cid
+                        qp["start"] = "1"
                 except Exception:
                     pass
                 # Try several labels that might match the page entry
