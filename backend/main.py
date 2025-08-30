@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
  
@@ -118,6 +118,31 @@ def s3_presign(key: str, expires: int = 900) -> str:
         Params={"Bucket": S3_BUCKET, "Key": key},
         ExpiresIn=expires,
     )
+
+# --- Simple PDF proxy to avoid CORS issues in client-side PDF.js ---
+@app.get("/proxy/pdf")
+def proxy_pdf(url: str):
+    try:
+        import requests as _req
+        from urllib.parse import unquote
+        target = unquote(url)
+        r = _req.get(target, stream=True, timeout=20)
+        if not r.ok:
+            raise HTTPException(status_code=r.status_code, detail="Upstream error")
+        def _iter():
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    yield chunk
+        headers = {
+            "Content-Type": "application/pdf",
+            # Allow embedding in iframes from our frontend
+            "X-Accel-Buffering": "no",
+        }
+        return StreamingResponse(_iter(), headers=headers, media_type="application/pdf")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail="Failed to fetch PDF")
 
 # Ensure a given object has a PDF representation (for docx inputs)
 @app.get("/s3/ensure-pdf")
