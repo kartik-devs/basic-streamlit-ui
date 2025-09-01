@@ -39,15 +39,15 @@ def build_authenticator():
 
 def main() -> None:
     st.set_page_config(
-        page_title="CaseTracker Pro",
-        page_icon="🗂️",
+        page_title="Login - CaseTracker Pro",
+        page_icon="🔐",
         layout="centered",
         initial_sidebar_state="collapsed",
     )
 
     inject_base_styles()
     show_header(
-        title="Generate Case Report",
+        title="Login",
         subtitle=(
             "Enter your credentials to continue. After login you'll be taken "
             "to the Case Report page to submit a Case ID."

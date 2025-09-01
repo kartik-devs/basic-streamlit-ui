@@ -41,10 +41,19 @@ def _extract_patient(case_id: str, gt_key: str | None = None, ai_label: str | No
         return None
     return None
 
+def ensure_authenticated() -> bool:
+    if st.session_state.get("authentication_status") is True:
+        return True
+    st.warning("Please login to access this page.")
+    st.stop()
+
+
 def main() -> None:
     st.set_page_config(page_title="History", page_icon="🕘", layout="wide")
     theme_provider()
     inject_base_styles()
+    
+    ensure_authenticated()
 
     backend = _backend()
 

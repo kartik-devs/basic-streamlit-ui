@@ -40,18 +40,28 @@ def main() -> None:
         or "http://localhost:8000"
     ).rstrip("/")
 
-    # Backend base URL
-    params = st.query_params if hasattr(st, "query_params") else {}
-    BACKEND_BASE = (
-        params.get("api", [None])[0]
-        or os.getenv("BACKEND_BASE")
-        or "http://localhost:8000"
-    ).rstrip("/")
-
-    with st.container():
-        st.markdown('<div class="section-bg slide-up" style="max-width:560px;margin:0 auto;">', unsafe_allow_html=True)
+    # Create centered form with same width as info box below
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
         st.caption("Case ID (4 digits)")
-        case_id = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id")
+        case_id = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
+        
+        # Real-time validation feedback
+        if case_id:
+            if not case_id.isdigit():
+                st.error("⚠️ Case ID must contain only digits (0-9)")
+            elif len(case_id) != 4:
+                st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
+            else:
+                st.success("✅ Valid Case ID format")
+        
+        # Show current user info
+        username = st.session_state.get("username") or st.session_state.get("name")
+        if username:
+            st.info(f"👤 Logged in as: {username}")
+        else:
+            st.warning("⚠️ No username found - reports will use 'demo' user")
+        
         generate = st.button("Generate Report", type="primary", use_container_width=True)
         if generate:
             cid = case_id.strip()
@@ -64,16 +74,16 @@ def main() -> None:
                 st.session_state["generation_in_progress"] = True
                 st.session_state["nav_to_generating"] = True
                 
-                # For now, we'll simulate the report generation process
-                # Later this will be replaced with actual n8n integration
-                username = st.session_state.get("username") or st.session_state.get("name") or "demo"
+                # Ensure username is available
+                if not username:
+                    username = "demo"
                 
                 # Store case ID for S3 fetching in results page
                 st.session_state["current_case_id"] = cid
                 st.session_state["username"] = username
                 
-                # Simulate successful report generation start
-                st.success(f"Report generation started for Case ID: {cid}")
+                # External workflow temporarily disabled; proceed with S3-only flow
+                webhook_success = True
                 
                 # Create a simple backend cycle for this user and case (legacy support)
                 try:
@@ -132,7 +142,6 @@ def main() -> None:
                         unsafe_allow_html=True,
                     )
                 st.stop()
-        st.markdown("</div>", unsafe_allow_html=True)
 
     # Subtle info card beneath the form
     with st.container():

@@ -208,16 +208,19 @@ def top_nav(active: str = "Dashboard") -> None:
                 unsafe_allow_html=True,
             )
         with center:
-            # Theme toggle
-            current_theme = st.session_state.get("theme", "dark")
-            theme_icon = "🌙" if current_theme == "dark" else "☀️"
-            if st.button(theme_icon, key="theme_toggle", help=f"Switch to {'light' if current_theme == 'dark' else 'dark'} mode"):
-                st.session_state["theme"] = "light" if current_theme == "dark" else "dark"
-                st.rerun()
+            # Center column left intentionally empty after moving theme toggle to right
+            st.markdown("", unsafe_allow_html=True)
         with right:
-            st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
-            if st.button("Log out", use_container_width=True):
-                _perform_logout()
+            r1, r2 = st.columns([1, 3])
+            with r1:
+                current_theme = st.session_state.get("theme", "dark")
+                theme_icon = "🌙" if current_theme == "dark" else "☀️"
+                if st.button(theme_icon, key="theme_toggle", help=f"Switch to {'light' if current_theme == 'dark' else 'dark'} mode"):
+                    st.session_state["theme"] = "light" if current_theme == "dark" else "dark"
+                    st.rerun()
+            with r2:
+                if st.button("Log out", use_container_width=True):
+                    _perform_logout()
         st.markdown(
             "<hr style=\"opacity:.12;border:none;border-top:1px solid var(--panel-border);margin:0 0 1rem 0;\" />",
             unsafe_allow_html=True,
