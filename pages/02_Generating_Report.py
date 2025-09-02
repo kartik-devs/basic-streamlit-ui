@@ -11,6 +11,11 @@ except Exception:
 
  
  
+# Helper: read webhook URL from env or use default test URL
+def _n8n_webhook_url() -> str:
+    return os.getenv("N8N_WEBHOOK_URL", "http://52.90.247.26:5678/webhook-test/pdf-to-html")
+
+
 def ensure_authenticated() -> bool:
     if st.session_state.get("authentication_status") is True:
         return True
@@ -63,6 +68,12 @@ def main() -> None:
         st.session_state["generation_start"] = datetime.now()
         st.session_state["generation_end"] = None
         st.session_state["processing_seconds"] = 0
+        # Trigger n8n webhook non-blocking best-effort
+        if requests is not None:
+            try:
+                requests.post(_n8n_webhook_url(), json={"case_id": case_id}, timeout=5)
+            except Exception:
+                pass
         try:
             qp = st.query_params if hasattr(st, "query_params") else None
             if qp is not None:
@@ -85,6 +96,13 @@ def main() -> None:
             st.session_state["generation_start"] = datetime.now()
             st.session_state["generation_end"] = None
             st.session_state["processing_seconds"] = 0
+            # Trigger n8n webhook on manual start
+            cid = st.session_state.get("last_case_id") or case_id
+            if requests is not None:
+                try:
+                    requests.post(_n8n_webhook_url(), json={"case_id": cid}, timeout=5)
+                except Exception:
+                    pass
             try:
                 qp = st.query_params if hasattr(st, "query_params") else None
                 if qp is not None:
@@ -107,8 +125,6 @@ def main() -> None:
         <p style='opacity:.9;margin-top:-6px;'>Hey there, Doctor! ☕ Why not grab a coffee while we work our magic? Your comprehensive report is being crafted with care, and we'll email you the results as soon as it's ready!</p>
     """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
- 
-
  
     progress = st.progress(st.session_state["generation_progress"])
     n8n_ph = st.empty()
@@ -191,7 +207,6 @@ def main() -> None:
         st.session_state["generation_complete"] = True
         st.session_state["generation_end"] = datetime.now()
         st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - start_time).total_seconds())
-        st.session_state["last_completed_case_id"] = case_id
         n8n_ph.success(f"✅ Report generation complete for Case ID: {case_id}!")
     elif st.session_state["generation_complete"]:
         # Show completion status if already done
