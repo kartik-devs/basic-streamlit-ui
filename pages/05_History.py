@@ -22,6 +22,7 @@ def _get_qp(name: str) -> str | None:
 def _backend() -> str:
     qp = _get_qp("api")
     return (qp or os.getenv("BACKEND_BASE") or "http://localhost:8000").rstrip("/")
+    
 
 def _extract_patient(case_id: str, gt_key: str | None = None, ai_label: str | None = None, doc_label: str | None = None) -> str | None:
     try:
@@ -232,11 +233,17 @@ def main() -> None:
     st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
     enable_sync = st.checkbox("Enable synchronized scrolling (Ground Truth ↔ AI Generated)", value=False, key="hist_sync")
     if enable_sync and gt_effective_pdf_url and ai_effective_pdf_url:
+        # Add lock/unlock controls with persistent state
+        st.markdown("<div style='text-align:center;margin-bottom:0.5rem;'><small>💡 <strong>Tip:</strong> Scroll to align pages first, then use the lock button in the viewer</small></div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align:center;margin-bottom:0.5rem;'><small>🔓 <strong>Unlocked:</strong> Scroll independently • 🔒 <strong>Locked:</strong> Scroll together</small></div>", unsafe_allow_html=True)
         sync_height = 640
         html = """
-        <div style=\"display:grid;grid-template-columns:1fr 1fr;gap:12px;\"> 
-          <div id=\"leftPane\" style=\"height:__H__px;overflow:auto;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px;\"></div>
-          <div id=\"rightPane\" style=\"height:__H__px;overflow:auto;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px;\"></div>
+        <div style=\"position:relative;\">
+          <div style=\"display:grid;grid-template-columns:1fr 1fr;gap:12px;\">
+            <div id=\"leftPane\" style=\"height:__H__px;overflow:auto;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px;\"></div>
+            <div id=\"rightPane\" style=\"height:__H__px;overflow:auto;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px;\"></div>
+          </div>
+          <button id=\"lockButton\" style=\"position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.8);color:white;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;z-index:1000;transition:all 0.2s;\">🔓 UNLOCKED</button>
         </div>
         <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
         <script>
@@ -275,14 +282,47 @@ def main() -> None:
         }
 
         let syncing = false;
+        let scrollLocked = false; // Start unlocked by default
+        let lockedScrollRatio = 0; // Store the ratio when locking
+        
         function linkScroll(a, b) {
           a.addEventListener('scroll', () => {
-            if (syncing) return;
+            if (syncing || !scrollLocked) return;
             syncing = true;
-            const ratio = a.scrollTop / (a.scrollHeight - a.clientHeight || 1);
-            b.scrollTop = ratio * (b.scrollHeight - b.clientHeight);
+            
+            // Calculate the scroll delta (how much was scrolled)
+            const delta = a.scrollTop - (a.lastScrollTop || 0);
+            a.lastScrollTop = a.scrollTop;
+            
+            // Apply the same delta to the other pane
+            b.scrollTop += delta;
+            b.lastScrollTop = b.scrollTop;
+            
             syncing = false;
           }, { passive: true });
+        }
+        
+        function updateLockButton() {
+          const button = document.getElementById('lockButton');
+          if (button) {
+            button.textContent = scrollLocked ? '🔒 LOCKED' : '🔓 UNLOCKED';
+            button.style.color = scrollLocked ? '#4CAF50' : '#FF9800';
+            button.style.background = scrollLocked ? 'rgba(76,175,80,0.9)' : 'rgba(0,0,0,0.8)';
+          }
+        }
+        
+        function lockScroll() {
+          const left = document.getElementById('leftPane');
+          const right = document.getElementById('rightPane');
+          
+          // Don't change positions - just enable synchronization from current positions
+          scrollLocked = true;
+          updateLockButton();
+        }
+        
+        function unlockScroll() {
+          scrollLocked = false;
+          updateLockButton();
         }
 
         (async () => {
@@ -292,8 +332,22 @@ def main() -> None:
           ]);
           const left = document.getElementById('leftPane');
           const right = document.getElementById('rightPane');
+          
+          // Setup lock button functionality
+          const lockButton = document.getElementById('lockButton');
+          lockButton.addEventListener('click', () => {
+            if (scrollLocked) {
+              unlockScroll();
+            } else {
+              lockScroll();
+            }
+          });
+          updateLockButton();
+          
           linkScroll(left, right);
           linkScroll(right, left);
+          
+          // Recompute layout on resize
           window.addEventListener('resize', () => {
             renderPdf('__GT__', 'leftPane');
             renderPdf('__AI__', 'rightPane');
