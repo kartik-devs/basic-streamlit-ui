@@ -108,6 +108,8 @@ def main() -> None:
     """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
  
+
+ 
     progress = st.progress(st.session_state["generation_progress"])
     n8n_ph = st.empty()
     st.markdown("""

@@ -198,11 +198,6 @@ def top_nav(active: str = "Dashboard") -> None:
                 """
                 <div class="fade-in" style="display:flex;align-items:center;gap:1.25rem;padding:.5rem 0 .75rem 0;">
                   <div style="font-weight:700;">CaseTracker Pro</div>
-                  <div style="opacity:.9;display:flex;gap:1rem;font-size:.95rem;">
-                    <span>Dashboard</span>
-                    <span>Reports</span>
-                    <span>Settings</span>
-                  </div>
                 </div>
                 """,
                 unsafe_allow_html=True,

@@ -48,3 +48,7 @@ credentials:
       email: kartik1@gmail.com
       name: Kartik123
       password: $2b$12$ICwsh4Bb7vizireuvL31peAb82rASaOK.2XjaRsRhSz2iIYCFWSvC
+    New user:
+      email: newuser@gmail.com
+      name: Ner user
+      password: $2b$12$1I6qbSqRKh.wV56NLEHSW.UQG5aMQHOd8OqTXNV8YyDNhnZ1mhkV6
