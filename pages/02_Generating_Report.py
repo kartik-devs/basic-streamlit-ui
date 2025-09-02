@@ -7,6 +7,7 @@ try:
     import requests
 except Exception:
     requests = None
+from streamlit_extras.switch_page_button import switch_page
 
 
  
@@ -237,24 +238,40 @@ def main() -> None:
  
     st.markdown("<div style='text-align:center;margin-top:.5rem;'>", unsafe_allow_html=True)
     if st.button("View Results", type="primary"):
-        try:
-            qp = st.query_params if hasattr(st, "query_params") else None
-            if qp is not None:
-                qp["page"] = "Results"
-                qp["case_id"] = case_id
-        except Exception:
-            pass
-        st.markdown(
-            f"""
-            <script>
-              const params = new URLSearchParams(window.location.search);
-              params.set('page', 'Results');
-              params.set('case_id', '{case_id}');
-              window.location.search = '?' + params.toString();
-            </script>
-            """,
-            unsafe_allow_html=True,
-        )
+        # Prefer programmatic navigation with fallbacks
+        tried = False
+        for label in [
+            "04_Results",
+            "Results",
+            "Results Page",
+            "Results+",
+        ]:
+            try:
+                switch_page(label)
+                tried = True
+                break
+            except Exception:
+                continue
+        # Fallback: update query params and inject client redirect
+        if not tried:
+            try:
+                qp = st.query_params if hasattr(st, "query_params") else None
+                if qp is not None:
+                    qp["page"] = "04_Results"
+                    qp["case_id"] = case_id
+            except Exception:
+                pass
+            st.markdown(
+                f"""
+                <script>
+                  const params = new URLSearchParams(window.location.search);
+                  params.set('page', '04_Results');
+                  params.set('case_id', '{case_id}');
+                  window.location.search = '?' + params.toString();
+                </script>
+                """,
+                unsafe_allow_html=True,
+            )
         st.stop()
     st.markdown("</div>", unsafe_allow_html=True)
  
