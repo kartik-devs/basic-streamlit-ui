@@ -192,7 +192,7 @@ def _perform_logout() -> None:
 
 def top_nav(active: str = "Dashboard") -> None:
     with st.container():
-        left, center, right = st.columns([4, 1, 2])
+        left, center, right = st.columns([4, 1, 3])
         with left:
             st.markdown(
                 """
@@ -203,17 +203,75 @@ def top_nav(active: str = "Dashboard") -> None:
                 unsafe_allow_html=True,
             )
         with center:
-            # Center column left intentionally empty after moving theme toggle to right
             st.markdown("", unsafe_allow_html=True)
         with right:
-            r1, r2 = st.columns([1, 3])
-            with r1:
+            rcols = st.columns([1, 3, 2, 2, 2])
+            # Theme toggle
+            with rcols[0]:
                 current_theme = st.session_state.get("theme", "dark")
                 theme_icon = "🌙" if current_theme == "dark" else "☀️"
                 if st.button(theme_icon, key="theme_toggle", help=f"Switch to {'light' if current_theme == 'dark' else 'dark'} mode"):
                     st.session_state["theme"] = "light" if current_theme == "dark" else "dark"
                     st.rerun()
-            with r2:
+            # Case Report nav
+            with rcols[1]:
+                if st.button("📝 Case Report", key="topnav_case", use_container_width=True, help="Open Case Report"):
+                    try:
+                        from streamlit_extras.switch_page_button import switch_page
+                        for name in [
+                            "01_Case_Report",
+                            "Case Report",
+                            "01 Case Report",
+                            "Case_Report",
+                        ]:
+                            try:
+                                switch_page(name)
+                                return
+                            except Exception:
+                                continue
+                    except Exception:
+                        st.session_state["__nav_msg__"] = "Use the sidebar to open Case Report."
+                        st.rerun()
+            # Results nav
+            with rcols[2]:
+                if st.button("🧪 Results", key="topnav_results", use_container_width=True, help="Open Results"):
+                    try:
+                        from streamlit_extras.switch_page_button import switch_page
+                        for name in [
+                            "04_Results",
+                            "Results",
+                            "04 Results",
+                            "Results Page",
+                        ]:
+                            try:
+                                switch_page(name)
+                                return
+                            except Exception:
+                                continue
+                    except Exception:
+                        st.session_state["__nav_msg__"] = "Use the sidebar to open Results."
+                        st.rerun()
+            # History nav
+            with rcols[3]:
+                if st.button("📚 History", key="topnav_history", use_container_width=True, help="Open History v2"):
+                    try:
+                        from streamlit_extras.switch_page_button import switch_page
+                        for name in [
+                            "06_History_v2",
+                            "History v2",
+                            "06 History v2",
+                            "History_v2",
+                        ]:
+                            try:
+                                switch_page(name)
+                                return
+                            except Exception:
+                                continue
+                    except Exception:
+                        st.session_state["__nav_msg__"] = "Use the sidebar to open History v2."
+                        st.rerun()
+            # Logout
+            with rcols[4]:
                 if st.button("Log out", use_container_width=True):
                     _perform_logout()
         st.markdown(

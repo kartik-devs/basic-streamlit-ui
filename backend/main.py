@@ -47,6 +47,10 @@ from .n8n_integration import report_generator, n8n_manager
 def health() -> Dict[str, Any]:
     return {"ok": True}
 
+@app.get("/version")
+def version() -> Dict[str, Any]:
+    return {"version": app.version if hasattr(app, "version") else "unknown"}
+
 # --- S3 integration (list and presign) ---
 import boto3
 from botocore.client import Config as BotoConfig
@@ -330,6 +334,162 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
         return it.get("ai_key", it.get("label", ""))
     items = sorted(items, key=_key_sort, reverse=True)
     return {"case_id": case_id, "items": items}
+
+
+# --- Shared comments (user-agnostic) ---
+class CommentIn(BaseModel):
+    case_id: str
+    ai_label: Optional[str] = None
+    section: str
+    subsection: Optional[str] = None
+    username: Optional[str] = None
+    severity: Optional[str] = None
+    comment: str
+    resolved: Optional[bool] = False
+
+
+class CommentOut(BaseModel):
+    id: int
+    case_id: str
+    ai_label: Optional[str]
+    section: str
+    subsection: Optional[str]
+    username: Optional[str]
+    severity: Optional[str]
+    comment: str
+    resolved: Optional[bool]
+    created_at: str
+
+
+@app.get("/comments/{case_id}", response_model=List[CommentOut])
+def list_comments(case_id: str, ai_label: Optional[str] = None) -> List[CommentOut]:
+    conn = get_conn()
+    try:
+        if ai_label:
+            rows = conn.execute(
+                "SELECT * FROM comments WHERE case_id=? AND ai_label=? ORDER BY id DESC",
+                (case_id, ai_label),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM comments WHERE case_id=? ORDER BY id DESC",
+                (case_id,),
+            ).fetchall()
+        out: List[CommentOut] = []
+        for r in rows:
+            # Access by column name to be robust to legacy column order
+            def _col(name: str):
+                try:
+                    return r[name]
+                except Exception:
+                    return None
+            out.append(
+                CommentOut(
+                    id=_col("id"),
+                    case_id=_col("case_id"),
+                    ai_label=_col("ai_label"),
+                    section=_col("section"),
+                    subsection=_col("subsection"),
+                    username=_col("username"),
+                    severity=_col("severity"),
+                    comment=_col("comment"),
+                    resolved=bool(_col("resolved") or 0),
+                    created_at=_col("created_at"),
+                )
+            )
+        return out
+    finally:
+        conn.close()
+
+
+@app.post("/comments", response_model=CommentOut)
+def add_comment(payload: CommentIn) -> CommentOut:
+    conn = get_conn()
+    try:
+        now = datetime.utcnow().isoformat() + "Z"
+        conn.execute(
+            """
+            INSERT INTO comments (case_id, ai_label, section, subsection, username, severity, comment, resolved, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload.case_id,
+                (payload.ai_label or "").strip() or None,
+                payload.section,
+                payload.subsection,
+                (payload.username or "").strip() or None,
+                payload.severity,
+                payload.comment,
+                1 if (payload.resolved or False) else 0,
+                now,
+            ),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM comments ORDER BY id DESC LIMIT 1").fetchone()
+        assert row is not None
+        def _c(name: str):
+            try:
+                return row[name]
+            except Exception:
+                return None
+        return CommentOut(
+            id=_c("id"),
+            case_id=_c("case_id"),
+            ai_label=_c("ai_label"),
+            section=_c("section"),
+            subsection=_c("subsection"),
+            username=_c("username"),
+            severity=_c("severity"),
+            comment=_c("comment"),
+            resolved=bool(_c("resolved") or 0),
+            created_at=_c("created_at"),
+        )
+    finally:
+        conn.close()
+
+
+class DeleteCommentsIn(BaseModel):
+    case_id: str
+    ai_label: Optional[str] = None
+    ids: List[int]
+
+
+class ResolveCommentIn(BaseModel):
+    id: int
+    case_id: str
+    resolved: bool = True
+
+@app.patch("/comments/resolve", response_model=Dict[str, int])
+def resolve_comment(payload: ResolveCommentIn) -> Dict[str, int]:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "UPDATE comments SET resolved=? WHERE id=? AND case_id=?",
+            (1 if payload.resolved else 0, payload.id, payload.case_id),
+        )
+        conn.commit()
+        return {"updated": cur.rowcount or 0}
+    finally:
+        conn.close()
+
+@app.delete("/comments", response_model=Dict[str, int])
+def delete_comments(payload: DeleteCommentsIn) -> Dict[str, int]:
+    if not payload.ids:
+        return {"deleted": 0}
+    conn = get_conn()
+    try:
+        qmarks = ",".join(["?"] * len(payload.ids))
+        params: List[Any] = list(map(int, payload.ids))
+        base = f"DELETE FROM comments WHERE id IN ({qmarks}) AND case_id=?"
+        params.append(payload.case_id)
+        if payload.ai_label:
+            base += " AND (ai_label=? OR ai_label IS NULL)"
+            params.append(payload.ai_label)
+        cur = conn.execute(base, tuple(params))
+        conn.commit()
+        return {"deleted": cur.rowcount or 0}
+    finally:
+        conn.close()
 
 @app.get("/s3/{case_id}/{report_id}/assets")
 def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
@@ -647,6 +807,40 @@ def init_db() -> None:
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_cycle ON report_files(cycle_id)")
+        # Shared comments across users
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS comments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              case_id TEXT NOT NULL,
+              ai_label TEXT,
+              section TEXT,
+              subsection TEXT,
+              username TEXT,
+              severity TEXT,
+              comment TEXT,
+              resolved INTEGER DEFAULT 0,
+              created_at TEXT
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_case ON comments(case_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_comments_ai_label ON comments(ai_label)")
+
+        # Migration: Add subsection column if it doesn't exist
+        try:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(comments)").fetchall()]
+            if "subsection" not in cols:
+                conn.execute("ALTER TABLE comments ADD COLUMN subsection TEXT")
+            if "username" not in cols:
+                conn.execute("ALTER TABLE comments ADD COLUMN username TEXT")
+            if "resolved" not in cols:
+                conn.execute("ALTER TABLE comments ADD COLUMN resolved INTEGER DEFAULT 0")
+            if "ai_page" in cols and "gt_page" in cols:
+                # Keep old columns for backward compatibility but they're deprecated
+                pass
+        except Exception:
+            pass
 
         # History of outputs per user+case (S3 keys only; URLs are presigned on demand)
         conn.execute(

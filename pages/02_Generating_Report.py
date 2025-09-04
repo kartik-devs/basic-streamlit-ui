@@ -12,9 +12,62 @@ from streamlit_extras.switch_page_button import switch_page
 
  
  
-# Helper: read webhook URL from env or use default test URL
+# Helper: read webhook URL from session/env or use default test URL
 def _n8n_webhook_url() -> str:
-    return os.getenv("N8N_WEBHOOK_URL", "http://52.90.247.26:5678/webhook-test/pdf-to-html")
+    if "n8n_webhook_url" in st.session_state and st.session_state["n8n_webhook_url"]:
+        return st.session_state["n8n_webhook_url"].strip()
+    return os.getenv("N8N_WEBHOOK_URL", "http://34.238.174.186:5678/webhook-test/pdf-to-html")
+
+def _set_n8n_webhook_url(url: str) -> None:
+    st.session_state["n8n_webhook_url"] = (url or "").strip()
+
+def _post_with_retries(url: str, payload: dict, attempts: int = 3, timeout: int = 15) -> tuple[int, str]:
+    if requests is None:
+        return (0, "requests not available")
+    last_err = None
+    for i in range(attempts):
+        try:
+            headers = {"Content-Type": "application/json"}
+            resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            return (resp.status_code, resp.text)
+        except Exception as e:
+            last_err = str(e)
+            time.sleep(min(1 + i, 3))
+    return (0, last_err or "unknown error")
+
+def _trigger_webhook(url: str, payload: dict, attempts: int = 3, timeout: int = 15) -> tuple[int, str, str]:
+    status, text = _post_with_retries(url, payload, attempts=attempts, timeout=timeout)
+    # If test endpoint isn't registered, fall back to prod
+    if status == 404 and text and "not registered" in text.lower() and "/webhook-test/" in url:
+        prod_url = url.replace("/webhook-test/", "/webhook/")
+        status, text = _post_with_retries(prod_url, payload, attempts=attempts, timeout=timeout)
+        return status, text, prod_url
+    # If prod endpoint isn't registered (or 404), try test endpoint
+    if status == 404 and "/webhook/" in url and "/webhook-test/" not in url:
+        test_url = url.replace("/webhook/", "/webhook-test/")
+        status, text = _post_with_retries(test_url, payload, attempts=attempts, timeout=timeout)
+        return status, text, test_url
+    return status, text, url
+
+
+def _extract_version_from_response(text: str) -> str | None:
+    try:
+        import json as _json
+        data = _json.loads(text)
+        # Handle shapes: { codeVersion: "..." } or [ { "Version": "..." } ]
+        if isinstance(data, dict):
+            val = data.get("codeVersion") or data.get("version") or data.get("Version")
+            if isinstance(val, str):
+                return val
+        if isinstance(data, list) and data:
+            cand = data[0]
+            if isinstance(cand, dict):
+                val = cand.get("codeVersion") or cand.get("version") or cand.get("Version")
+                if isinstance(val, str):
+                    return val
+    except Exception:
+        return None
+    return None
 
 
 def ensure_authenticated() -> bool:
@@ -37,6 +90,21 @@ def main() -> None:
     url_start = params.get("start", ["0"])[0] == "1"
     case_id = (st.session_state.get("last_case_id") or params.get("case_id", [""])[0]).strip() or "0000"
  
+    # n8n settings (runtime configurable; no debug)
+    with st.expander("n8n settings", expanded=False):
+        current_url = _n8n_webhook_url()
+        new_url = st.text_input("Webhook URL", value=current_url)
+        if st.button("Save URL"):
+            _set_n8n_webhook_url(new_url)
+    # Show last webhook status if present (lightweight)
+    if st.session_state.get("last_webhook_status") is not None:
+        lw_status = st.session_state.get("last_webhook_status")
+        lw_text = st.session_state.get("last_webhook_text") or ""
+        if lw_status and 200 <= int(lw_status) < 300:
+            st.info(f"Webhook OK (status {lw_status})")
+        else:
+            st.warning(f"Webhook result: status {lw_status} | {lw_text[:180]}")
+
     # Initialize session state for progress tracking
     if "generation_progress" not in st.session_state:
         st.session_state["generation_progress"] = 0
@@ -69,12 +137,25 @@ def main() -> None:
         st.session_state["generation_start"] = datetime.now()
         st.session_state["generation_end"] = None
         st.session_state["processing_seconds"] = 0
-        # Trigger n8n webhook non-blocking best-effort
-        if requests is not None:
-            try:
-                requests.post(_n8n_webhook_url(), json={"case_id": case_id}, timeout=5)
-            except Exception:
-                pass
+        # Trigger n8n webhook non-blocking, no debug
+        try:
+            url = _n8n_webhook_url()
+            status, text, final_url = _trigger_webhook(url, {"case_id": case_id}, attempts=3, timeout=15)
+            st.session_state["last_webhook_status"] = status
+            st.session_state["last_webhook_text"] = (text or "")[:300]
+            # Capture code version from webhook response if present
+            ver = _extract_version_from_response(text)
+            if ver:
+                if ver.endswith('.json'):
+                    ver = ver[:-5]
+                st.session_state["code_version"] = ver
+                by_case = st.session_state.get("code_version_by_case", {})
+                by_case[str(case_id)] = ver
+                st.session_state["code_version_by_case"] = by_case
+            if final_url != url:
+                _set_n8n_webhook_url(final_url)
+        except Exception:
+            pass
         try:
             qp = st.query_params if hasattr(st, "query_params") else None
             if qp is not None:
@@ -97,13 +178,25 @@ def main() -> None:
             st.session_state["generation_start"] = datetime.now()
             st.session_state["generation_end"] = None
             st.session_state["processing_seconds"] = 0
-            # Trigger n8n webhook on manual start
+            # Trigger n8n webhook on manual start (no debug)
             cid = st.session_state.get("last_case_id") or case_id
-            if requests is not None:
-                try:
-                    requests.post(_n8n_webhook_url(), json={"case_id": cid}, timeout=5)
-                except Exception:
-                    pass
+            try:
+                url = _n8n_webhook_url()
+                status, text, final_url = _trigger_webhook(url, {"case_id": cid}, attempts=3, timeout=15)
+                st.session_state["last_webhook_status"] = status
+                st.session_state["last_webhook_text"] = (text or "")[:300]
+                ver = _extract_version_from_response(text)
+                if ver:
+                    if ver.endswith('.json'):
+                        ver = ver[:-5]
+                    st.session_state["code_version"] = ver
+                    by_case = st.session_state.get("code_version_by_case", {})
+                    by_case[str(cid)] = ver
+                    st.session_state["code_version_by_case"] = by_case
+                if final_url != url:
+                    _set_n8n_webhook_url(final_url)
+            except Exception:
+                pass
             try:
                 qp = st.query_params if hasattr(st, "query_params") else None
                 if qp is not None:

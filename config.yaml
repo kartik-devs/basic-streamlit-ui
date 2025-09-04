@@ -52,3 +52,7 @@ credentials:
       email: newuser@gmail.com
       name: Ner user
       password: $2b$12$1I6qbSqRKh.wV56NLEHSW.UQG5aMQHOd8OqTXNV8YyDNhnZ1mhkV6
+    Samarth01:
+      email: smarth@gmail.com
+      name: Samarth
+      password: $2b$12$dXiMTp9UP6/oFpfVw6eZbelHugr/Iiu00GqS6ddrPp0O42Md6MziO
