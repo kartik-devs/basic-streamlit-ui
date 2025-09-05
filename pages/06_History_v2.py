@@ -86,6 +86,17 @@ def main() -> None:
     st.set_page_config(page_title="History v2 (All Cases)", page_icon="🗂️", layout="wide")
     theme_provider()
     inject_base_styles()
+    # Page-scoped compact buttons for action cells
+    st.markdown(
+        """
+        <style>
+        .stButton > button { font-size: 0.85rem; padding: .25rem .55rem; }
+        @media (max-width: 1100px) { .stButton > button { font-size: 0.80rem; padding: .2rem .5rem; } }
+        @media (max-width: 900px) { .stButton > button { font-size: 0.78rem; padding: .18rem .45rem; } }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     ensure_authenticated()
 
     # Nav bar

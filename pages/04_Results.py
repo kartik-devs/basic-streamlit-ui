@@ -77,6 +77,17 @@ def main() -> None:
     st.set_page_config(page_title="Results Page", page_icon="🧪", layout="wide")
     theme_provider()
     inject_base_styles()
+    # Page-scoped compact buttons for action cells
+    st.markdown(
+        """
+        <style>
+        .stButton > button { font-size: 0.85rem; padding: .25rem .55rem; }
+        @media (max-width: 1100px) { .stButton > button { font-size: 0.80rem; padding: .2rem .5rem; } }
+        @media (max-width: 900px) { .stButton > button { font-size: 0.78rem; padding: .18rem .45rem; } }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     
     ensure_authenticated()
     # Resolve current user from session; persist for consistency
@@ -405,7 +416,13 @@ def main() -> None:
                 sel_ai = o
                 break
     ai_effective_pdf_url = None
-    if sel_ai and sel_ai.get("ai_url"):
+    # Prefer immediate AI URL from session (webhook response), else from outputs
+    ai_url_from_session = (st.session_state.get("ai_signed_url_by_case", {}) or {}).get(str(case_id))
+    if ai_url_from_session:
+        with col2:
+            _iframe(ai_url_from_session)
+        ai_effective_pdf_url = ai_url_from_session
+    elif sel_ai and sel_ai.get("ai_url"):
         with col2:
             _iframe(sel_ai["ai_url"])
         ai_effective_pdf_url = sel_ai["ai_url"]
@@ -413,7 +430,26 @@ def main() -> None:
         with col2:
             st.info("Not available")
 
-    doc_pdf = sel_ai.get("doctor_url") if sel_ai else None
+    # Attempt to find a matching Doctor-as-LLM file
+    doc_pdf = None
+    if sel_ai and sel_ai.get("doctor_url"):
+        doc_pdf = sel_ai.get("doctor_url")
+    else:
+        # Heuristic: match by prefix timestamp of AI label in outputs
+        try:
+            import re
+            ai_label = (sel_ai or {}).get("label") or (st.session_state.get("ai_label_by_case", {}) or {}).get(str(case_id))
+            if ai_label:
+                m = re.match(r"^(\d{12})", ai_label)
+                if m:
+                    prefix = m.group(1)
+                    for o in outputs:
+                        doc_label = o.get("doctor_label") or o.get("label") or ""
+                        if isinstance(doc_label, str) and doc_label.startswith(prefix) and o.get("doctor_url"):
+                            doc_pdf = o.get("doctor_url")
+                            break
+        except Exception:
+            pass
     doc_effective_pdf_url = None
     if doc_pdf:
         with col3:

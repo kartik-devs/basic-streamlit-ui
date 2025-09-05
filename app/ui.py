@@ -192,7 +192,7 @@ def _perform_logout() -> None:
 
 def top_nav(active: str = "Dashboard") -> None:
     with st.container():
-        left, center, right = st.columns([4, 1, 3])
+        left, center, right = st.columns([3, 0.2, 5])
         with left:
             st.markdown(
                 """

@@ -15,16 +15,24 @@ from streamlit_extras.switch_page_button import switch_page
 # Helper: read webhook URL from session/env or use default test URL
 def _n8n_webhook_url() -> str:
     if "n8n_webhook_url" in st.session_state and st.session_state["n8n_webhook_url"]:
-        return st.session_state["n8n_webhook_url"].strip()
-    return os.getenv("N8N_WEBHOOK_URL", "http://34.238.174.186:5678/webhook-test/pdf-to-html")
+        # Normalize any stale host to the new IP automatically
+        val = st.session_state["n8n_webhook_url"].strip()
+        if "34.238.174.186" in val:
+            val = val.replace("34.238.174.186", "35.153.104.117")
+            st.session_state["n8n_webhook_url"] = val
+        return val
+    return os.getenv("N8N_WEBHOOK_URL", "http://35.153.104.117:5678/webhook-test/af770afa-01a0-4cda-b95f-4cc94a920691")
 
 def _set_n8n_webhook_url(url: str) -> None:
     st.session_state["n8n_webhook_url"] = (url or "").strip()
 
-def _post_with_retries(url: str, payload: dict, attempts: int = 3, timeout: int = 15) -> tuple[int, str]:
+def _post_with_retries(url: str, payload: dict, attempts: int = 1, timeout: int = 30) -> tuple[int, str]:
     if requests is None:
         return (0, "requests not available")
     last_err = None
+    # Normalize any stale host to the new IP automatically
+    if "34.238.174.186" in url:
+        url = url.replace("34.238.174.186", "35.153.104.117")
     for i in range(attempts):
         try:
             headers = {"Content-Type": "application/json"}
@@ -35,8 +43,11 @@ def _post_with_retries(url: str, payload: dict, attempts: int = 3, timeout: int 
             time.sleep(min(1 + i, 3))
     return (0, last_err or "unknown error")
 
-def _trigger_webhook(url: str, payload: dict, attempts: int = 3, timeout: int = 15) -> tuple[int, str, str]:
+def _trigger_webhook(url: str, payload: dict, attempts: int = 1, timeout: int = 30) -> tuple[int, str, str]:
     status, text = _post_with_retries(url, payload, attempts=attempts, timeout=timeout)
+    # Treat read timeouts as accepted (many n8n webhooks process asynchronously)
+    if status == 0 and isinstance(text, str) and "timed out" in text.lower():
+        return 202, text, url
     # If test endpoint isn't registered, fall back to prod
     if status == 404 and text and "not registered" in text.lower() and "/webhook-test/" in url:
         prod_url = url.replace("/webhook-test/", "/webhook/")
@@ -70,6 +81,23 @@ def _extract_version_from_response(text: str) -> str | None:
     return None
 
 
+def _extract_ai_signed_url(text: str) -> tuple[str | None, str | None]:
+    """Return (signed_url, key_basename) if present in webhook response array."""
+    try:
+        import json as _json
+        data = _json.loads(text)
+        if isinstance(data, list) and data:
+            d0 = data[0]
+            if isinstance(d0, dict):
+                url = d0.get("signed_url") or d0.get("url")
+                key = d0.get("key") or d0.get("s3_path") or ""
+                base = (key.split("/")[-1] if isinstance(key, str) and key else None)
+                return (url, base)
+    except Exception:
+        return (None, None)
+    return (None, None)
+
+
 def ensure_authenticated() -> bool:
     if st.session_state.get("authentication_status") is True:
         return True
@@ -89,6 +117,15 @@ def main() -> None:
     params = st.query_params if hasattr(st, "query_params") else {}
     url_start = params.get("start", ["0"])[0] == "1"
     case_id = (st.session_state.get("last_case_id") or params.get("case_id", [""])[0]).strip() or "0000"
+
+    # Ensure single-fire per case: keep a per-case guard
+    if "__webhook_fired__" not in st.session_state:
+        st.session_state["__webhook_fired__"] = {}
+    fired_map = st.session_state["__webhook_fired__"]
+    # Throttle guard: do not fire more often than once per 60s per case
+    if "__webhook_last_fired_ts__" not in st.session_state:
+        st.session_state["__webhook_last_fired_ts__"] = {}
+    last_ts_map = st.session_state["__webhook_last_fired_ts__"]
  
     # n8n settings (runtime configurable; no debug)
     with st.expander("n8n settings", expanded=False):
@@ -128,7 +165,11 @@ def main() -> None:
     last_completed_case = st.session_state.get("last_completed_case_id")
     is_new_case = case_id != last_completed_case
     
-    if triggered:
+    # Check throttle window
+    now_ts = time.time()
+    last_ts = last_ts_map.get(case_id) or 0
+    within_window = (now_ts - last_ts) < 60
+    if triggered and (not fired_map.get(case_id)) and (not within_window):
         st.session_state["generation_in_progress"] = True
         # Reset progress when starting fresh (new case or first time)
         st.session_state["generation_progress"] = 0
@@ -140,9 +181,14 @@ def main() -> None:
         # Trigger n8n webhook non-blocking, no debug
         try:
             url = _n8n_webhook_url()
-            status, text, final_url = _trigger_webhook(url, {"case_id": case_id}, attempts=3, timeout=15)
+            status, text, final_url = _trigger_webhook(url, {"case_id": case_id}, attempts=1, timeout=10)
             st.session_state["last_webhook_status"] = status
             st.session_state["last_webhook_text"] = (text or "")[:300]
+            # Mark as fired for this case to avoid duplicate triggers
+            fired_map[case_id] = True
+            st.session_state["__webhook_fired__"] = fired_map
+            last_ts_map[case_id] = now_ts
+            st.session_state["__webhook_last_fired_ts__"] = last_ts_map
             # Capture code version from webhook response if present
             ver = _extract_version_from_response(text)
             if ver:
@@ -152,6 +198,15 @@ def main() -> None:
                 by_case = st.session_state.get("code_version_by_case", {})
                 by_case[str(case_id)] = ver
                 st.session_state["code_version_by_case"] = by_case
+            # Capture AI signed URL for immediate Results viewing
+            ai_url, ai_label = _extract_ai_signed_url(text)
+            if ai_url:
+                by_case_ai = st.session_state.get("ai_signed_url_by_case", {})
+                by_case_ai[str(case_id)] = ai_url
+                st.session_state["ai_signed_url_by_case"] = by_case_ai
+                by_case_label = st.session_state.get("ai_label_by_case", {})
+                by_case_label[str(case_id)] = (ai_label or "AI Report")
+                st.session_state["ai_label_by_case"] = by_case_label
             if final_url != url:
                 _set_n8n_webhook_url(final_url)
         except Exception:
@@ -169,7 +224,7 @@ def main() -> None:
         st.markdown("<h3>Generating Report</h3>", unsafe_allow_html=True)
         new_id = st.text_input("Enter Case ID (4 digits)", value=case_id)
         start_click = st.button("Start", type="primary")
-        if start_click:
+        if start_click and not fired_map.get(new_id or case_id):
             st.session_state["last_case_id"] = (new_id or case_id).strip()
             st.session_state["generation_in_progress"] = True
             st.session_state["generation_progress"] = 0
@@ -182,9 +237,13 @@ def main() -> None:
             cid = st.session_state.get("last_case_id") or case_id
             try:
                 url = _n8n_webhook_url()
-                status, text, final_url = _trigger_webhook(url, {"case_id": cid}, attempts=3, timeout=15)
+                status, text, final_url = _trigger_webhook(url, {"case_id": cid}, attempts=1, timeout=10)
                 st.session_state["last_webhook_status"] = status
                 st.session_state["last_webhook_text"] = (text or "")[:300]
+                fired_map[cid] = True
+                st.session_state["__webhook_fired__"] = fired_map
+                last_ts_map[cid] = time.time()
+                st.session_state["__webhook_last_fired_ts__"] = last_ts_map
                 ver = _extract_version_from_response(text)
                 if ver:
                     if ver.endswith('.json'):
@@ -195,6 +254,15 @@ def main() -> None:
                     st.session_state["code_version_by_case"] = by_case
                 if final_url != url:
                     _set_n8n_webhook_url(final_url)
+                # Capture AI signed URL for immediate Results viewing
+                ai_url, ai_label = _extract_ai_signed_url(text)
+                if ai_url:
+                    by_case_ai = st.session_state.get("ai_signed_url_by_case", {})
+                    by_case_ai[str(cid)] = ai_url
+                    st.session_state["ai_signed_url_by_case"] = by_case_ai
+                    by_case_label = st.session_state.get("ai_label_by_case", {})
+                    by_case_label[str(cid)] = (ai_label or "AI Report")
+                    st.session_state["ai_label_by_case"] = by_case_label
             except Exception:
                 pass
             try:
