@@ -45,39 +45,43 @@ def _extract_patient_from_strings(case_id: str, *, gt_key: str | None = None, ai
     return None
 
 
-@st.cache_data(show_spinner=False, ttl=300)  # Cache for 5 minutes
+@st.cache_data(show_spinner=False, ttl=600)  # Cache for 10 minutes
 def _case_to_patient_map(backend: str, cases: list[str]) -> dict[str, str]:
     """Build a mapping of case_id -> patient name (only from Ground Truth)."""
     try:
         import requests
         import urllib.parse
+        from concurrent.futures import ThreadPoolExecutor, as_completed
     except Exception:
         return {}
-    out: dict[str, str] = {}
-    for cid in cases:
-        name: str | None = None
-        
-        # Only extract from Ground Truth from assets endpoint
+    
+    def _fetch_patient_for_case(cid: str) -> tuple[str, str | None]:
+        """Fetch patient name for a single case."""
         try:
-            r2 = requests.get(f"{backend}/s3/{cid}/latest/assets", timeout=6)
+            r2 = requests.get(f"{backend}/s3/{cid}/latest/assets", timeout=4)
             if r2.ok:
                 assets = r2.json() or {}
-                # Extract S3 key from the presigned URL
                 gt_url = assets.get("ground_truth")
                 if gt_url:
-                    # Parse URL to get the key: https://bucket.s3.amazonaws.com/key?params
                     parsed = urllib.parse.urlparse(gt_url)
-                    gt_key = parsed.path.lstrip('/')  # Remove leading slash
-                    # Remove bucket prefix if present (bucket name is in the URL)
-                    bucket_name = parsed.netloc.split('.')[0]  # Extract bucket from hostname
+                    gt_key = parsed.path.lstrip('/')
+                    bucket_name = parsed.netloc.split('.')[0]
                     if gt_key.startswith(f'{bucket_name}/'):
-                        gt_key = gt_key[len(bucket_name)+1:]  # Remove 'bucket/'
+                        gt_key = gt_key[len(bucket_name)+1:]
                     name = _extract_patient_from_strings(cid, gt_key=gt_key)
+                    return cid, name
         except Exception:
             pass
-        
-        if name:
-            out[cid] = name
+        return cid, None
+    
+    out: dict[str, str] = {}
+    # Use ThreadPoolExecutor for parallel requests
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_case = {executor.submit(_fetch_patient_for_case, cid): cid for cid in cases}
+        for future in as_completed(future_to_case):
+            cid, name = future.result()
+            if name:
+                out[cid] = name
     return out
 
 
@@ -95,22 +99,20 @@ def _get_all_cases(backend: str) -> list[str]:
     return []
 
 
-@st.cache_data(show_spinner=False, ttl=120)  # Cache for 2 minutes
+@st.cache_data(show_spinner=False, ttl=300)  # Cache for 5 minutes
 def _get_case_outputs(backend: str, case_id: str) -> list[dict]:
     """Fetch outputs for a specific case with caching."""
     try:
         import requests
-        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=10)
+        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=8)
         if r.ok:
             data = r.json() or {}
             items = data.get("items", []) or []
-            print(f"DEBUG: Found {len(items)} outputs for case {case_id}")
             return items
         else:
-            print(f"DEBUG: Backend error for case {case_id}: {r.status_code} - {r.text}")
-    except Exception as e:
-        print(f"DEBUG: Exception fetching outputs for case {case_id}: {e}")
-    return []
+            return []
+    except Exception:
+        return []
 
 
 @st.cache_data(show_spinner=False, ttl=120)  # Cache for 2 minutes
@@ -197,19 +199,26 @@ def main() -> None:
         st.info("No cases found in S3 bucket.")
         return
 
-    # Build patient map (best-effort, cached)
+    # Build patient map (best-effort, cached) - only for first 20 cases for speed
     with st.spinner("Loading patient names…"):
-        cid_to_patient = _case_to_patient_map(backend, cases)
+        cases_to_load = cases[:20]  # Limit to first 20 cases for speed
+        cid_to_patient = _case_to_patient_map(backend, cases_to_load)
 
-    # Build display labels and predictive select
+    # Build display labels and predictive select - only for visible cases
     def _label_for(cid: str) -> str:
         p = cid_to_patient.get(cid)
         return f"{cid} — {p}" if p else cid
 
-    display_labels = [_label_for(cid) for cid in cases]
-    label_to_cid = {lbl: cid for lbl, cid in zip(display_labels, cases)}
+    # Only build labels for first 50 cases for speed
+    visible_cases = cases[:50]
+    display_labels = [_label_for(cid) for cid in visible_cases]
+    label_to_cid = {lbl: cid for lbl, cid in zip(display_labels, visible_cases)}
 
     st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
+    
+    # Quick search input for direct case ID entry
+    search_input = st.text_input("Quick search case ID (optional)", placeholder="Enter case ID to search...", key="case_search")
+    
     # Single list that shows all cases on click; built-in typeahead filters as you type
     sel_label = st.selectbox(
         "Search or select case (type case ID or patient name)",
@@ -219,11 +228,19 @@ def main() -> None:
         key="history_case_select_unified",
     )
 
-    if not sel_label:
+    # Handle search input or selectbox selection
+    if search_input and search_input.strip():
+        # If user typed a case ID, use it directly
+        case_id = search_input.strip()
+        if case_id not in cases:
+            st.warning(f"Case {case_id} not found in S3 bucket.")
+            case_id = cases[0]
+        sel_label = case_id
+    elif not sel_label:
         st.info("Select a case to continue.")
         return
-
-    case_id = label_to_cid.get(sel_label) or (sel_label.split("—", 1)[0].strip() if "—" in sel_label else sel_label.strip())
+    else:
+        case_id = label_to_cid.get(sel_label) or (sel_label.split("—", 1)[0].strip() if "—" in sel_label else sel_label.strip())
     patient = sel_label.split("—", 1)[1].strip() if "—" in sel_label else cid_to_patient.get(case_id)
 
     # Patient badge + compact header
@@ -241,13 +258,15 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    # Fetch outputs (AI+Doctor) list under Output/ (cached)
-    with st.spinner("Loading case data…"):
-        # Clear cache to ensure fresh data
-        _get_case_outputs.clear()
-        outputs = _get_case_outputs(backend, case_id)
-        # Fetch ground truth assets (cached)
-        assets = _get_case_assets(backend, case_id)
+    # Fetch outputs (AI+Doctor) list under Output/ (cached) - only when case is selected
+    if case_id:
+        with st.spinner("Loading case data…"):
+            outputs = _get_case_outputs(backend, case_id)
+            # Fetch ground truth assets (cached)
+            assets = _get_case_assets(backend, case_id)
+    else:
+        outputs = []
+        assets = {}
     
     gt_pdf = assets.get("ground_truth_pdf")
     gt_generic = assets.get("ground_truth")
@@ -370,16 +389,13 @@ def main() -> None:
                 gt_effective_pdf_url = gt_generic
 
         rows: list[tuple[str, str, str, str | None, str | None, str | None]] = []
-        print(f"DEBUG: Processing {len(outputs)} outputs for case {case_id}")
         if outputs:
             for o in outputs:
                 doc_version = extract_version(o.get("label"))
                 # Use timestamp from S3 metadata instead of fake timestamp
                 report_timestamp = o.get("timestamp") or generated_ts
                 rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url")))
-                print(f"DEBUG: Added row with timestamp: {report_timestamp}, AI URL: {o.get('ai_url', 'None')[:50]}...")
         else:
-            print(f"DEBUG: No outputs found, adding empty row")
             rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None))
 
         # Render table HTML

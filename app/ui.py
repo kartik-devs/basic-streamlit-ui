@@ -253,14 +253,14 @@ def top_nav(active: str = "Dashboard") -> None:
                         st.rerun()
             # History nav
             with rcols[3]:
-                if st.button("📚 History", key="topnav_history", use_container_width=True, help="Open History v2"):
+                if st.button("📚 History", key="topnav_history", use_container_width=True, help="Open History"):
                     try:
                         from streamlit_extras.switch_page_button import switch_page
                         for name in [
-                            "06_History_v2",
-                            "History v2",
-                            "06 History v2",
-                            "History_v2",
+                            "05_History",
+                            "History",
+                            "05 History",
+                            "History Page",
                         ]:
                             try:
                                 switch_page(name)
@@ -268,7 +268,7 @@ def top_nav(active: str = "Dashboard") -> None:
                             except Exception:
                                 continue
                     except Exception:
-                        st.session_state["__nav_msg__"] = "Use the sidebar to open History v2."
+                        st.session_state["__nav_msg__"] = "Use the sidebar to open History."
                         st.rerun()
             # Logout
             with rcols[4]:
