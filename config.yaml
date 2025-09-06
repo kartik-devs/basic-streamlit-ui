@@ -56,3 +56,11 @@ credentials:
       email: smarth@gmail.com
       name: Samarth
       password: $2b$12$dXiMTp9UP6/oFpfVw6eZbelHugr/Iiu00GqS6ddrPp0O42Md6MziO
+    Vijay:
+      email: vijay@gmail.com
+      name: Vijay
+      password: $2b$12$JTO5bMSzds8QRc1et128SeBh.pKrwfH98YWRZttOqOi1OoLFU2s2i
+    Samarth2:
+      email: Samarth@gmail.com
+      name: Samarth
+      password: $2b$12$lCDtKmQqcgoeXP7bS2ZcSu/zOZ1mKJgKV/9fCK7HJP/VvCCg5ofKC

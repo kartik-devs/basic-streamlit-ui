@@ -21,7 +21,7 @@ def _n8n_webhook_url() -> str:
             val = val.replace("34.238.174.186", "35.153.104.117")
             st.session_state["n8n_webhook_url"] = val
         return val
-    return os.getenv("N8N_WEBHOOK_URL", "http://35.153.104.117:5678/webhook-test/af770afa-01a0-4cda-b95f-4cc94a920691")
+    return os.getenv("N8N_WEBHOOK_URL", "http://3.81.112.43:5678/webhook/af770afa-01a0-4cda-b95f-4cc94a920691")
 
 def _set_n8n_webhook_url(url: str) -> None:
     st.session_state["n8n_webhook_url"] = (url or "").strip()
@@ -363,7 +363,7 @@ def main() -> None:
                 st.session_state["generation_step"] = 4
                 line(4, "done")
             
-            time.sleep(0.03)  # Faster progress for demo
+            time.sleep(18)  # 30 minutes total: 100 steps * 18 seconds = 1800 seconds = 30 minutes
         
         # Mark as complete
         st.session_state["generation_complete"] = True

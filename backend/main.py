@@ -90,8 +90,10 @@ def s3_list_versions(case_id: str) -> list[str]:
             if len(parts) >= 3:
                 versions.add(parts[2])
     # Observed layout: {case_id}/Output/{YYYYMMDDHHMM}-{case}-{patient}-CompleteAIGenerated.pdf
+    # Also handle new format: {YYYYMMDDHHMM}-{case_id}-CompleteAIGeneratedReport.pdf
     import re
     ai_re = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-.+?-CompleteAIGenerated\\.pdf$", re.IGNORECASE)
+    ai_re_new = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-CompleteAIGeneratedReport\\.(pdf|docx)$", re.IGNORECASE)
     for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=f"{case_id}/Output/"):
         for obj in page.get("Contents", []):
             key = obj.get("Key", "")
@@ -99,6 +101,11 @@ def s3_list_versions(case_id: str) -> list[str]:
                 # version is timestamp-case-patient
                 name = key.split("/")[-1]
                 version = name.replace("-CompleteAIGenerated.pdf", "")
+                versions.add(version)
+            elif ai_re_new.match(key):
+                # version is timestamp-case_id
+                name = key.split("/")[-1]
+                version = name.replace("-CompleteAIGeneratedReport.pdf", "").replace("-CompleteAIGeneratedReport.docx", "")
                 versions.add(version)
     return sorted(list(versions), reverse=True)
 
@@ -289,45 +296,64 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
     client = s3_client()
     prefix = f"{case_id}/Output/"
     items: list[dict[str, str]] = []
-
+    
+    # First, collect all files to avoid multiple API calls
+    all_files = {}
+    file_metadata = {}
     paginator = client.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
         for obj in page.get("Contents", []):
             key = obj.get("Key", "")
-            if not key or not key.lower().endswith(".pdf"):
+            if not key or not key.lower().endswith((".pdf", ".docx")):
                 continue
             name = key.split("/")[-1]
-            lower = name.lower()
-            # Consider files that look like AI generated reports
-            if "completeaigenerated" in lower or "ai_generated" in lower:
-                # Attempt to derive a matching doctor report
-                base = name
-                for token in ("-CompleteAIGenerated.pdf", "_CompleteAIGenerated.pdf", "-AI_Generated.pdf", "_AI_Generated.pdf"):
-                    if name.endswith(token):
-                        base = name[: -len(token)]
-                        break
+            all_files[name] = key
+            file_metadata[name] = {
+                "last_modified": obj.get("LastModified"),
+                "size": obj.get("Size", 0)
+            }
 
-                # Candidate doctor names
-                doctor_candidates = [
-                    f"{prefix}{base}_LLM_As_Doctor.pdf",
-                    f"{prefix}{base}-LLM_As_Doctor.pdf",
-                ]
-                doctor_key = None
-                for dk in doctor_candidates:
-                    try:
-                        client.head_object(Bucket=S3_BUCKET, Key=dk)
-                        doctor_key = dk
-                        break
-                    except Exception:
-                        continue
+    # Now process AI generated files and match with doctor files
+    for name, key in all_files.items():
+        lower = name.lower()
+        # Consider files that look like AI generated reports
+        if "completeaigenerated" in lower or "ai_generated" in lower:
+            # Attempt to derive a matching doctor report
+            base = name
+            for token in ("-CompleteAIGenerated.pdf", "_CompleteAIGenerated.pdf", "-CompleteAIGeneratedReport.pdf", "_CompleteAIGeneratedReport.pdf", "-AI_Generated.pdf", "_AI_Generated.pdf", "-CompleteAIGenerated.docx", "_CompleteAIGenerated.docx", "-CompleteAIGeneratedReport.docx", "_CompleteAIGeneratedReport.docx"):
+                if name.endswith(token):
+                    base = name[: -len(token)]
+                    break
 
-                items.append({
-                    "label": name,
-                    "ai_url": s3_presign(key),
-                    "doctor_url": s3_presign(doctor_key) if doctor_key else "",
-                    "ai_key": key,
-                    "doctor_key": doctor_key or "",
-                })
+            # Candidate doctor names (try both PDF and DOCX)
+            doctor_candidates = [
+                f"{base}_LLM_As_Doctor.pdf",
+                f"{base}-LLM_As_Doctor.pdf",
+                f"{base}_LLM_As_Doctor.docx",
+                f"{base}-LLM_As_Doctor.docx",
+            ]
+            doctor_key = None
+            for dk in doctor_candidates:
+                if dk in all_files:
+                    doctor_key = all_files[dk]
+                    break
+
+            # Get timestamp from S3 metadata
+            metadata = file_metadata.get(name, {})
+            last_modified = metadata.get("last_modified")
+            timestamp = None
+            if last_modified:
+                # Convert to UTC string format
+                timestamp = last_modified.strftime("%Y-%m-%d %H:%M UTC")
+            
+            items.append({
+                "label": name,
+                "ai_url": s3_presign(key),
+                "doctor_url": s3_presign(doctor_key) if doctor_key else "",
+                "ai_key": key,
+                "doctor_key": doctor_key or "",
+                "timestamp": timestamp,
+            })
 
     # Sort newest first by LastModified if available; fallback to name
     def _key_sort(it: dict[str, str]) -> str:
@@ -535,24 +561,40 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
         gt2 = newest_under(p, (".pdf", ".docx")) or gt2
     import re
     ai_re = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-.+?-CompleteAIGenerated\\.pdf$", re.IGNORECASE)
+    ai_re_new = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-CompleteAIGeneratedReport\\.(pdf|docx)$", re.IGNORECASE)
     doc_re = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-.+?_LLM_As_Doctor\\.pdf$", re.IGNORECASE)
+    doc_re_new = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-LLM_As_Doctor\\.(pdf|docx)$", re.IGNORECASE)
 
     # Resolve AI/Doctor by requested report_id if it looks like observed version
     gen2 = None
     doc2 = None
     if report_id and report_id != "latest":
-        cand_ai = f"{base2}Output/{report_id}-CompleteAIGenerated.pdf"
-        cand_doc = f"{base2}Output/{report_id}_LLM_As_Doctor.pdf"
-        try:
-            client.head_object(Bucket=S3_BUCKET, Key=cand_ai)
-            gen2 = cand_ai
-        except Exception:
-            gen2 = None
-        try:
-            client.head_object(Bucket=S3_BUCKET, Key=cand_doc)
-            doc2 = cand_doc
-        except Exception:
-            doc2 = None
+        # Try old format first
+        cand_ai_old = f"{base2}Output/{report_id}-CompleteAIGenerated.pdf"
+        cand_doc_old = f"{base2}Output/{report_id}_LLM_As_Doctor.pdf"
+        # Try new format
+        cand_ai_new_pdf = f"{base2}Output/{report_id}-CompleteAIGeneratedReport.pdf"
+        cand_ai_new_docx = f"{base2}Output/{report_id}-CompleteAIGeneratedReport.docx"
+        cand_doc_new_pdf = f"{base2}Output/{report_id}-LLM_As_Doctor.pdf"
+        cand_doc_new_docx = f"{base2}Output/{report_id}-LLM_As_Doctor.docx"
+        
+        # Try to find AI report
+        for cand in [cand_ai_old, cand_ai_new_pdf, cand_ai_new_docx]:
+            try:
+                client.head_object(Bucket=S3_BUCKET, Key=cand)
+                gen2 = cand
+                break
+            except Exception:
+                continue
+        
+        # Try to find Doctor report
+        for cand in [cand_doc_old, cand_doc_new_pdf, cand_doc_new_docx]:
+            try:
+                client.head_object(Bucket=S3_BUCKET, Key=cand)
+                doc2 = cand
+                break
+            except Exception:
+                continue
     else:
         # latest: prefer manifest index.json if present
         used_manifest = False
@@ -588,9 +630,9 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
             for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=f"{base2}Output/"):
                 for obj in page.get("Contents", []):
                     key = obj.get("Key", "")
-                    if not key or not key.lower().endswith(".pdf"):
+                    if not key or not key.lower().endswith((".pdf", ".docx")):
                         continue
-                    if not ai_re.match(key):
+                    if not (ai_re.match(key) or ai_re_new.match(key)):
                         continue
                     lm = obj.get("LastModified")
                     if newest_ai_time is None or (lm and lm > newest_ai_time):
@@ -598,15 +640,26 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
                         newest_ai_key = key
             if newest_ai_key:
                 gen2 = newest_ai_key
-                # Build doctor key from the same prefix
+                # Build doctor key from the same prefix - try both old and new formats
                 name = newest_ai_key.split("/")[-1]
-                version = name.replace("-CompleteAIGenerated.pdf", "")
-                cand_doc = f"{base2}Output/{version}_LLM_As_Doctor.pdf"
-                try:
-                    client.head_object(Bucket=S3_BUCKET, Key=cand_doc)
-                    doc2 = cand_doc
-                except Exception:
-                    doc2 = None
+                if ai_re.match(newest_ai_key):
+                    # Old format
+                    version = name.replace("-CompleteAIGenerated.pdf", "")
+                    cand_doc = f"{base2}Output/{version}_LLM_As_Doctor.pdf"
+                else:
+                    # New format
+                    version = name.replace("-CompleteAIGeneratedReport.pdf", "").replace("-CompleteAIGeneratedReport.docx", "")
+                    cand_doc = f"{base2}Output/{version}-LLM_As_Doctor.pdf"
+                
+                # Try both PDF and DOCX for doctor report
+                for ext in [".pdf", ".docx"]:
+                    try_cand = cand_doc.replace(".pdf", ext)
+                    try:
+                        client.head_object(Bucket=S3_BUCKET, Key=try_cand)
+                        doc2 = try_cand
+                        break
+                    except Exception:
+                        continue
 
     # Prefer standard if present, else observed
     if gt1:

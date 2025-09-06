@@ -1,46 +1,10 @@
 import streamlit as st
-from app.ui import inject_base_styles, theme_provider
 import os
 import streamlit.components.v1 as components
 from urllib.parse import quote
+from app.ui import inject_base_styles, theme_provider, top_nav
+import time
 
-
-def _get_qp(name: str) -> str | None:
-    try:
-        if hasattr(st, "query_params"):
-            val = st.query_params.get(name)
-            return val[0] if isinstance(val, list) else val
-        get_qp = getattr(st, "experimental_get_query_params", None)
-        if callable(get_qp):
-            vals = get_qp().get(name)
-            return vals[0] if isinstance(vals, list) and vals else None
-    except Exception:
-        return None
-    return None
-
-
-def _backend() -> str:
-    qp = _get_qp("api")
-    return (qp or os.getenv("BACKEND_BASE") or "http://localhost:8000").rstrip("/")
-    
-
-def _extract_patient(case_id: str, gt_key: str | None = None, ai_label: str | None = None, doc_label: str | None = None) -> str | None:
-    try:
-        import re
-        if gt_key:
-            m = re.search(r"_LCP_([^_/]+?)_", gt_key)
-            if m:
-                return m.group(1).replace("_", " ")
-        label = ai_label or doc_label
-        if label and case_id:
-            m = re.search(rf"-?{case_id}-([^-_]+)", label)
-            if m:
-                raw = m.group(1)
-                parts = re.findall(r"[A-Z][a-z]*", raw)
-                return " ".join(parts) if parts else raw
-    except Exception:
-        return None
-    return None
 
 def ensure_authenticated() -> bool:
     if st.session_state.get("authentication_status") is True:
@@ -49,14 +13,172 @@ def ensure_authenticated() -> bool:
     st.stop()
 
 
+def _get_backend_base() -> str:
+    params = st.query_params if hasattr(st, "query_params") else {}
+    return (
+        (params.get("api", [None])[0] if isinstance(params.get("api"), list) else params.get("api"))
+        or os.getenv("BACKEND_BASE")
+        or "http://localhost:8000"
+    ).rstrip("/")
+
+
+def _extract_patient_from_strings(case_id: str, *, gt_key: str | None = None, ai_label: str | None = None, doc_label: str | None = None) -> str | None:
+    try:
+        import re
+        import urllib.parse
+        # Only extract from Ground Truth: 3337_LCP_Fatima%20Dodson_Flatworld_Summary_Document.pdf
+        if gt_key:
+            # Decode URL encoding first
+            decoded_key = urllib.parse.unquote(gt_key)
+            
+            # Try pattern 1: case_id_LCP_FirstName LastName_rest_of_filename
+            m = re.search(rf"{case_id}_LCP_([^_]+(?:_[^_]+)*?)(?:_|\.)", decoded_key)
+            if m:
+                return m.group(1).replace("_", " ")
+            
+            # Try pattern 2: case_id_FirstName LastName_rest_of_filename (without LCP)
+            m = re.search(rf"{case_id}_([^_]+(?:\s+[^_]+)*?)(?:_|\.)", decoded_key)
+            if m:
+                return m.group(1).strip()
+    except Exception:
+        return None
+    return None
+
+
+@st.cache_data(show_spinner=False, ttl=300)  # Cache for 5 minutes
+def _case_to_patient_map(backend: str, cases: list[str]) -> dict[str, str]:
+    """Build a mapping of case_id -> patient name (only from Ground Truth)."""
+    try:
+        import requests
+        import urllib.parse
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    for cid in cases:
+        name: str | None = None
+        
+        # Only extract from Ground Truth from assets endpoint
+        try:
+            r2 = requests.get(f"{backend}/s3/{cid}/latest/assets", timeout=6)
+            if r2.ok:
+                assets = r2.json() or {}
+                # Extract S3 key from the presigned URL
+                gt_url = assets.get("ground_truth")
+                if gt_url:
+                    # Parse URL to get the key: https://bucket.s3.amazonaws.com/key?params
+                    parsed = urllib.parse.urlparse(gt_url)
+                    gt_key = parsed.path.lstrip('/')  # Remove leading slash
+                    # Remove bucket prefix if present (bucket name is in the URL)
+                    bucket_name = parsed.netloc.split('.')[0]  # Extract bucket from hostname
+                    if gt_key.startswith(f'{bucket_name}/'):
+                        gt_key = gt_key[len(bucket_name)+1:]  # Remove 'bucket/'
+                    name = _extract_patient_from_strings(cid, gt_key=gt_key)
+        except Exception:
+            pass
+        
+        if name:
+            out[cid] = name
+    return out
+
+
+@st.cache_data(show_spinner=False, ttl=180)  # Cache for 3 minutes
+def _get_all_cases(backend: str) -> list[str]:
+    """Fetch all case IDs from S3 with caching."""
+    try:
+        import requests
+        r = requests.get(f"{backend}/s3/cases", timeout=10)
+        if r.ok:
+            data = r.json() or {}
+            return data.get("cases", []) or []
+    except Exception:
+        pass
+    return []
+
+
+@st.cache_data(show_spinner=False, ttl=120)  # Cache for 2 minutes
+def _get_case_outputs(backend: str, case_id: str) -> list[dict]:
+    """Fetch outputs for a specific case with caching."""
+    try:
+        import requests
+        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=10)
+        if r.ok:
+            data = r.json() or {}
+            items = data.get("items", []) or []
+            print(f"DEBUG: Found {len(items)} outputs for case {case_id}")
+            return items
+        else:
+            print(f"DEBUG: Backend error for case {case_id}: {r.status_code} - {r.text}")
+    except Exception as e:
+        print(f"DEBUG: Exception fetching outputs for case {case_id}: {e}")
+    return []
+
+
+@st.cache_data(show_spinner=False, ttl=120)  # Cache for 2 minutes
+def _get_case_assets(backend: str, case_id: str) -> dict:
+    """Fetch assets for a specific case with caching."""
+    try:
+        import requests
+        r = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
+        if r.ok:
+            return r.json() or {}
+    except Exception:
+        pass
+    return {}
+
+
+@st.cache_data(show_spinner=False, ttl=60)  # Cache for 1 minute
+def _get_case_comments(backend: str, case_id: str, ai_label: str = None) -> list[dict]:
+    """Fetch comments for a specific case with caching."""
+    try:
+        import requests
+        params = {"ai_label": ai_label} if ai_label else None
+        r = requests.get(f"{backend}/comments/{case_id}", params=params, timeout=8)
+        if r.ok:
+            return r.json() or []
+    except Exception:
+        pass
+    return []
+
+
+def _initials(name: str) -> str:
+    parts = [p for p in (name or "").split() if p]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
 def main() -> None:
-    st.set_page_config(page_title="History", page_icon="🕘", layout="wide")
+    st.set_page_config(page_title="History (All Cases)", page_icon="🗂️", layout="wide")
     theme_provider()
     inject_base_styles()
-    
+    # Page-scoped compact buttons and responsive table
+    st.markdown(
+        """
+        <style>
+        .stButton > button { font-size: 0.85rem; padding: .25rem .55rem; }
+        @media (max-width: 1100px) { .stButton > button { font-size: 0.80rem; padding: .2rem .5rem; } }
+        @media (max-width: 900px) { .stButton > button { font-size: 0.78rem; padding: .18rem .45rem; } }
+        
+        /* Responsive table adjustments */
+        @media (max-width: 1200px) {
+            .history-table { grid-template-columns: 180px 120px 110px 1fr 1fr 1fr !important; }
+        }
+        @media (max-width: 1000px) {
+            .history-table { grid-template-columns: 160px 100px 90px 1fr 1fr 1fr !important; }
+        }
+        @media (max-width: 800px) {
+            .history-table { grid-template-columns: 140px 80px 80px 1fr 1fr 1fr !important; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     ensure_authenticated()
 
-    backend = _backend()
+    # Nav bar
+    top_nav(active="History")
 
     try:
         import requests
@@ -64,84 +186,261 @@ def main() -> None:
         st.error("Requests not available.")
         return
 
-    # Load per-user cases and present a dropdown
-    uname = st.session_state.get("username") or st.session_state.get("name")
-    try:
-        rc = requests.get(f"{backend}/history/cases", params={"username": uname}, timeout=8)
-        cases = (rc.json() or {}).get("cases", []) if rc.ok else []
-    except Exception:
-        cases = []
+    backend = _get_backend_base()
 
-    st.markdown("## History")
-    st.caption("Select a saved case to view up to 3 AI reports.")
+    st.markdown("## History: Browse All Cases")
+    st.caption("Browse all cases directly from S3 regardless of saved history.")
+
+    # Fetch all case ids from S3 (cached)
+    cases = _get_all_cases(backend)
     if not cases:
-        st.info("No saved cases yet. Open Results Page and click ‘Save to history’.")
+        st.info("No cases found in S3 bucket.")
         return
 
-    # Build display labels like "3337 : FatimaDodson" by peeking first snapshot per case
-    display_to_case: dict[str, str] = {}
-    options: list[str] = []
-    for cid in cases:
+    # Build patient map (best-effort, cached)
+    with st.spinner("Loading patient names…"):
+        cid_to_patient = _case_to_patient_map(backend, cases)
+
+    # Build display labels and predictive select
+    def _label_for(cid: str) -> str:
+        p = cid_to_patient.get(cid)
+        return f"{cid} — {p}" if p else cid
+
+    display_labels = [_label_for(cid) for cid in cases]
+    label_to_cid = {lbl: cid for lbl, cid in zip(display_labels, cases)}
+
+    st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
+    # Single list that shows all cases on click; built-in typeahead filters as you type
+    sel_label = st.selectbox(
+        "Search or select case (type case ID or patient name)",
+        options=sorted(display_labels, key=lambda s: s.lower()),
+        index=None,  # do not preselect; wait for user action
+        placeholder="Start typing to filter, then pick a case",
+        key="history_case_select_unified",
+    )
+
+    if not sel_label:
+        st.info("Select a case to continue.")
+        return
+
+    case_id = label_to_cid.get(sel_label) or (sel_label.split("—", 1)[0].strip() if "—" in sel_label else sel_label.strip())
+    patient = sel_label.split("—", 1)[1].strip() if "—" in sel_label else cid_to_patient.get(case_id)
+
+    # Patient badge + compact header
+    if patient:
+        initials = _initials(patient)
+        st.markdown(
+            f"""
+            <div style='display:flex;align-items:center;gap:.5rem;margin:.25rem 0 .5rem;'>
+              <div style='width:34px;height:34px;border-radius:50%;background:rgba(99,102,241,0.25);display:flex;align-items:center;justify-content:center;font-weight:700;'>{initials}</div>
+              <div style='font-weight:600'>{patient}</div>
+              <div style='opacity:.8'>|</div>
+              <div style='opacity:.9'>Case {case_id}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # Fetch outputs (AI+Doctor) list under Output/ (cached)
+    with st.spinner("Loading case data…"):
+        # Clear cache to ensure fresh data
+        _get_case_outputs.clear()
+        outputs = _get_case_outputs(backend, case_id)
+        # Fetch ground truth assets (cached)
+        assets = _get_case_assets(backend, case_id)
+    
+    gt_pdf = assets.get("ground_truth_pdf")
+    gt_generic = assets.get("ground_truth")
+    gt_effective_pdf_url = None
+
+    # --- Results Table (from Results page) ---
+    st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
+    st.markdown("### Report Summary")
+    st.caption("Overview of all reports for this case")
+    
+    # Helper functions for table (from Results page)
+    def extract_version(label: str | None) -> str:
+        if not label:
+            return "—"
+        import re
+        m = re.match(r"^(\d{12})", label)
+        if m:
+            return m.group(1)
+        return label
+
+    def file_name(url: str | None) -> str:
+        if not url:
+            return "—"
         try:
-            r = requests.get(f"{backend}/history/{cid}", params={"username": uname}, timeout=8)
-            items_preview = (r.json() or {}).get("items", []) if r.ok else []
+            from urllib.parse import urlparse
+            return urlparse(url).path.split("/")[-1]
         except Exception:
-            items_preview = []
-        patient = None
-        if items_preview:
-            first = items_preview[0]
-            patient = _extract_patient(cid, gt_key=first.get("ground_truth_key"), ai_label=first.get("label"))
-        label = f"{cid} : {patient}" if patient else cid
-        display_to_case[label] = cid
-        options.append(label)
+            return url
 
-    sel_display = st.selectbox("Saved cases", options=options, key="hist_case_select")
-    sel_case = display_to_case.get(sel_display, cases[0])
-    if not sel_case:
-        return
+    def dl_link(raw_url: str | None) -> str | None:
+        if not raw_url:
+            return None
+        fname = file_name(raw_url)
+        from urllib.parse import quote as _q
+        return f"{backend}/proxy/download?url={_q(raw_url, safe='')}&filename={_q(fname, safe='')}"
 
-    # Fetch snapshots for selected case
-    items: list[dict] = []
+    # Code version fetching (cached)
+    @st.cache_data(ttl=300)
+    def _fetch_code_version_for_case(case_id: str) -> str:
+        try:
+            import requests as _rq
+            import os as _os, json as _json, base64 as _b64
+            
+            # Check session state first
+            sess_ver = (st.session_state.get("code_version_by_case") or {}).get(str(case_id)) or st.session_state.get("code_version")
+            if sess_ver:
+                return sess_ver
+            
+            # Try to parse last webhook text if it contained the array output
+            try:
+                _last = st.session_state.get("last_webhook_text")
+                if _last:
+                    _data = _json.loads(_last)
+                    if isinstance(_data, list) and _data:
+                        # Look for Version in any object in the array
+                        for item in _data:
+                            if isinstance(item, dict):
+                                _v = item.get("Version") or item.get("version")
+                                if isinstance(_v, str):
+                                    return _v.replace(".json", "")
+            except Exception:
+                pass
+            
+            # Fetch from GitHub API
+            _ver_url = _os.getenv(
+                "VERSION_FILE_API_URL",
+                "https://api.github.com/repos/Samarth0211/n8n-workflows-backup/contents/state/w46R1cer565OMr9u.version?ref=main",
+            )
+            r = _rq.get(_ver_url, timeout=6)
+            if r.ok:
+                try:
+                    data = r.json()
+                except Exception:
+                    return "—"
+                if isinstance(data, list) and data:
+                    val = data[0].get("Version") or data[0].get("version")
+                    if isinstance(val, str):
+                        return val.replace(".json", "")
+                if isinstance(data, dict):
+                    content = data.get("content")
+                    enc = data.get("encoding")
+                    if content and (enc or "").lower() == "base64":
+                        raw = _b64.b64decode(content).decode("utf-8", "ignore")
+                        j = _json.loads(raw)
+                        val = j.get("version", "—")
+                        return val.replace(".json", "") if isinstance(val, str) else "—"
+                    val = data.get("version")
+                    if isinstance(val, str):
+                        return val.replace(".json", "")
+        except Exception:
+            pass
+        return "—"
+
+    # Build table data
     try:
-        r = requests.get(f"{backend}/history/{sel_case}", params={"username": uname}, timeout=8)
-        if r.ok:
-            data = r.json() or {}
-            items = data.get("items", []) or []
-    except Exception:
-        items = []
+        with st.spinner("Loading report summary…"):
+            from datetime import datetime
+            code_version = _fetch_code_version_for_case(case_id)
+            generated_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        
+        # Determine ground truth URL for table
+        if gt_pdf:
+            gt_effective_pdf_url = gt_pdf
+        elif gt_generic:
+            # Try to convert to PDF
+            raw_key = assets.get("ground_truth_key") if isinstance(assets, dict) else None
+            params = {"key": raw_key} if raw_key else {"url": gt_generic}
+            try:
+                import requests as _rq
+                r2 = _rq.get(f"{backend}/s3/ensure-pdf", params=params, timeout=10)
+                if r2.ok:
+                    d2 = r2.json() or {}
+                    url2 = d2.get("url")
+                    fmt = d2.get("format")
+                    if fmt == "pdf" and url2:
+                        gt_effective_pdf_url = url2
+                    else:
+                        gt_effective_pdf_url = gt_generic
+            except Exception:
+                gt_effective_pdf_url = gt_generic
 
-    if not items:
-        st.info("No snapshots saved for this case yet.")
-        return
+        rows: list[tuple[str, str, str, str | None, str | None, str | None]] = []
+        print(f"DEBUG: Processing {len(outputs)} outputs for case {case_id}")
+        if outputs:
+            for o in outputs:
+                doc_version = extract_version(o.get("label"))
+                # Use timestamp from S3 metadata instead of fake timestamp
+                report_timestamp = o.get("timestamp") or generated_ts
+                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url")))
+                print(f"DEBUG: Added row with timestamp: {report_timestamp}, AI URL: {o.get('ai_url', 'None')[:50]}...")
+        else:
+            print(f"DEBUG: No outputs found, adding empty row")
+            rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None))
 
-    # Sort by created_at descending if available
-    def _k(it: dict) -> str:
-        return it.get("created_at") or ""
-    items = sorted(items, key=_k, reverse=True)
+        # Render table HTML
+        table_html = [
+            '<div style="border:1px solid rgba(255,255,255,0.12);border-radius:8px;overflow:hidden;margin-top:12px;">',
+            '<div class="history-table" style="display:grid;grid-template-columns:200px 140px 130px 1fr 1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Report Generated</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Code Version</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Document Version</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Ground Truth</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">AI Generated</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Doctor as LLM</div>',
+            '</div>'
+        ]
+        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url) in rows:
+            gt_dl = dl_link(gt_url)
+            ai_dl = dl_link(ai_url)
+            doc_dl = dl_link(doc_url)
+            gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
+            ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
+            doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
+            
+            # Append each row element individually
+            table_html.append('<div class="history-table" style="display:grid;grid-template-columns:200px 140px 130px 1fr 1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.06);">')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
+            table_html.append('</div>')
+        table_html.append('</div>')
+        st.markdown("".join(table_html), unsafe_allow_html=True)
+        
+        # Extra breathing room below the summary table
+        st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error loading report summary: {str(e)}")
+        st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
+
+    # Denser layout height
+    iframe_h = 480
 
     col1, col2, col3 = st.columns(3)
 
-    # Ground Truth (left) — mirror Results page logic exactly
-    assets = {}
-    gt_pdf = None
-    gt_generic = None
-    gt_effective_pdf_url = None
-    try:
-        r_assets = requests.get(f"{backend}/s3/{sel_case}/latest/assets", timeout=10)
-        if r_assets.ok:
-            assets = r_assets.json() or {}
-            gt_pdf = assets.get("ground_truth_pdf")
-            gt_generic = assets.get("ground_truth")
-    except Exception:
-        pass
-
+    # Ground Truth
     with col1:
-        st.markdown("**Ground Truth**")
-        st.markdown("<div style='opacity:.75;margin:.25rem 0 .5rem;'>Original document preview</div>", unsafe_allow_html=True)
-        st.markdown("<div style='opacity:.65;margin-top:-6px;'>• Converted to PDF from DOCX</div>", unsafe_allow_html=True)
-        st.markdown("<div style='opacity:.65;margin-top:-2px;margin-bottom:.35rem;'>• Falls back to DOCX download if needed</div>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
+              <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.35);color:#93c5fd;font-size:.8rem;font-weight:700;letter-spacing:.02em;">GROUND TRUTH</span>
+              <span style='font-weight:700;'>Ground Truth</span>
+            </div>
+            <div style='opacity:.75;margin:.25rem 0 .5rem;'>Original document preview</div>
+            <div style='opacity:.65;margin-top:-6px;'>• Converted to PDF from DOCX</div>
+            <div style='opacity:.65;margin-top:-2px;margin-bottom:.35rem;'>• Falls back to DOCX download if needed</div>
+            """,
+            unsafe_allow_html=True,
+        )
         if gt_pdf:
-            st.markdown(f"<iframe src=\"{gt_pdf}\" width=\"100%\" height=\"520\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            st.markdown(f"<iframe src=\"{gt_pdf}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
             gt_effective_pdf_url = gt_pdf
         elif gt_generic:
             raw_key = assets.get("ground_truth_key") if isinstance(assets, dict) else None
@@ -149,11 +448,11 @@ def main() -> None:
             try:
                 r2 = requests.get(f"{backend}/s3/ensure-pdf", params=params, timeout=10)
                 if r2.ok:
-                    data2 = r2.json() or {}
-                    url2 = data2.get("url")
-                    fmt = data2.get("format")
+                    d2 = r2.json() or {}
+                    url2 = d2.get("url")
+                    fmt = d2.get("format")
                     if fmt == "pdf" and url2:
-                        st.markdown(f"<iframe src=\"{url2}\" width=\"100%\" height=\"520\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                        st.markdown(f"<iframe src=\"{url2}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
                         gt_effective_pdf_url = url2
                     else:
                         st.markdown(f"<a href=\"{url2 or gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
@@ -164,79 +463,84 @@ def main() -> None:
         else:
             st.info("Not available")
 
-    # AI select (middle)
+    # AI selector (dropdown) - optimized to prevent reloads
     with col2:
-        st.markdown("**AI Generated**")
-        labels = []
-        label_to_item = {}
-        for it in items:
-            lab = it.get("label") or (it.get("ai_key") or "").split("/")[-1]
-            if lab and lab not in label_to_item:
-                label_to_item[lab] = it
-                labels.append(lab)
-        sel_it = None
+        st.markdown(
+            """
+            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
+              <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(139,92,246,0.15);border:1px solid rgba(139,92,246,0.35);color:#c4b5fd;font-size:.8rem;font-weight:700;letter-spacing:.02em;">AI</span>
+              <span style='font-weight:700;'>AI Generated</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        
+        # Initialize session state for AI selection
+        ai_key = f"history_ai_label_{case_id}"
+        if ai_key not in st.session_state:
+            st.session_state[ai_key] = None
+            
+        labels = [o.get("label") or (o.get("ai_key") or "").split("/")[-1] for o in outputs]
+        
+        # Use session state to maintain selection across reruns
         if labels:
-            sel_label = st.selectbox("Select AI output", options=labels, key="hist_ai_select")
-            sel_it = label_to_item.get(sel_label)
+            # Find current selection index
+            current_label = st.session_state.get(ai_key)
+            if current_label and current_label in labels:
+                default_index = labels.index(current_label)
+            else:
+                default_index = 0
+                st.session_state[ai_key] = labels[0]
+            
+            selected_label = st.selectbox(
+                "Select AI output", 
+                options=labels, 
+                index=default_index, 
+                key=f"ai_dropdown_{case_id}",
+                on_change=lambda: st.session_state.update({ai_key: st.session_state[f"ai_dropdown_{case_id}"]})
+            )
+            st.session_state[ai_key] = selected_label
         else:
-            st.caption("No saved AI outputs for this case.")
-
-        ai_url = None
-        if sel_it and sel_it.get("ai_key"):
-            try:
-                pr = requests.get(f"{backend}/cache/presign", params={"key": sel_it.get("ai_key")}, timeout=6)
-                if pr.ok:
-                    ai_url = (pr.json() or {}).get("url")
-            except Exception:
-                pass
+            selected_label = None
+            
+        sel_ai = None
+        if selected_label:
+            sel_ai = next((o for o in outputs if (o.get("label") or (o.get("ai_key") or "").split("/")[-1]) == selected_label), None)
         ai_effective_pdf_url = None
-        if ai_url:
-            st.markdown(f"<iframe src=\"{ai_url}\" width=\"100%\" height=\"520\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
-            ai_effective_pdf_url = ai_url
+        if sel_ai and sel_ai.get("ai_url"):
+            st.markdown(f"<iframe src=\"{sel_ai['ai_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            ai_effective_pdf_url = sel_ai["ai_url"]
         else:
             st.info("Not available")
 
-    # Doctor (right) matching selected AI
+    # Doctor viewer
     with col3:
-        st.markdown("**Doctor as LLM**")
-        st.markdown("<div style='opacity:.75;margin:.25rem 0 .5rem;'>Paired doctor-as-LLM report</div>", unsafe_allow_html=True)
-        st.markdown("<div style='opacity:.65;margin-top:-6px;'>• Matched to the selected AI run</div>", unsafe_allow_html=True)
-        st.markdown("<div style='opacity:.65;margin-top:-2px;'>• View inline or download</div>", unsafe_allow_html=True)
-        # st.markdown("<div style='opacity:.65;margin-top:-2px;margin-bottom:.35rem;'>• Source: S3 Output/</div>", unsafe_allow_html=True)
-        # Show patient name parsed from saved labels/keys
-        try:
-            from pages import _04_Results as results  # type: ignore
-            _extract = getattr(results, "_extract_patient_from_strings", None)
-        except Exception:
-            _extract = None
-        if _extract and ("sel_label" in locals() or gt_url):
-            try:
-                patient = _extract(sel_case, gt_key=gk if 'gk' in locals() else None, ai_label=sel_label if 'sel_label' in locals() else None)
-                if patient:
-                    st.caption(f"Patient: {patient}")
-            except Exception:
-                pass
-        doc_url = None
-        if sel_it and sel_it.get("doctor_key"):
-            try:
-                pr = requests.get(f"{backend}/cache/presign", params={"key": sel_it.get("doctor_key")}, timeout=6)
-                if pr.ok:
-                    doc_url = (pr.json() or {}).get("url")
-            except Exception:
-                pass
-        if doc_url:
-            st.markdown(f"<iframe src=\"{doc_url}\" width=\"100%\" height=\"520\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
+              <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);color:#86efac;font-size:.8rem;font-weight:700;letter-spacing:.02em;">DR</span>
+              <span style='font-weight:700;'>Doctor as LLM</span>
+            </div>
+            <div style='opacity:.75;margin:.25rem 0 .5rem;'>Paired doctor-as-LLM report</div>
+            <div style='opacity:.65;margin-top:-6px;margin-bottom:.35rem;'>• This report can be changed by</div>
+            <div style='opacity:.65;margin-top:-6px;margin-bottom:.35rem;'>  changing the AI genreated report</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        doc_effective_pdf_url = None
+        if sel_ai and sel_ai.get("doctor_url"):
+            st.markdown(f"<iframe src=\"{sel_ai['doctor_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            doc_effective_pdf_url = sel_ai["doctor_url"]
         else:
             st.info("Not available")
 
-    # Synchronized scrolling (Ground Truth ↔ AI Generated)
+    # Sync viewer with lock/unlock
     st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
-    enable_sync = st.checkbox("Enable synchronized scrolling (Ground Truth ↔ AI Generated)", value=False, key="hist_sync")
+    enable_sync = st.checkbox("Enable synchronized scrolling (Ground Truth ↔ AI Generated)", value=False, key="history_sync")
     if enable_sync and gt_effective_pdf_url and ai_effective_pdf_url:
-        # Add lock/unlock controls with persistent state
         st.markdown("<div style='text-align:center;margin-bottom:0.5rem;'><small>💡 <strong>Tip:</strong> Scroll to align pages first, then use the lock button in the viewer</small></div>", unsafe_allow_html=True)
         st.markdown("<div style='text-align:center;margin-bottom:0.5rem;'><small>🔓 <strong>Unlocked:</strong> Scroll independently • 🔒 <strong>Locked:</strong> Scroll together</small></div>", unsafe_allow_html=True)
-        sync_height = 640
+        sync_height = 600
         html = """
         <div style=\"position:relative;\">
           <div style=\"display:grid;grid-template-columns:1fr 1fr;gap:12px;\">
@@ -283,21 +587,15 @@ def main() -> None:
 
         let syncing = false;
         let scrollLocked = false; // Start unlocked by default
-        let lockedScrollRatio = 0; // Store the ratio when locking
         
         function linkScroll(a, b) {
           a.addEventListener('scroll', () => {
             if (syncing || !scrollLocked) return;
             syncing = true;
-            
-            // Calculate the scroll delta (how much was scrolled)
             const delta = a.scrollTop - (a.lastScrollTop || 0);
             a.lastScrollTop = a.scrollTop;
-            
-            // Apply the same delta to the other pane
             b.scrollTop += delta;
             b.lastScrollTop = b.scrollTop;
-            
             syncing = false;
           }, { passive: true });
         }
@@ -312,10 +610,6 @@ def main() -> None:
         }
         
         function lockScroll() {
-          const left = document.getElementById('leftPane');
-          const right = document.getElementById('rightPane');
-          
-          // Don't change positions - just enable synchronization from current positions
           scrollLocked = true;
           updateLockButton();
         }
@@ -332,22 +626,13 @@ def main() -> None:
           ]);
           const left = document.getElementById('leftPane');
           const right = document.getElementById('rightPane');
-          
-          // Setup lock button functionality
           const lockButton = document.getElementById('lockButton');
           lockButton.addEventListener('click', () => {
-            if (scrollLocked) {
-              unlockScroll();
-            } else {
-              lockScroll();
-            }
+            if (scrollLocked) unlockScroll(); else lockScroll();
           });
           updateLockButton();
-          
           linkScroll(left, right);
           linkScroll(right, left);
-          
-          // Recompute layout on resize
           window.addEventListener('resize', () => {
             renderPdf('__GT__', 'leftPane');
             renderPdf('__AI__', 'rightPane');
@@ -358,11 +643,268 @@ def main() -> None:
         html = html.replace("__H__", str(sync_height))
         proxy_gt = f"{backend}/proxy/pdf?url=" + quote(gt_effective_pdf_url, safe="")
         proxy_ai = f"{backend}/proxy/pdf?url=" + quote(ai_effective_pdf_url, safe="")
-        html = html.replace("__GT__", proxy_gt).replace("__AI__", proxy_ai)
+        html = html.replace("""__GT__""", proxy_gt).replace("""__AI__""", proxy_ai)
         components.html(html, height=sync_height + 16)
 
 
+    # --- Discrepancy notes ---
+    st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+    st.markdown("### Discrepancy Notes")
+    st.caption("Record mismatches between Ground Truth and AI by section and subsection.")
+
+    # Resolve current user
+    current_user = (
+        st.session_state.get("username")
+        or st.session_state.get("name")
+        or st.session_state.get("user")
+        or st.session_state.get("user_email")
+        or "anonymous"
+    )
+    if st.session_state.get("username") is None and current_user:
+        st.session_state["username"] = current_user
+
+    # Table of Contents (same as Results)
+    toc_sections = {
+        "1. Overview": [
+            "1.1 Executive Summary",
+            "1.2 Life Care Planning and Life Care Plans",
+            "1.2.1 Life Care Planning",
+            "1.2.2 Life Care Plans",
+            "1.3 Biography of Medical Expert",
+            "1.4 Framework: A Life Care Plan for Ms. Blanca Georgina Ortiz",
+        ],
+        "2. Summary of Records": [
+            "2.1 Summary of Medical Records",
+            "2.1.1 Sources",
+            "2.1.2 Chronological Synopsis of Medical Records",
+            "2.1.3 Diagnostics",
+            "2.1.4 Procedure Performed",
+        ],
+        "3. Interview": [
+            "3.1 Recent History",
+            "3.1.1 History of Present Injury/Illness",
+            "3.2 Subjective History",
+            "3.2.1 Current Symptoms",
+            "3.2.2 Physical Symptoms",
+            "3.2.3 Functional Symptoms",
+            "3.3 Review of Systems",
+            "3.3.1 Emotional Symptoms",
+            "3.3.2 Neurologic",
+            "3.3.3 Orthopedic",
+            "3.3.4 Cardiovascular",
+            "3.3.5 Integumentary",
+            "3.3.6 Respiratory",
+            "3.3.7 Digestive",
+            "3.3.8 Urinary",
+            "3.3.9 Circulation",
+            "3.3.10 Behavioral",
+            "3.4 Past Medical History",
+            "3.5 Past Surgical History",
+            "3.6 Injections",
+            "3.7 Family History",
+            "3.8 Allergies",
+            "3.9 Drug and Other Allergies",
+            "3.10 Medications",
+            "3.11 Assistive Device",
+            "3.12 Social History",
+            "3.13 Education History",
+            "3.14 Professional/Work History",
+            "3.15 Habits",
+            "3.16 Tobacco use",
+            "3.17 Alcohol use",
+            "3.18 Illicit drugs",
+            "3.19 Avocational Activities",
+            "3.20 Residential Situation",
+            "3.21 Transportation",
+            "3.22 Household Responsibilities",
+        ],
+        "4. Central Opinions": [
+            "4.1 Diagnostic Conditions",
+            "4.2 Consequent Circumstances",
+            "4.2.1 Disabilities",
+            "4.2.2 Probable Duration of Care",
+            "4.2.3 Average Residual Years",
+            "4.2.4 Life Expectancy",
+            "4.2.5 Adjustments to Life Expectancy",
+            "4.2.6 Probable Duration of Care",
+        ],
+        "5. Future Medical Requirements": [
+            "5.1 Physician Services",
+            "5.2 Routine Diagnostics",
+            "5.3 Medications",
+            "5.4 Laboratory Studies",
+            "5.5 Rehabilitation Services",
+            "5.6 Equipment & Supplies",
+            "5.7 Environmental Modifications & Essential Services",
+            "5.8 Acute Care Services",
+        ],
+        "6. Cost/Vendor Survey": [
+            "6.1 Methods, Definitions, and Discussion",
+            "6.1.1 Survey Methodology",
+            "6.1.2 Definitions and Discussion",
+        ],
+        "7. Definition & Discussion of Quantitative Methods": [
+            "7.1 Definition & Discussion of Quantitative Methods",
+            "7.1.1 Nominal Value",
+            "7.1.2 Accounting Methods",
+            "7.1.3 Variables",
+            "7.1.3.1 Independent Variables",
+            "7.1.3.2 Dependent Variables",
+            "7.1.4 Unit Costs",
+            "7.1.5 Counts & Conventions",
+        ],
+        "8. Probable Duration of Care": ["8.1 Probable Duration of Care Metrics"],
+        "9. Summary Cost Projection Tables": [
+            "Table 1: Routine Medical Evaluation",
+            "Table 2: Therapeutic Evaluation",
+            "Table 3: Therapeutic Modalities",
+            "Table 4: Diagnostic Testing",
+            "Table 5: Equipment and Aids",
+            "Table 6: Pharmacology",
+            "Table 7: Future Aggressive Care/Surgical Intervention",
+            "Table 8: Home Care/Home Services",
+            "Table 9: Labs",
+        ],
+        "10. Overview of Medical Expert": [],
+    }
+
+    # Input UI
+    section_options = list(toc_sections.keys())
+    n1, n2 = st.columns([3, 1])
+    with n1:
+        # Create hierarchical options with indentation and arrows
+        hierarchical_options = []
+        section_to_subsection = {}
+        
+        for section in section_options:
+            subsections = toc_sections.get(section, [])
+            if subsections:
+                # Add main section
+                hierarchical_options.append(section)
+                section_to_subsection[section] = section
+                
+                # Add subsections with indentation and arrows
+                for sub in subsections:
+                    indented_sub = f"    └─ {sub}"
+                    hierarchical_options.append(indented_sub)
+                    section_to_subsection[indented_sub] = section
+            else:
+                # Section without subsections
+                hierarchical_options.append(section)
+                section_to_subsection[section] = section
+        
+        section_choice = st.selectbox("Section/Subsection", options=hierarchical_options, index=0, key="history_disc_sec")
+    with n2:
+        severity = st.selectbox("Severity", options=["Low", "Medium", "High"], index=1, key="history_disc_sev")
+
+    comment_text = st.text_area("Describe the discrepancy", key="history_disc_text")
+    add_ok = st.button("Add comment", type="primary", key="history_add_btn")
+
+    # Backend base
+    backend = _get_backend_base()
+
+    if add_ok and section_choice and comment_text:
+        try:
+            import requests as _rq
+            # Parse hierarchical format
+            if section_choice.startswith("    └─ "):
+                # This is a subsection - extract the actual subsection name
+                subsection = section_choice.replace("    └─ ", "")
+                section = section_to_subsection[section_choice]
+            else:
+                # This is a main section
+                section = section_choice
+                subsection = section_choice  # Use section as subsection if no subsection
+            
+            payload = {
+                "case_id": case_id,
+                "ai_label": selected_label or None,
+                "section": section,
+                "subsection": subsection,
+                "username": current_user,
+                "severity": severity,
+                "comment": comment_text.strip(),
+            }
+            _rq.post(f"{backend}/comments", json=payload, timeout=8)
+            # Clear cache for comments to show new comment immediately
+            _get_case_comments.clear()
+            st.success("Added.")
+        except Exception:
+            st.warning("Failed to add comment.")
+
+    # List comments (cached)
+    notes = _get_case_comments(backend, case_id, selected_label)
+
+    if notes:
+        st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+        st.markdown("**Recorded comments**")
+        
+        # Create HTML table for perfect alignment
+        table_html = [
+            '<div style="border:1px solid rgba(255,255,255,0.12);border-radius:8px;overflow:hidden;margin-top:8px;">',
+            '<div style="display:grid;grid-template-columns:2fr 0.7fr 0.6fr 2fr 1.2fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Section/Subsection</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">User</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Severity</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">When</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Actions</div>',
+            '</div>'
+        ]
+        
+        # Add data rows
+        for n in notes:
+            is_resolved = bool(n.get("resolved"))
+            row_style = "opacity:.85;background:rgba(255,255,255,0.03);" if is_resolved else ""
+            text_style = "opacity:.7;color:#9aa0a6;" if is_resolved else ""
+            
+            section = n.get('section') or '—'
+            subsection = n.get("subsection") or (toc_sections.get(n.get("section") or "", [])[:1] or [n.get("section")])[0]
+            combined = f"{section} / {subsection}" if subsection and subsection != '—' else section
+            when = (n.get("created_at") or "").replace("T", " ").replace("Z", " UTC")
+            comment = n.get('comment') or ''
+            
+            table_html.append(f'<div style="display:grid;grid-template-columns:2fr 0.7fr 0.6fr 2fr 1.2fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.06);{row_style}">')
+            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{combined}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{n.get("username") or "anonymous"}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{n.get("severity") or "—"}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{when or "—"}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{comment}</div>')
+            table_html.append('</div>')
+        
+        table_html.append('</div>')
+        st.markdown("".join(table_html), unsafe_allow_html=True)
+        
+        # Add action buttons below the table
+        st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+        for n in notes:
+            nid = n.get("id")
+            if nid:
+                is_resolved = bool(n.get("resolved"))
+                can_delete = (n.get("username") or "") == (st.session_state.get("username") or st.session_state.get("name") or "")
+                
+                col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
+                with col1:
+                    label = ("Resolve\u00A0\u00A0\u00A0\u00A0" if not is_resolved else "Unresolve\u00A0\u00A0\u00A0")
+                    if st.button(label, key=f"history_disc_res_{nid}"):
+                        try:
+                            _rq.patch(f"{backend}/comments/resolve", json={"id": int(nid), "case_id": case_id, "resolved": (not is_resolved)}, timeout=8)
+                            # Clear cache for comments to show updated state immediately
+                            _get_case_comments.clear()
+                        except Exception:
+                            pass
+                        st.rerun()
+                with col2:
+                    if can_delete and st.button("Delete\u00A0", key=f"history_disc_del_{nid}"):
+                        try:
+                            _rq.delete(f"{backend}/comments", json={"case_id": case_id, "ai_label": selected_label, "ids": [int(nid)]}, timeout=8)
+                            # Clear cache for comments to show updated state immediately
+                            _get_case_comments.clear()
+                        except Exception:
+                            pass
+                        st.rerun()
+                with col3:
+                    st.markdown("")  # Empty space
+
 if __name__ == "__main__":
     main()
-
 

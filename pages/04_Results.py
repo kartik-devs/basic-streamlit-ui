@@ -47,20 +47,21 @@ def _iframe(url: str, height: int = 520) -> None:
 def _extract_patient_from_strings(case_id: str, *, gt_key: str | None = None, ai_label: str | None = None, doc_label: str | None = None) -> str | None:
     try:
         import re
-        # Ground truth like: 3337_LCP_Fatima Dodson_....docx
+        import urllib.parse
+        # Only extract from Ground Truth: 3337_LCP_Fatima%20Dodson_Flatworld_Summary_Document.pdf
         if gt_key:
-            m = re.search(r"_LCP_([^_/]+?)_", gt_key)
+            # Decode URL encoding first
+            decoded_key = urllib.parse.unquote(gt_key)
+            
+            # Try pattern 1: case_id_LCP_FirstName LastName_rest_of_filename
+            m = re.search(rf"{case_id}_LCP_([^_]+(?:_[^_]+)*?)(?:_|\.)", decoded_key)
             if m:
                 return m.group(1).replace("_", " ")
-        # AI like: 202508281810-3337-FatimaDodson-CompleteAIGenerated.pdf
-        label = ai_label or doc_label
-        if label and case_id:
-            m = re.search(rf"-?{case_id}-([^-_]+)", label)
+            
+            # Try pattern 2: case_id_FirstName LastName_rest_of_filename (without LCP)
+            m = re.search(rf"{case_id}_([^_]+(?:\s+[^_]+)*?)(?:_|\.)", decoded_key)
             if m:
-                raw = m.group(1)
-                # Split CamelCase e.g., BlancaOrtiz -> Blanca Ortiz
-                parts = re.findall(r"[A-Z][a-z]*", raw)
-                return " ".join(parts) if parts else raw
+                return m.group(1).strip()
     except Exception:
         return None
     return None
@@ -77,13 +78,24 @@ def main() -> None:
     st.set_page_config(page_title="Results Page", page_icon="🧪", layout="wide")
     theme_provider()
     inject_base_styles()
-    # Page-scoped compact buttons for action cells
+    # Page-scoped compact buttons and responsive table
     st.markdown(
         """
         <style>
         .stButton > button { font-size: 0.85rem; padding: .25rem .55rem; }
         @media (max-width: 1100px) { .stButton > button { font-size: 0.80rem; padding: .2rem .5rem; } }
         @media (max-width: 900px) { .stButton > button { font-size: 0.78rem; padding: .18rem .45rem; } }
+        
+        /* Responsive table adjustments */
+        @media (max-width: 1200px) {
+            .results-table { grid-template-columns: 180px 120px 110px 1fr 1fr 1fr !important; }
+        }
+        @media (max-width: 1000px) {
+            .results-table { grid-template-columns: 160px 100px 90px 1fr 1fr 1fr !important; }
+        }
+        @media (max-width: 800px) {
+            .results-table { grid-template-columns: 140px 80px 80px 1fr 1fr 1fr !important; }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -225,35 +237,52 @@ def main() -> None:
             if sess_ver:
                 code_version = sess_ver
             else:
-                _ver_url = _os.getenv(
-                    "VERSION_FILE_API_URL",
-                    "https://api.github.com/repos/Samarth0211/n8n-workflows-backup/contents/state/w46R1cer565OMr9u.version?ref=main",
-                )
-                @st.cache_data(ttl=300)
-                def _fetch_code_version(url: str) -> str:
-                    r = _rq.get(url, timeout=6)
-                    if r.ok:
-                        try:
-                            data = r.json()
-                        except Exception:
-                            return "—"
-                        if isinstance(data, list) and data:
-                            val = data[0].get("Version") or data[0].get("version")
-                            if isinstance(val, str):
-                                return val.replace(".json", "")
-                        if isinstance(data, dict):
-                            content = data.get("content")
-                            enc = data.get("encoding")
-                            if content and (enc or "").lower() == "base64":
-                                raw = _b64.b64decode(content).decode("utf-8", "ignore")
-                                j = _json.loads(raw)
-                                val = j.get("version", "—")
-                                return val.replace(".json", "") if isinstance(val, str) else "—"
-                            val = data.get("version")
-                            if isinstance(val, str):
-                                return val.replace(".json", "")
-                    return "—"
-                code_version = _fetch_code_version(_ver_url)
+                # Try to parse last webhook text if it contained the array output
+                try:
+                    _last = st.session_state.get("last_webhook_text")
+                    if _last:
+                        _data = _json.loads(_last)
+                        if isinstance(_data, list) and _data:
+                            # Look for Version in any object in the array
+                            for item in _data:
+                                if isinstance(item, dict):
+                                    _v = item.get("Version") or item.get("version")
+                                    if isinstance(_v, str):
+                                        code_version = _v.replace(".json", "")
+                                        break
+                except Exception:
+                    pass
+                
+                if not code_version or code_version == "—":
+                    _ver_url = _os.getenv(
+                        "VERSION_FILE_API_URL",
+                        "https://api.github.com/repos/Samarth0211/n8n-workflows-backup/contents/state/w46R1cer565OMr9u.version?ref=main",
+                    )
+                    @st.cache_data(ttl=300)
+                    def _fetch_code_version(url: str) -> str:
+                        r = _rq.get(url, timeout=6)
+                        if r.ok:
+                            try:
+                                data = r.json()
+                            except Exception:
+                                return "—"
+                            if isinstance(data, list) and data:
+                                val = data[0].get("Version") or data[0].get("version")
+                                if isinstance(val, str):
+                                    return val.replace(".json", "")
+                            if isinstance(data, dict):
+                                content = data.get("content")
+                                enc = data.get("encoding")
+                                if content and (enc or "").lower() == "base64":
+                                    raw = _b64.b64decode(content).decode("utf-8", "ignore")
+                                    j = _json.loads(raw)
+                                    val = j.get("version", "—")
+                                    return val.replace(".json", "") if isinstance(val, str) else "—"
+                                val = data.get("version")
+                                if isinstance(val, str):
+                                    return val.replace(".json", "")
+                        return "—"
+                    code_version = _fetch_code_version(_ver_url)
         except Exception:
             code_version = "—"
         generated_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
@@ -262,13 +291,15 @@ def main() -> None:
         if outputs:
             for o in outputs:
                 doc_version = extract_version(o.get("label"))
-                rows.append((generated_ts, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url")))
+                # Use timestamp from S3 metadata instead of fake timestamp
+                report_timestamp = o.get("timestamp") or generated_ts
+                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url")))
         else:
             rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None))
 
         table_html = [
             '<div style="border:1px solid rgba(255,255,255,0.12);border-radius:8px;overflow:hidden;margin-top:12px;">',
-            '<div style="display:grid;grid-template-columns:220px 160px 150px 1fr 1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+            '<div class="results-table" style="display:grid;grid-template-columns:200px 140px 130px 1fr 1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
             '<div style="padding:.5rem .75rem;font-weight:700;">Report Generated</div>',
             '<div style="padding:.5rem .75rem;font-weight:700;">Code Version</div>',
             '<div style="padding:.5rem .75rem;font-weight:700;">Document Version</div>',
@@ -286,7 +317,7 @@ def main() -> None:
             doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
             
             # Append each row element individually
-            table_html.append('<div style="display:grid;grid-template-columns:220px 160px 150px 1fr 1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.06);">')
+            table_html.append('<div class="results-table" style="display:grid;grid-template-columns:200px 140px 130px 1fr 1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.06);">')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
@@ -775,18 +806,31 @@ def main() -> None:
     # Get section and subsection options
     section_options = list(toc_sections.keys())
     
-    ncol1, ncol2, ncol3 = st.columns([2, 2, 1])
+    ncol1, ncol2 = st.columns([3, 1])
     with ncol1:
-        section_choice = st.selectbox("Section", options=section_options, index=0)
+        # Create hierarchical options with indentation and arrows
+        hierarchical_options = []
+        section_to_subsection = {}
+        
+        for section in section_options:
+            subsections = toc_sections.get(section, [])
+            if subsections:
+                # Add main section
+                hierarchical_options.append(section)
+                section_to_subsection[section] = section
+                
+                # Add subsections with indentation and arrows
+                for sub in subsections:
+                    indented_sub = f"    └─ {sub}"
+                    hierarchical_options.append(indented_sub)
+                    section_to_subsection[indented_sub] = section
+            else:
+                # Section without subsections
+                hierarchical_options.append(section)
+                section_to_subsection[section] = section
+        
+        section_choice = st.selectbox("Section/Subsection", options=hierarchical_options, index=0)
     with ncol2:
-        # Get subsections for selected section
-        subsections = toc_sections.get(section_choice, [])
-        if subsections:
-            subsection_choice = st.selectbox("Subsection", options=subsections, index=0)
-        else:
-            # If no predefined subsections, allow free text; we'll default later
-            subsection_choice = st.text_input("Subsection (if none available)", value="", key="disc_subsection")
-    with ncol3:
         severity = st.selectbox("Severity", options=["Low", "Medium", "High"], index=1)
 
     comment = st.text_area("Describe the discrepancy", placeholder="e.g., Missing 'Lisinopril' in medications section compared to ground truth.", key="disc_comment")
@@ -800,16 +844,22 @@ def main() -> None:
         # Persist to backend (shared)
         try:
             if requests is not None:
-                # Ensure subsection is never empty: default to first option or section name
-                _sub = subsection_choice.strip() if isinstance(subsection_choice, str) else subsection_choice
-                if not _sub:
-                    _sub = (subsections[0] if subsections else section_choice)
+                # Parse hierarchical format
+                if section_choice.startswith("    └─ "):
+                    # This is a subsection - extract the actual subsection name
+                    subsection = section_choice.replace("    └─ ", "")
+                    section = section_to_subsection[section_choice]
+                else:
+                    # This is a main section
+                    section = section_choice
+                    subsection = section_choice  # Use section as subsection if no subsection
+                
                 _user = current_user
                 payload = {
                     "case_id": case_id,
                     "ai_label": selected_label or None,
-                    "section": section_choice,
-                    "subsection": _sub,
+                    "section": section,
+                    "subsection": subsection,
                     "username": _user,
                     "severity": severity,
                     "comment": comment.strip(),
@@ -856,43 +906,54 @@ def main() -> None:
     if notes:
         st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
         st.markdown("**Recorded comments**")
-        # Header row
-        h1, h2, h3, h4, h5, h6 = st.columns([1.0, 1.0, 0.7, 0.6, 2.0, 0.5])
-        with h1: st.markdown("<div style='font-weight:700;'>Section</div>", unsafe_allow_html=True)
-        with h2: st.markdown("<div style='font-weight:700;'>Subsection</div>", unsafe_allow_html=True)
-        with h3: st.markdown("<div style='font-weight:700;'>User</div>", unsafe_allow_html=True)
-        with h4: st.markdown("<div style='font-weight:700;'>Severity</div>", unsafe_allow_html=True)
-        with h5: st.markdown("<div style='font-weight:700;'>When</div>", unsafe_allow_html=True)
-        with h6: st.markdown("<div style='font-weight:700;'>Delete</div>", unsafe_allow_html=True)
-
-        st.markdown("<hr style='margin-top:4px;margin-bottom:6px;opacity:.15;'>", unsafe_allow_html=True)
-
-        # Rows with in-line actions
+        
+        # Create HTML table for perfect alignment
+        table_html = [
+            '<div style="border:1px solid rgba(255,255,255,0.12);border-radius:8px;overflow:hidden;margin-top:8px;">',
+            '<div style="display:grid;grid-template-columns:2fr 0.7fr 0.6fr 2fr 1.2fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Section/Subsection</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">User</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Severity</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">When</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Actions</div>',
+            '</div>'
+        ]
+        
+        # Add data rows
         for n in notes:
             is_resolved = bool(n.get("resolved"))
-            row_style = "opacity:.85;background:rgba(255,255,255,0.03);border-radius:6px;padding:.2rem .35rem;" if is_resolved else ""
+            row_style = "opacity:.85;background:rgba(255,255,255,0.03);" if is_resolved else ""
             text_style = "opacity:.7;color:#9aa0a6;" if is_resolved else ""
-            st.markdown(f"<div style='{row_style}'></div>", unsafe_allow_html=True)
-            c1, c2, c3, c4, c5, c6 = st.columns([1.0, 1.0, 0.7, 0.6, 2.0, 1.2])
-            with c1:
-                st.markdown(f"<div style='{text_style}'>{n.get('section','') or '—'}</div>", unsafe_allow_html=True)
-            with c2:
-                st.markdown(f"<div style='{text_style}'>{n.get('subsection','') or '—'}</div>", unsafe_allow_html=True)
-            with c3:
-                st.markdown(f"<div style='{text_style}'>{n.get('username') or '—'}</div>", unsafe_allow_html=True)
-            with c4:
-                st.markdown(f"<div style='{text_style}'>{n.get('severity','') or '—'}</div>", unsafe_allow_html=True)
-            with c5:
-                when = (n.get("ts", "") or "").replace("T", " ").replace("Z", " UTC")
-                st.markdown(f"<div style='{text_style}'>{when or '—'}</div>", unsafe_allow_html=True)
-                st.markdown(f"<div style='{text_style};font-size:.85rem;opacity:.75;'>{n.get('comment','') or ''}</div>", unsafe_allow_html=True)
-            with c6:
-                nid = n.get("id")
-                # Resolve button (anyone can mark)
-                cols_act = st.columns([0.6, 0.4])
-                with cols_act[0]:
-                    label = ("Resolve\u00A0\u00A0\u00A0" if not is_resolved else "Unresolve\u00A0\u00A0")
-                    if nid and st.button(label, key=f"disc_res_{nid}"):
+            
+            section = n.get('section','') or '—'
+            subsection = n.get('subsection','') or '—'
+            combined = f"{section} / {subsection}" if subsection != '—' else section
+            when = (n.get("ts", "") or "").replace("T", " ").replace("Z", " UTC")
+            comment = n.get('comment','') or ''
+            
+            table_html.append(f'<div style="display:grid;grid-template-columns:2fr 0.7fr 0.6fr 2fr 1.2fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.06);{row_style}">')
+            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{combined}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{n.get("username") or "—"}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{n.get("severity","") or "—"}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{when or "—"}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{comment}</div>')
+            table_html.append('</div>')
+        
+        table_html.append('</div>')
+        st.markdown("".join(table_html), unsafe_allow_html=True)
+        
+        # Add action buttons below the table
+        st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+        for n in notes:
+            nid = n.get("id")
+            if nid:
+                is_resolved = bool(n.get("resolved"))
+                can_delete = (n.get("username") or "") == (st.session_state.get("username") or st.session_state.get("name") or "")
+                
+                col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
+                with col1:
+                    label = ("Resolve\u00A0\u00A0\u00A0\u00A0" if not is_resolved else "Unresolve\u00A0\u00A0\u00A0")
+                    if st.button(label, key=f"disc_res_{nid}"):
                         try:
                             if requests is not None:
                                 payload = {"id": int(nid), "case_id": case_id, "resolved": (not is_resolved)}
@@ -900,10 +961,8 @@ def main() -> None:
                         except Exception:
                             pass
                         st.rerun()
-                # Delete only for author
-                with cols_act[1]:
-                    can_delete = (n.get("username") or "") == (st.session_state.get("username") or st.session_state.get("name") or "")
-                    if nid and can_delete and st.button("Delete", key=f"disc_del_{nid}"):
+                with col2:
+                    if can_delete and st.button("Delete\u00A0", key=f"disc_del_{nid}"):
                         try:
                             if requests is not None:
                                 payload = {"case_id": case_id, "ai_label": selected_label, "ids": [int(nid)]}
@@ -911,6 +970,8 @@ def main() -> None:
                         except Exception:
                             pass
                         st.rerun()
+                with col3:
+                    st.markdown("")  # Empty space
 
         # (Inline delete buttons are in each row above)
 
