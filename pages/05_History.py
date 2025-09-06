@@ -196,7 +196,23 @@ def main() -> None:
     # Fetch all case ids from S3 (cached)
     cases = _get_all_cases(backend)
     if not cases:
-        st.info("No cases found in S3 bucket.")
+        st.markdown(
+            """
+            <div style="text-align: center; padding: 3rem 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; margin: 2rem 0;">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">📚</div>
+                <h2 style="color: white; margin-bottom: 1rem; font-weight: 600;">No Cases Found</h2>
+                <p style="color: rgba(255,255,255,0.9); font-size: 1.1rem; margin-bottom: 2rem; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    Please generate a case report first to view your case history and analysis.
+                </p>
+                <div style="margin-top: 2rem;">
+                    <a href="?case_id=0000&start=0" style="background: rgba(255,255,255,0.2); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 500; border: 1px solid rgba(255,255,255,0.3); display: inline-block;">
+                        Go to Case Report →
+                    </a>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         return
 
     # Build patient map (best-effort, cached) - only for first 20 cases for speed
@@ -216,9 +232,6 @@ def main() -> None:
 
     st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
     
-    # Quick search input for direct case ID entry
-    search_input = st.text_input("Quick search case ID (optional)", placeholder="Enter case ID to search...", key="case_search")
-    
     # Single list that shows all cases on click; built-in typeahead filters as you type
     sel_label = st.selectbox(
         "Search or select case (type case ID or patient name)",
@@ -228,19 +241,20 @@ def main() -> None:
         key="history_case_select_unified",
     )
 
-    # Handle search input or selectbox selection
-    if search_input and search_input.strip():
-        # If user typed a case ID, use it directly
-        case_id = search_input.strip()
-        if case_id not in cases:
-            st.warning(f"Case {case_id} not found in S3 bucket.")
-            case_id = cases[0]
-        sel_label = case_id
-    elif not sel_label:
+    # Handle selectbox selection
+    if not sel_label:
         st.info("Select a case to continue.")
         return
+
+    # Extract case_id from selected label
+    if sel_label in label_to_cid:
+        case_id = label_to_cid[sel_label]
     else:
-        case_id = label_to_cid.get(sel_label) or (sel_label.split("—", 1)[0].strip() if "—" in sel_label else sel_label.strip())
+        # If not in label_to_cid, try to extract from the label itself
+        if "—" in sel_label:
+            case_id = sel_label.split("—", 1)[0].strip()
+        else:
+            case_id = sel_label.strip()
     patient = sel_label.split("—", 1)[1].strip() if "—" in sel_label else cid_to_patient.get(case_id)
 
     # Patient badge + compact header

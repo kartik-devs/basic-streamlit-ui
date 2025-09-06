@@ -127,6 +127,28 @@ def main() -> None:
     )
     backend = _get_backend_base()
 
+    # Check if no case has been generated yet
+    if case_id == "0000":
+        st.markdown("## Results Page")
+        st.markdown(
+            """
+            <div style="text-align: center; padding: 3rem 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; margin: 2rem 0;">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">📝</div>
+                <h2 style="color: white; margin-bottom: 1rem; font-weight: 600;">No Reports Generated Yet</h2>
+                <p style="color: rgba(255,255,255,0.9); font-size: 1.1rem; margin-bottom: 2rem; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    Please generate a case report first to view results and analysis.
+                </p>
+                <div style="margin-top: 2rem;">
+                    <a href="?case_id=0000&start=0" style="background: rgba(255,255,255,0.2); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 500; border: 1px solid rgba(255,255,255,0.3); display: inline-block;">
+                        Go to Case Report →
+                    </a>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        return
+
     # Attempt to compute patient name from assets later
     st.markdown("## Results Page")
     header_ph = st.empty()
