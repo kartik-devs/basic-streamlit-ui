@@ -51,6 +51,47 @@ def health() -> Dict[str, Any]:
 def version() -> Dict[str, Any]:
     return {"version": app.version if hasattr(app, "version") else "unknown"}
 
+@app.get("/code-version")
+def get_code_version() -> Dict[str, Any]:
+    """Fetch code version from GitHub repository"""
+    try:
+        import requests
+        import json
+        import base64
+        
+        # GitHub API configuration
+        github_token = "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"
+        github_username = "samarth0211"
+        repo_name = "n8n-workflows-backup"
+        branch = "main"
+        file_path = "state/QTgwEEZYYfbRhhPu.version"
+        
+        # Construct GitHub API URL
+        github_url = f"https://api.github.com/repos/{github_username}/{repo_name}/contents/{file_path}?ref={branch}"
+        
+        # Make authenticated request to GitHub API
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        response = requests.get(github_url, headers=headers, timeout=10)
+        if response.ok:
+            data = response.json()
+            if isinstance(data, dict):
+                content = data.get("content")
+                encoding = data.get("encoding")
+                if content and encoding and encoding.lower() == "base64":
+                    # Decode base64 content
+                    raw_content = base64.b64decode(content).decode("utf-8", "ignore")
+                    # Parse JSON content
+                    version_data = json.loads(raw_content)
+                    version = version_data.get("version", "—")
+                    return {"code_version": version.replace(".json", "") if isinstance(version, str) else "—"}
+        return {"code_version": "—", "error": f"GitHub API error: {response.status_code}"}
+    except Exception as e:
+        return {"code_version": "—", "error": str(e)}
+
 # --- S3 integration (list and presign) ---
 import boto3
 from botocore.client import Config as BotoConfig

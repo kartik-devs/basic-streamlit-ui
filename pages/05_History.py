@@ -32,9 +32,10 @@ def _extract_patient_from_strings(case_id: str, *, gt_key: str | None = None, ai
             decoded_key = urllib.parse.unquote(gt_key)
             
             # Try pattern 1: case_id_LCP_FirstName LastName_rest_of_filename
-            m = re.search(rf"{case_id}_LCP_([^_]+(?:_[^_]+)*?)(?:_|\.)", decoded_key)
+            # This pattern handles spaces in names properly
+            m = re.search(rf"{case_id}_LCP_([^_]+(?:\s+[^_]+)*?)(?:_|\.)", decoded_key)
             if m:
-                return m.group(1).replace("_", " ")
+                return m.group(1).strip()
             
             # Try pattern 2: case_id_FirstName LastName_rest_of_filename (without LCP)
             m = re.search(rf"{case_id}_([^_]+(?:\s+[^_]+)*?)(?:_|\.)", decoded_key)
@@ -317,62 +318,84 @@ def main() -> None:
         from urllib.parse import quote as _q
         return f"{backend}/proxy/download?url={_q(raw_url, safe='')}&filename={_q(fname, safe='')}"
 
-    # Code version fetching (cached)
+    # Code version fetching - prioritize stored version over GitHub
     @st.cache_data(ttl=300)
     def _fetch_code_version_for_case(case_id: str) -> str:
         try:
             import requests as _rq
-            import os as _os, json as _json, base64 as _b64
+            import json as _json, base64 as _b64
             
-            # Check session state first
-            sess_ver = (st.session_state.get("code_version_by_case") or {}).get(str(case_id)) or st.session_state.get("code_version")
-            if sess_ver:
-                return sess_ver
-            
-            # Try to parse last webhook text if it contained the array output
+            # First try to get stored version from backend
             try:
-                _last = st.session_state.get("last_webhook_text")
-                if _last:
-                    _data = _json.loads(_last)
-                    if isinstance(_data, list) and _data:
-                        # Look for Version in any object in the array
-                        for item in _data:
-                            if isinstance(item, dict):
-                                _v = item.get("Version") or item.get("version")
-                                if isinstance(_v, str):
-                                    return _v.replace(".json", "")
+                backend_url = st.session_state.get("backend_url", "http://localhost:8000")
+                backend_r = _rq.get(f"{backend_url}/reports/{case_id}/code-version", timeout=5)
+                if backend_r.ok:
+                    backend_data = backend_r.json()
+                    stored_version = backend_data.get("code_version")
+                    if stored_version and stored_version != "Unknown":
+                        return stored_version
             except Exception:
                 pass
             
-            # Fetch from GitHub API
-            _ver_url = _os.getenv(
-                "VERSION_FILE_API_URL",
-                "https://api.github.com/repos/Samarth0211/n8n-workflows-backup/contents/state/w46R1cer565OMr9u.version?ref=main",
-            )
-            r = _rq.get(_ver_url, timeout=6)
+            # Only fetch from GitHub if we have a webhook response (new report)
+            webhook_text = st.session_state.get("last_webhook_text")
+            if not webhook_text:
+                # Check session state as fallback
+                sess_ver = (st.session_state.get("code_version_by_case") or {}).get(str(case_id)) or st.session_state.get("code_version")
+                return sess_ver if sess_ver else "—"
+            
+            # GitHub API configuration
+            github_token = "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"
+            github_username = "samarth0211"
+            repo_name = "n8n-workflows-backup"
+            branch = "main"
+            file_path = "state/QTgwEEZYYfbRhhPu.version"
+            
+            # Construct GitHub API URL
+            github_url = f"https://api.github.com/repos/{github_username}/{repo_name}/contents/{file_path}?ref={branch}"
+            
+            # Make authenticated request to GitHub API
+            headers = {
+                "Authorization": f"token {github_token}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            
+            r = _rq.get(github_url, headers=headers, timeout=10)
             if r.ok:
                 try:
                     data = r.json()
-                except Exception:
+                    if isinstance(data, dict):
+                        content = data.get("content")
+                        encoding = data.get("encoding")
+                        if content and encoding and encoding.lower() == "base64":
+                            # Decode base64 content
+                            raw_content = _b64.b64decode(content).decode("utf-8", "ignore")
+                            # Parse JSON content
+                            version_data = _json.loads(raw_content)
+                            version = version_data.get("version", "—")
+                            github_version = version.replace(".json", "") if isinstance(version, str) else "—"
+                            
+                            # Store the version in backend for future use
+                            try:
+                                store_r = _rq.post(
+                                    f"{backend_url}/reports/{case_id}/code-version",
+                                    json={"code_version": github_version},
+                                    timeout=5
+                                )
+                                if store_r.ok:
+                                    return github_version
+                            except Exception:
+                                pass
+                            return github_version
+                except Exception as e:
+                    print(f"Error parsing GitHub response: {e}")
                     return "—"
-                if isinstance(data, list) and data:
-                    val = data[0].get("Version") or data[0].get("version")
-                    if isinstance(val, str):
-                        return val.replace(".json", "")
-                if isinstance(data, dict):
-                    content = data.get("content")
-                    enc = data.get("encoding")
-                    if content and (enc or "").lower() == "base64":
-                        raw = _b64.b64decode(content).decode("utf-8", "ignore")
-                        j = _json.loads(raw)
-                        val = j.get("version", "—")
-                        return val.replace(".json", "") if isinstance(val, str) else "—"
-                    val = data.get("version")
-                    if isinstance(val, str):
-                        return val.replace(".json", "")
-        except Exception:
-            pass
-        return "—"
+            else:
+                print(f"GitHub API error: {r.status_code} - {r.text}")
+                return "—"
+        except Exception as e:
+            print(f"Error fetching code version: {e}")
+            return "—"
 
     # Build table data
     try:
@@ -399,7 +422,7 @@ def main() -> None:
                         gt_effective_pdf_url = url2
                     else:
                         gt_effective_pdf_url = gt_generic
-            except Exception:
+    except Exception:
                 gt_effective_pdf_url = gt_generic
 
         rows: list[tuple[str, str, str, str | None, str | None, str | None]] = []
@@ -938,3 +961,5 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
+
+at the version r a p
