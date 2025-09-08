@@ -53,3 +53,4 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+\n# Docs\n*.md\n
