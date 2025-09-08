@@ -72,3 +72,7 @@ credentials:
       email: sam@gmail.com
       name: samarth
       password: $2b$12$PxQztLbx8PxPz0xQVFc6ge6ntVoKqkKjtE/IOF2WF.Art1gDchPf.
+    Samarth02:
+      email: sam@gmail.com
+      name: Samarth
+      password: $2b$12$lT3eZEclBraMs3nyeHNrTer8CRyT3dhS/StYH573mPcFBXLDlSeOa

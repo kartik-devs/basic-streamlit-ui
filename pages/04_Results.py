@@ -952,71 +952,116 @@ def main() -> None:
         st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
         st.markdown("**Recorded comments**")
         
-        # Create HTML table for perfect alignment
-        table_html = [
-            '<div style="border:1px solid rgba(255,255,255,0.12);border-radius:8px;overflow:hidden;margin-top:8px;">',
-            '<div style="display:grid;grid-template-columns:2fr 0.7fr 0.6fr 2fr 1.2fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Section/Subsection</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">User</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Severity</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">When</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Actions</div>',
-            '</div>'
-        ]
+        # Add CSS to reduce button font size
+        st.markdown("""
+        <style>
+        div[data-testid='stButton'] > button {
+            font-size: 0.85rem !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
         
-        # Add data rows
-        for n in notes:
-            is_resolved = bool(n.get("resolved"))
-            row_style = "opacity:.85;background:rgba(255,255,255,0.03);" if is_resolved else ""
-            text_style = "opacity:.7;color:#9aa0a6;" if is_resolved else ""
-            
-            section = n.get('section','') or '—'
-            subsection = n.get('subsection','') or '—'
-            combined = f"{section} / {subsection}" if subsection != '—' else section
-            when = (n.get("ts", "") or "").replace("T", " ").replace("Z", " UTC")
-            comment = n.get('comment','') or ''
-            
-            table_html.append(f'<div style="display:grid;grid-template-columns:2fr 0.7fr 0.6fr 2fr 1.2fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.06);{row_style}">')
-            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{combined}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{n.get("username") or "—"}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{n.get("severity","") or "—"}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{when or "—"}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{comment}</div>')
-            table_html.append('</div>')
-        
-        table_html.append('</div>')
-        st.markdown("".join(table_html), unsafe_allow_html=True)
-        
-        # Add action buttons below the table
-        st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+        # Create a table with inline action buttons
         for n in notes:
             nid = n.get("id")
             if nid:
                 is_resolved = bool(n.get("resolved"))
                 can_delete = (n.get("username") or "") == (st.session_state.get("username") or st.session_state.get("name") or "")
                 
-                col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
-                with col1:
-                    label = ("Resolve\u00A0\u00A0\u00A0\u00A0" if not is_resolved else "Unresolve\u00A0\u00A0\u00A0")
-                    if st.button(label, key=f"disc_res_{nid}"):
-                        try:
-                            if requests is not None:
-                                payload = {"id": int(nid), "case_id": case_id, "resolved": (not is_resolved)}
-                                requests.patch(f"{backend}/comments/resolve", json=payload, timeout=8)
-                        except Exception:
-                            pass
-                        st.rerun()
-                with col2:
-                    if can_delete and st.button("Delete\u00A0", key=f"disc_del_{nid}"):
-                        try:
-                            if requests is not None:
-                                payload = {"case_id": case_id, "ai_label": selected_label, "ids": [int(nid)]}
-                                requests.delete(f"{backend}/comments", json=payload, timeout=8)
-                        except Exception:
-                            pass
-                        st.rerun()
-                with col3:
-                    st.markdown("")  # Empty space
+                section = n.get('section','') or '—'
+                subsection = n.get('subsection','') or '—'
+                combined = f"{section} / {subsection}" if subsection != '—' else section
+                when = (n.get("ts", "") or "").replace("T", " ").replace("Z", " UTC")
+                comment = n.get('comment','') or ''
+                
+                # Create a container for each comment row
+                with st.container():
+                    # Style for resolved comments
+                    if is_resolved:
+                        st.markdown("<div style='opacity:.85;background:rgba(255,255,255,0.03);padding:.5rem;border-radius:4px;margin:.25rem 0;'>", unsafe_allow_html=True)
+                    else:
+                        st.markdown("<div style='padding:.5rem;border-radius:4px;margin:.25rem 0;'>", unsafe_allow_html=True)
+                    
+                    # Create columns for the comment data and actions
+                    col1, col2, col3, col4, col5, col6 = st.columns([1.5, 0.7, 0.6, 1.2, 2, 1])
+                    
+                    with col1:
+                        st.markdown(f"<div style='font-size:0.85rem;'><strong>{combined}</strong></div>" if not is_resolved else f"<div style='font-size:0.85rem;opacity:.7;color:#9aa0a6;'>{combined}</div>", unsafe_allow_html=True)
+                    
+                    with col2:
+                        username = n.get("username") or "—"
+                        if is_resolved:
+                            st.markdown(f"<div style='font-size:0.85rem;opacity:.7;color:#9aa0a6;'>{username}</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"<div style='font-size:0.85rem;'>{username}</div>", unsafe_allow_html=True)
+                    
+                    with col3:
+                        severity = n.get("severity","") or "—"
+                        if is_resolved:
+                            st.markdown(f"<div style='font-size:0.85rem;opacity:.7;color:#9aa0a6;'>{severity}</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"<div style='font-size:0.85rem;'>{severity}</div>", unsafe_allow_html=True)
+                    
+                    with col4:
+                        if is_resolved:
+                            st.markdown(f"<div style='font-size:0.85rem;opacity:.7;color:#9aa0a6;'>{when or '—'}</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"<div style='font-size:0.85rem;'>{when or '—'}</div>", unsafe_allow_html=True)
+                    
+                    with col5:
+                        if is_resolved:
+                            st.markdown(f"<div style='font-size:0.85rem;opacity:.7;color:#9aa0a6;'>{comment}</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"<div style='font-size:0.85rem;'>{comment}</div>", unsafe_allow_html=True)
+                    
+                    with col6:
+                        # Action buttons
+                        btn_col1, btn_col2 = st.columns(2)
+                        
+                        with btn_col1:
+                            label = ("✓ Resolve" if not is_resolved else "✗ Unresolve")
+                            if st.button(label, key=f"disc_res_{nid}", use_container_width=True):
+                                try:
+                                    if requests is not None:
+                                        payload = {"id": int(nid), "case_id": case_id, "resolved": (not is_resolved)}
+                                        response = requests.patch(f"{backend}/comments/resolve", json=payload, timeout=8)
+                                        if response.status_code == 200:
+                                            st.success(f"Comment {'resolved' if not is_resolved else 'unresolved'} successfully")
+                                            # Clear page cache to show updated state immediately
+                                            st.cache_data.clear()
+                                        else:
+                                            st.error("Failed to update comment status")
+                                except Exception as e:
+                                    st.error(f"Error updating comment: {str(e)}")
+                                st.rerun()
+                        
+                        with btn_col2:
+                            if can_delete:
+                                if st.button("🗑️", key=f"disc_del_{nid}", use_container_width=True, help="Delete comment"):
+                                    if st.session_state.get(f"confirm_delete_{nid}", False):
+                                        try:
+                                            if requests is not None:
+                                                payload = {"case_id": case_id, "ai_label": selected_label, "ids": [int(nid)]}
+                                                response = requests.delete(f"{backend}/comments", json=payload, timeout=8)
+                                                if response.status_code == 200:
+                                                    st.success("Comment deleted successfully")
+                                                    # Clear page cache to show updated state immediately
+                                                    st.cache_data.clear()
+                                                    # Reset confirmation state
+                                                    if f"confirm_delete_{nid}" in st.session_state:
+                                                        del st.session_state[f"confirm_delete_{nid}"]
+                                                else:
+                                                    st.error("Failed to delete comment")
+                                        except Exception as e:
+                                            st.error(f"Error deleting comment: {str(e)}")
+                                    else:
+                                        st.session_state[f"confirm_delete_{nid}"] = True
+                                        st.warning("Click 🗑️ again to confirm")
+                                    st.rerun()
+                            else:
+                                st.markdown("")  # Empty space for non-deletable comments
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
 
         # (Inline delete buttons are in each row above)
 

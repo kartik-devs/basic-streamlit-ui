@@ -422,7 +422,7 @@ def main() -> None:
                         gt_effective_pdf_url = url2
                     else:
                         gt_effective_pdf_url = gt_generic
-            except Exception:
+    except Exception:
                 gt_effective_pdf_url = gt_generic
 
         rows: list[tuple[str, str, str, str | None, str | None, str | None]] = []
