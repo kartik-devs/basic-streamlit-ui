@@ -219,9 +219,47 @@ def main() -> None:
         except Exception:
             pass
  
+    # Check if no case has been selected yet (case_id is 0000)
+    if case_id == "0000":
+        st.markdown("## Generating Report")
+        st.markdown(
+            """
+            <div style="text-align: center; padding: 3rem 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; margin: 2rem 0;">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">⏳</div>
+                <h2 style="color: white; margin-bottom: 1rem; font-weight: 600;">Ready to Generate Reports</h2>
+                <p style="color: rgba(255,255,255,0.9); font-size: 1.1rem; margin-bottom: 2rem; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    Please go to Case Report first to select a case, then come back here to generate your comprehensive medical report.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Add cute Streamlit button for navigation
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("✨ Go to Case Report →", type="primary", use_container_width=True):
+                try:
+                    switch_page("Case_Report")
+                except Exception:
+                    st.info("Please use the sidebar to navigate to 'Case Report'.")
+        return
+
     if not st.session_state.get("generation_in_progress"):
         # st.markdown('<div class="section-bg" style="max-width:900px;margin:0 auto;text-align:centermake;">', unsafe_allow_html=True)
         st.markdown("<h3>Generating Report</h3>", unsafe_allow_html=True)
+        
+        # Add navigation button
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("← Go to Case Report", type="secondary", use_container_width=True):
+                try:
+                    switch_page("Case_Report")
+                except Exception:
+                    st.info("Please use the sidebar to navigate to 'Case Report'.")
+        
+        st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+        
         new_id = st.text_input("Enter Case ID (4 digits)", value=case_id)
         start_click = st.button("Start", type="primary")
         if start_click and not fired_map.get(new_id or case_id):

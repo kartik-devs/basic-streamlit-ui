@@ -92,6 +92,67 @@ def get_code_version() -> Dict[str, Any]:
     except Exception as e:
         return {"code_version": "—", "error": str(e)}
 
+@app.get("/reports/{case_id}/code-version")
+def get_case_code_version(case_id: str) -> Dict[str, Any]:
+    """Get stored code version for a specific case"""
+    try:
+        conn = sqlite3.connect("reports.db")
+        cursor = conn.cursor()
+        
+        # Get the most recent report for this case_id
+        cursor.execute("""
+            SELECT code_version FROM reports 
+            WHERE case_id = ? 
+            ORDER BY id DESC 
+            LIMIT 1
+        """, (case_id,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result and result[0] and result[0] != "—":
+            return {"code_version": result[0]}
+        else:
+            return {"code_version": "—"}
+            
+    except Exception as e:
+        return {"code_version": "—", "error": str(e)}
+
+@app.post("/reports/{case_id}/code-version")
+def update_case_code_version(case_id: str, request: Dict[str, Any]) -> Dict[str, Any]:
+    """Update code version for a specific case"""
+    try:
+        code_version = request.get("code_version", "—")
+        
+        conn = sqlite3.connect("reports.db")
+        cursor = conn.cursor()
+        
+        # Check if there are any reports for this case_id
+        cursor.execute("SELECT COUNT(*) FROM reports WHERE case_id = ?", (case_id,))
+        count = cursor.fetchone()[0]
+        
+        if count > 0:
+            # Update the most recent report for this case_id
+            cursor.execute("""
+                UPDATE reports 
+                SET code_version = ? 
+                WHERE id = (SELECT id FROM reports WHERE case_id = ? ORDER BY id DESC LIMIT 1)
+            """, (code_version, case_id))
+        else:
+            # Create a placeholder report record if none exists
+            cursor.execute("""
+                INSERT INTO reports (case_id, code_version, status, started_at)
+                VALUES (?, ?, 'placeholder', datetime('now'))
+            """, (case_id, code_version))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "code_version": code_version}
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 # --- S3 integration (list and presign) ---
 import boto3
 from botocore.client import Config as BotoConfig
@@ -849,11 +910,20 @@ def init_db() -> None:
               file_path TEXT,
               file_size INTEGER,
               checksum TEXT,
-              metadata TEXT
+              metadata TEXT,
+              code_version TEXT
             )
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_case ON reports(case_id)")
+        
+        # Migration: Add code_version column if it doesn't exist
+        try:
+            conn.execute("ALTER TABLE reports ADD COLUMN code_version TEXT")
+        except sqlite3.OperationalError:
+            # Column already exists, ignore
+            pass
+        
         # New normalized schema
         conn.execute(
             """

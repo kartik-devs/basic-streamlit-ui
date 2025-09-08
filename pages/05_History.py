@@ -332,9 +332,9 @@ def main() -> None:
                 if backend_r.ok:
                     backend_data = backend_r.json()
                     stored_version = backend_data.get("code_version")
-                    if stored_version and stored_version != "Unknown":
+                    if stored_version and stored_version != "Unknown" and stored_version != "—":
                         return stored_version
-            except Exception:
+            except Exception as e:
                 pass
             
             # Only fetch from GitHub if we have a webhook response (new report)
@@ -422,7 +422,7 @@ def main() -> None:
                         gt_effective_pdf_url = url2
                     else:
                         gt_effective_pdf_url = gt_generic
-    except Exception:
+            except Exception:
                 gt_effective_pdf_url = gt_generic
 
         rows: list[tuple[str, str, str, str | None, str | None, str | None]] = []
@@ -960,6 +960,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-at the version r a p

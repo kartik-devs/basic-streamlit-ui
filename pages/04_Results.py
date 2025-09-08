@@ -139,15 +139,20 @@ def main() -> None:
                 <p style="color: rgba(255,255,255,0.9); font-size: 1.1rem; margin-bottom: 2rem; max-width: 500px; margin-left: auto; margin-right: auto;">
                     Please generate a case report first to view results and analysis.
                 </p>
-                <div style="margin-top: 2rem;">
-                    <a href="?case_id=0000&start=0" style="background: rgba(255,255,255,0.2); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 500; border: 1px solid rgba(255,255,255,0.3); display: inline-block;">
-                        Go to Case Report →
-                    </a>
-                </div>
             </div>
             """,
             unsafe_allow_html=True
         )
+        
+        # Add Streamlit button for navigation
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("Go to Case Report →", type="primary", use_container_width=True):
+                try:
+                    from streamlit_extras.switch_page_button import switch_page
+                    switch_page("Case_Report")
+                except Exception:
+                    st.info("Please use the sidebar to navigate to 'Case Report'.")
         return
 
     # Attempt to compute patient name from assets later
