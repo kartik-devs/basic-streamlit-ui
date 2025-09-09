@@ -76,3 +76,23 @@ credentials:
       email: sam@gmail.com
       name: Samarth
       password: $2b$12$lT3eZEclBraMs3nyeHNrTer8CRyT3dhS/StYH573mPcFBXLDlSeOa
+    Samarth099:
+      email: sam@gmail.com
+      name: samarth
+      password: $2b$12$2EvvM6V7K9CsqO6grsl9/ONo6isTools7Uoj3ZEFFveJV7yYUn.9a
+    Piyush:
+      email: piyushgupta891@gmail.com
+      name: Piyush Gupta
+      password: $2b$12$Yw/OT.zk38lcpbeFDsGHxOkz19pr13wrRYqtpLtUdEuWrX9LrzJW6
+    jansi:
+      email: jansigoswamiwork@gmail.com
+      name: jansi goswami
+      password: $2b$12$rx1.uQy/1SEafzV6F4mPX.DAXmIHE8rqkEzVcX/9rui/XGg1QImye
+    jansig:
+      email: jansigoswamiwork@gmail.com
+      name: jansi goswami
+      password: $2b$12$H5L6adguR1DDK2Wlh7ELruE9j0df.VRCFw/..0pubRti7529sF0i.
+    raj317:
+      email: rsbhk1232@gmail.com
+      name: Raj Bhardwaj
+      password: $2b$12$1tsvJpSv2SCwpG.ws2LmB.HMPz7zXMXIEFT5Jp6510jiPZnKjLJZW

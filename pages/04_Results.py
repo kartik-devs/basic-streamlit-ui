@@ -87,15 +87,43 @@ def main() -> None:
         @media (max-width: 1100px) { .stButton > button { font-size: 0.80rem; padding: .2rem .5rem; } }
         @media (max-width: 900px) { .stButton > button { font-size: 0.78rem; padding: .18rem .45rem; } }
         
+        /* Horizontal scrollable table container */
+        .table-container {
+            overflow-x: auto;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 8px;
+            margin-top: 12px;
+        }
+        
+        /* Fixed width table for horizontal scrolling */
+        .results-table {
+            min-width: 1800px;
+            display: grid;
+            gap: 0;
+            grid-template-columns: 220px 160px 140px 1fr 1fr 1fr 120px 120px 140px 140px 140px;
+        }
+        
+        /* Add visual separation between Ground Truth and AI Generated columns */
+        .results-table > div:nth-child(4) {
+            border-right: 2px solid rgba(255,255,255,0.25) !important;
+        }
+        
+        /* Add vertical borders to table cells */
+        .results-table > div {
+            border-right: 1px solid rgba(255,255,255,0.12);
+        }
+        
+        /* Remove right border from last column */
+        .results-table > div:nth-child(11n) {
+            border-right: none;
+        }
+        
         /* Responsive table adjustments */
+        @media (max-width: 1400px) {
+            .results-table { min-width: 1600px; }
+        }
         @media (max-width: 1200px) {
-            .results-table { grid-template-columns: 180px 120px 110px 1fr 1fr 1fr !important; }
-        }
-        @media (max-width: 1000px) {
-            .results-table { grid-template-columns: 160px 100px 90px 1fr 1fr 1fr !important; }
-        }
-        @media (max-width: 800px) {
-            .results-table { grid-template-columns: 140px 80px 80px 1fr 1fr 1fr !important; }
+            .results-table { min-width: 1400px; }
         }
         </style>
         """,
@@ -127,6 +155,37 @@ def main() -> None:
         or _qp_get("case_id", "0000")
     )
     backend = _get_backend_base()
+
+    # Check if generation is in progress and show loading state
+    if st.session_state.get("generation_in_progress", False):
+        st.markdown("## Results Page")
+        st.markdown(
+            """
+            <div style="text-align: center; padding: 3rem 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; margin: 2rem 0;">
+                <div style="font-size: 4rem; margin-bottom: 1rem;">⏳</div>
+                <h2 style="color: white; margin-bottom: 1rem; font-weight: 600;">Process is Loading...</h2>
+                <p style="color: rgba(255,255,255,0.9); font-size: 1.1rem; margin-bottom: 2rem; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    Your report is being generated. Please wait while the workflow processes your request.
+                </p>
+                <div style="display: flex; justify-content: center; margin-top: 2rem;">
+                    <div style="width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid white; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                </div>
+            </div>
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Auto-refresh every 5 seconds to check for completion
+        import time
+        time.sleep(5)
+        st.rerun()
+        return
 
     # Check if no case has been generated yet
     if case_id == "0000":
@@ -332,28 +391,76 @@ def main() -> None:
             code_version = "—"
         generated_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
-        rows: list[tuple[str, str, str, str | None, str | None, str | None]] = []
+        # Helper function to extract timing and token data from metadata
+        def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
+            # Extract timing data
+            ocr_start = o.get("ocr_start_time", "—")
+            ocr_end = o.get("ocr_end_time", "—")
+            
+            # Extract token usage
+            total_tokens = o.get("total_tokens_used", "—")
+            input_tokens = o.get("total_input_tokens", "—")
+            output_tokens = o.get("total_output_tokens", "—")
+            
+            # Format timing (extract just time part if available)
+            if ocr_start != "—" and "T" in str(ocr_start):
+                try:
+                    ocr_start = str(ocr_start).split("T")[1].split("+")[0][:8]  # HH:MM:SS
+                except:
+                    pass
+            if ocr_end != "—" and "T" in str(ocr_end):
+                try:
+                    ocr_end = str(ocr_end).split("T")[1].split("+")[0][:8]  # HH:MM:SS
+                except:
+                    pass
+            
+            # Format token numbers with commas
+            if total_tokens != "—" and isinstance(total_tokens, (int, str)):
+                try:
+                    total_tokens = f"{int(total_tokens):,}"
+                except:
+                    pass
+            if input_tokens != "—" and isinstance(input_tokens, (int, str)):
+                try:
+                    input_tokens = f"{int(input_tokens):,}"
+                except:
+                    pass
+            if output_tokens != "—" and isinstance(output_tokens, (int, str)):
+                try:
+                    output_tokens = f"{int(output_tokens):,}"
+                except:
+                    pass
+            
+            return str(ocr_start), str(ocr_end), str(total_tokens), str(input_tokens), str(output_tokens)
+
+        rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
         if outputs:
             for o in outputs:
                 doc_version = extract_version(o.get("label"))
                 # Use timestamp from S3 metadata instead of fake timestamp
                 report_timestamp = o.get("timestamp") or generated_ts
-                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url")))
+                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
         else:
-            rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None))
+            rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
         table_html = [
-            '<div style="border:1px solid rgba(255,255,255,0.12);border-radius:8px;overflow:hidden;margin-top:12px;">',
-            '<div class="results-table" style="display:grid;grid-template-columns:200px 140px 130px 1fr 1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+            '<div class="table-container">',
+            '<div class="results-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
             '<div style="padding:.5rem .75rem;font-weight:700;">Report Generated</div>',
             '<div style="padding:.5rem .75rem;font-weight:700;">Code Version</div>',
             '<div style="padding:.5rem .75rem;font-weight:700;">Document Version</div>',
             '<div style="padding:.5rem .75rem;font-weight:700;">Ground Truth</div>',
             '<div style="padding:.5rem .75rem;font-weight:700;">AI Generated</div>',
             '<div style="padding:.5rem .75rem;font-weight:700;">Doctor as LLM</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">OCR Start</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">OCR End</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Total Tokens</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Input Tokens</div>',
+            '<div style="padding:.5rem .75rem;font-weight:700;">Output Tokens</div>',
             '</div>'
         ]
-        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url) in rows:
+        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in rows:
             gt_dl = dl_link(gt_url)
             ai_dl = dl_link(ai_url)
             doc_dl = dl_link(doc_url)
@@ -362,13 +469,18 @@ def main() -> None:
             doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
             
             # Append each row element individually
-            table_html.append('<div class="results-table" style="display:grid;grid-template-columns:200px 140px 130px 1fr 1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.06);">')
+            table_html.append('<div class="results-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
             table_html.append('</div>')
         table_html.append('</div>')
         st.markdown("".join(table_html), unsafe_allow_html=True)

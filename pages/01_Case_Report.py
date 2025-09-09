@@ -7,7 +7,7 @@ from datetime import datetime
 from app.ui import inject_base_styles, show_header, top_nav, hero_section, feature_grid, footer_section, theme_provider
 import os
 import requests
-from streamlit_extras.switch_page_button import switch_page
+# Removed streamlit_extras import - using st.switch_page instead
 
 
 def ensure_authenticated() -> bool:
@@ -113,34 +113,8 @@ def main() -> None:
                         qp["start"] = "1"
                 except Exception:
                     pass
-                # Try several labels that might match the page entry
-                tried = False
-                for label in [
-                    "02_Generating_Report",
-                    "Generating_Report",
-                    "Generating Report+",
-                    "Generating Report",
-                ]:
-                    try:
-                        switch_page(label)
-                        tried = True
-                        break
-                    except Exception:
-                        continue
-                # Fallback to client-side redirect
-                if not tried:
-                    st.markdown(
-                        f"""
-                        <script>
-                          const params = new URLSearchParams(window.location.search);
-                          params.set('page', '02_Generating_Report');
-                          params.set('case_id', '{cid}');
-                          params.set('start', '1');
-                          window.location.search = '?' + params.toString();
-                        </script>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                # Navigate to Generating Report page
+                st.switch_page("pages/02_Generating_Report.py")
                 st.stop()
 
     # Subtle info card beneath the form
@@ -154,7 +128,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    footer_section()
+    # Footer intentionally omitted on Case Report page
 
 
 if __name__ == "__main__":

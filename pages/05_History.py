@@ -23,27 +23,43 @@ def _get_backend_base() -> str:
 
 
 def _extract_patient_from_strings(case_id: str, *, gt_key: str | None = None, ai_label: str | None = None, doc_label: str | None = None) -> str | None:
+    """Best-effort extraction of a patient name from common S3 key patterns.
+
+    Handles variations like:
+    - <case>_LCP_First Last_rest.ext
+    - <case>-LCP-First-Last_rest.ext
+    - <case>_First_Last_rest.ext
+    - Path prefixes (e.g., bucket/1234/GroundTruth/<file>)
+    """
     try:
-        import re
+        import re, os
         import urllib.parse
-        # Only extract from Ground Truth: 3337_LCP_Fatima%20Dodson_Flatworld_Summary_Document.pdf
-        if gt_key:
-            # Decode URL encoding first
-            decoded_key = urllib.parse.unquote(gt_key)
-            
-            # Try pattern 1: case_id_LCP_FirstName LastName_rest_of_filename
-            # This pattern handles spaces in names properly
-            m = re.search(rf"{case_id}_LCP_([^_]+(?:\s+[^_]+)*?)(?:_|\.)", decoded_key)
+        if not gt_key:
+            return None
+        decoded_key = urllib.parse.unquote(gt_key)
+        filename = os.path.basename(decoded_key)
+
+        patterns = [
+            rf"^{case_id}[-_]+LCP[-_]+([^-_.]+(?:[\s_-][^-_.]+)*)",  # with LCP marker
+            rf"^{case_id}[-_]+([^-_.]+(?:[\s_-][^-_.]+)*)",            # without LCP
+        ]
+
+        for pat in patterns:
+            m = re.search(pat, filename, flags=re.IGNORECASE)
             if m:
-                return m.group(1).strip()
-            
-            # Try pattern 2: case_id_FirstName LastName_rest_of_filename (without LCP)
-            m = re.search(rf"{case_id}_([^_]+(?:\s+[^_]+)*?)(?:_|\.)", decoded_key)
-            if m:
-                return m.group(1).strip()
+                raw = m.group(1).strip()
+                # Normalize separators to spaces and collapse repeats
+                norm = re.sub(r"[_-]+", " ", raw)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                # Keep at most first and last two tokens to avoid trailing garbage
+                tokens = [t for t in norm.split(" ") if t]
+                if len(tokens) >= 1:
+                    # Heuristic: take first two tokens as "First Last" when available
+                    take = tokens[:2] if len(tokens) > 1 else tokens
+                    return " ".join(take)
+        return None
     except Exception:
         return None
-    return None
 
 
 @st.cache_data(show_spinner=False, ttl=600)  # Cache for 10 minutes
@@ -422,32 +438,114 @@ def main() -> None:
                         gt_effective_pdf_url = url2
                     else:
                         gt_effective_pdf_url = gt_generic
-    except Exception:
+            except Exception:
                 gt_effective_pdf_url = gt_generic
 
-        rows: list[tuple[str, str, str, str | None, str | None, str | None]] = []
+        # Helper function to extract timing and token data from metadata
+        def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
+            # Extract timing data
+            ocr_start = o.get("ocr_start_time", "—")
+            ocr_end = o.get("ocr_end_time", "—")
+            
+            # Extract token usage
+            total_tokens = o.get("total_tokens_used", "—")
+            input_tokens = o.get("total_input_tokens", "—")
+            output_tokens = o.get("total_output_tokens", "—")
+            
+            # Format timing (extract just time part if available)
+            if ocr_start != "—" and "T" in str(ocr_start):
+                try:
+                    ocr_start = str(ocr_start).split("T")[1].split("+")[0][:8]  # HH:MM:SS
+                except:
+                    pass
+            if ocr_end != "—" and "T" in str(ocr_end):
+                try:
+                    ocr_end = str(ocr_end).split("T")[1].split("+")[0][:8]  # HH:MM:SS
+                except:
+                    pass
+            
+            # Format token numbers with commas
+            if total_tokens != "—" and isinstance(total_tokens, (int, str)):
+                try:
+                    total_tokens = f"{int(total_tokens):,}"
+                except:
+                    pass
+            if input_tokens != "—" and isinstance(input_tokens, (int, str)):
+                try:
+                    input_tokens = f"{int(input_tokens):,}"
+                except:
+                    pass
+            if output_tokens != "—" and isinstance(output_tokens, (int, str)):
+                try:
+                    output_tokens = f"{int(output_tokens):,}"
+                except:
+                    pass
+            
+            return str(ocr_start), str(ocr_end), str(total_tokens), str(input_tokens), str(output_tokens)
+
+        rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
         if outputs:
             for o in outputs:
                 doc_version = extract_version(o.get("label"))
                 # Use timestamp from S3 metadata instead of fake timestamp
                 report_timestamp = o.get("timestamp") or generated_ts
-                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url")))
+                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
         else:
-            rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None))
+            rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
+
+        # Add CSS for horizontal scrolling
+        st.markdown("""
+        <style>
+        .table-container {
+            overflow-x: auto;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 8px;
+            margin-top: 12px;
+        }
+        
+        .history-table {
+            min-width: 2400px;
+            display: grid;
+            gap: 0;
+            grid-template-columns: 220px 160px 140px 3.6fr 3.6fr 3.6fr 120px 120px 140px 140px 140px;
+        }
+        
+        /* Add visual separation between Ground Truth and AI Generated columns */
+        .history-table > div:nth-child(4) {
+            border-right: 2px solid rgba(255,255,255,0.25) !important;
+        }
+        
+        /* Add vertical borders to table cells */
+        .history-table > div {
+            border-right: 1px solid rgba(255,255,255,0.12);
+        }
+        
+        /* Remove right border from last column */
+        .history-table > div:nth-child(11n) {
+            border-right: none;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
         # Render table HTML
         table_html = [
-            '<div style="border:1px solid rgba(255,255,255,0.12);border-radius:8px;overflow:hidden;margin-top:12px;">',
-            '<div class="history-table" style="display:grid;grid-template-columns:200px 140px 130px 1fr 1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Report Generated</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Code Version</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Document Version</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Ground Truth</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">AI Generated</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Doctor as LLM</div>',
+            '<div class="table-container">',
+            '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
             '</div>'
         ]
-        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url) in rows:
+        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in rows:
             gt_dl = dl_link(gt_url)
             ai_dl = dl_link(ai_url)
             doc_dl = dl_link(doc_url)
@@ -456,13 +554,18 @@ def main() -> None:
             doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
             
             # Append each row element individually
-            table_html.append('<div class="history-table" style="display:grid;grid-template-columns:200px 140px 130px 1fr 1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.06);">')
+            table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
             table_html.append('</div>')
         table_html.append('</div>')
         st.markdown("".join(table_html), unsafe_allow_html=True)
