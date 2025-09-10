@@ -527,7 +527,7 @@ def main() -> None:
                     except Exception:
                         output_tokens = str(out) if out is not None else "—"
                 else:
-                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+                    ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
                 rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
         else:
             # No S3 outputs found. Try to build a row from the latest DB run so the UI is not blank.
@@ -554,12 +554,12 @@ def main() -> None:
                         input_tokens = _fmt(run.get("total_input_tokens"))
                         output_tokens = _fmt(run.get("total_output_tokens"))
                         rows.append((gen_time, code_version, "—", pdf_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
-        else:
+                    else:
                         rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
                 else:
                     rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
             except Exception:
-            rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
+                rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
         table_html = [
             '<div class="table-container">',
@@ -576,7 +576,7 @@ def main() -> None:
             '<div style="padding:.5rem .75rem;font-weight:700;">Input Tokens</div>',
             '<div style="padding:.5rem .75rem;font-weight:700;">Output Tokens</div>',
             '</div>'
-        ]
+         ]
         for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in rows:
             gt_dl = dl_link(gt_url)
             ai_dl = dl_link(ai_url)
@@ -1108,7 +1108,7 @@ def main() -> None:
                 st.info("No DOCX AI report URL available for the selected version.")
 
     with tabs[0]:
-    st.caption("Record mismatches between Ground Truth and AI by section and subsection. Export as PDF/JSON.")
+        st.caption("Record mismatches between Ground Truth and AI by section and subsection. Export as PDF/JSON.")
 
     # Initialize state bucket per case + selected AI label
     notes_key = f"discrepancy_notes::{case_id}::{(selected_label or 'ai').strip() if 'selected_label' in locals() else 'ai'}"
