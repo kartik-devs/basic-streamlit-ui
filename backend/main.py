@@ -47,6 +47,143 @@ from .n8n_integration import report_generator, n8n_manager
 def health() -> Dict[str, Any]:
     return {"ok": True}
 
+@app.get("/proxy/docx")
+def proxy_docx(url: str):
+    """Proxy endpoint to serve DOCX files and avoid CORS issues."""
+    try:
+        import requests
+        import io
+        
+        # Download the DOCX file from the S3 URL
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            # Return the file content with proper headers
+            return StreamingResponse(
+                io.BytesIO(response.content),
+                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                headers={
+                    "Content-Disposition": f"attachment; filename=document.docx",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET",
+                    "Access-Control-Allow-Headers": "*",
+                }
+            )
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch document")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error proxying document: {str(e)}")
+
+@app.get("/docx/extract-text")
+def extract_docx_text(url: str):
+    """Extract text content from a DOCX file for editing."""
+    try:
+        import requests
+        from docx import Document
+        import io
+        
+        # Download the DOCX file from the S3 URL
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            # Extract text from DOCX
+            docx_buffer = io.BytesIO(response.content)
+            doc = Document(docx_buffer)
+            
+            # Extract all text content
+            text_content = []
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    text_content.append(paragraph.text)
+            
+            # Also extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            row_text.append(cell.text.strip())
+                    if row_text:
+                        text_content.append(" | ".join(row_text))
+            
+            full_text = "\n\n".join(text_content)
+            
+            return {
+                "success": True,
+                "text": full_text,
+                "paragraph_count": len([p for p in doc.paragraphs if p.text.strip()]),
+                "table_count": len(doc.tables)
+            }
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch document")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error extracting text: {str(e)}")
+
+@app.post("/docx/save-text")
+def save_docx_text(request: Dict[str, Any]):
+    """Save edited text back to a DOCX file."""
+    try:
+        import requests
+        from docx import Document
+        import io
+        import tempfile
+        import os
+        from pathlib import Path
+        
+        url = request.get("url")
+        text = request.get("text", "")
+        case_id = request.get("case_id", "unknown")
+        
+        if not url or not text:
+            raise HTTPException(status_code=400, detail="URL and text are required")
+        
+        # Download the original DOCX file
+        response = requests.get(url, timeout=30)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch original document")
+        
+        # Load the original document
+        docx_buffer = io.BytesIO(response.content)
+        doc = Document(docx_buffer)
+        
+        # Clear existing content
+        for paragraph in doc.paragraphs:
+            p = paragraph._element
+            p.getparent().remove(p)
+        
+        # Add the new text content
+        paragraphs = text.split("\n\n")
+        for para_text in paragraphs:
+            if para_text.strip():
+                doc.add_paragraph(para_text.strip())
+        
+        # Save to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_file:
+            doc.save(tmp_file.name)
+            tmp_path = tmp_file.name
+        
+        # Read the modified file
+        with open(tmp_path, "rb") as f:
+            modified_content = f.read()
+        
+        # Clean up temporary file
+        os.unlink(tmp_path)
+        
+        # Generate filename
+        filename = f"{case_id}_edited_report.docx"
+        
+        return StreamingResponse(
+            io.BytesIO(modified_content),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST",
+                "Access-Control-Allow-Headers": "*",
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving document: {str(e)}")
+
 @app.get("/version")
 def version() -> Dict[str, Any]:
     return {"version": app.version if hasattr(app, "version") else "unknown"}
@@ -1031,6 +1168,26 @@ def init_db() -> None:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_hist_user_case ON outputs_history(user_id, case_id)")
         except Exception:
             pass
+
+        # Runs table for webhook finalization payloads (stores latest artifacts/metrics)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS runs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              case_id TEXT NOT NULL,
+              created_at TEXT,
+              ai_url TEXT,
+              doc_url TEXT,
+              pdf_url TEXT,
+              ocr_start_time TEXT,
+              ocr_end_time TEXT,
+              total_tokens_used INTEGER,
+              total_input_tokens INTEGER,
+              total_output_tokens INTEGER
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_case ON runs(case_id)")
         conn.commit()
     finally:
         conn.close()
@@ -1468,6 +1625,115 @@ async def generate_medical_report(patient_id: str, username: str = None) -> Dict
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
 
+
+@app.post("/webhook/finalize")
+def webhook_finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Endpoint for n8n to POST final artifacts/metrics when the workflow completes.
+    Expected payload (examples accepted):
+      {
+        "case_id": "9999",
+        "pdf": {"signed_url": "...", "key": "..."},
+        "docx": {"signed_url": "...", "key": "..."},
+        "ocr_start_time": "...",
+        "ocr_end_time": "...",
+        "total_tokens_used": 123,
+        "total_input_tokens": 456,
+        "total_output_tokens": 789
+      }
+    Stores a row in runs and returns {ok: True}.
+    """
+    try:
+        case_id = str(payload.get("case_id") or payload.get("patient_id") or "").strip()
+        if not case_id:
+            raise ValueError("case_id required")
+        def _pick_url(obj: Any) -> str | None:
+            if isinstance(obj, dict):
+                return obj.get("signed_url") or obj.get("url") or obj.get("href")
+            return None
+        ai_url = _pick_url(payload.get("ai"))
+        doc_url = _pick_url(payload.get("docx"))
+        pdf_url = _pick_url(payload.get("pdf"))
+        ocr_start = payload.get("ocr_start_time")
+        ocr_end = payload.get("ocr_end_time")
+        tot = payload.get("total_tokens_used")
+        tin = payload.get("total_input_tokens")
+        tout = payload.get("total_output_tokens")
+        conn = get_conn()
+        try:
+            conn.execute(
+                """
+                INSERT INTO runs (case_id, created_at, ai_url, doc_url, pdf_url, ocr_start_time, ocr_end_time,
+                                  total_tokens_used, total_input_tokens, total_output_tokens)
+                VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (case_id, ai_url, doc_url, pdf_url, ocr_start, ocr_end, tot, tin, tout),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/runs/{case_id}")
+def get_runs(case_id: str) -> Dict[str, Any]:
+    """Return latest run row for a case (for UI fallbacks)."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM runs WHERE case_id=? ORDER BY id DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+        if not row:
+            return {"ok": True, "run": None}
+        return {
+            "ok": True,
+            "run": {
+                "case_id": row[1],
+                "created_at": row[2],
+                "ai_url": row[3],
+                "doc_url": row[4],
+                "pdf_url": row[5],
+                "ocr_start_time": row[6],
+                "ocr_end_time": row[7],
+                "total_tokens_used": row[8],
+                "total_input_tokens": row[9],
+                "total_output_tokens": row[10],
+            },
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/runs/{case_id}/all")
+def list_runs(case_id: str) -> Dict[str, Any]:
+    """Return all runs for a case, newest first, so UI can map rows accurately."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM runs WHERE case_id=? ORDER BY id DESC",
+            (case_id,),
+        ).fetchall()
+        runs: list[Dict[str, Any]] = []
+        for row in rows:
+            runs.append(
+                {
+                    "case_id": row[1],
+                    "created_at": row[2],
+                    "ai_url": row[3],
+                    "doc_url": row[4],
+                    "pdf_url": row[5],
+                    "ocr_start_time": row[6],
+                    "ocr_end_time": row[7],
+                    "total_tokens_used": row[8],
+                    "total_input_tokens": row[9],
+                    "total_output_tokens": row[10],
+                }
+            )
+        return {"ok": True, "runs": runs}
+    finally:
+        conn.close()
 
 @app.get("/n8n/report-status/{report_id}")
 def get_report_status(report_id: str) -> Dict[str, Any]:

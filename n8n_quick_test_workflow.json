@@ -1,0 +1,263 @@
+{
+  "name": "Quick Test Workflow - Fixed Values",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "quick-test",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "quick-test"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "section4_start_time",
+              "name": "section4 start time",
+              "value": "2025-09-09T21:36:48.297+05:30",
+              "type": "string"
+            },
+            {
+              "id": "section4_end_time",
+              "name": "section4 end time", 
+              "value": "2025-09-09T21:36:48.296+05:30",
+              "type": "string"
+            },
+            {
+              "id": "section9_start_time",
+              "name": "section9 start time",
+              "value": "2025-09-09T21:58:52.203+05:30",
+              "type": "string"
+            },
+            {
+              "id": "section9_end_time",
+              "name": "section9 end time",
+              "value": "2025-09-09T21:58:52.202+05:30",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "success",
+              "type": "string"
+            },
+            {
+              "id": "bucket",
+              "name": "bucket",
+              "value": "finallcpreports",
+              "type": "string"
+            },
+            {
+              "id": "case_id",
+              "name": "case_id",
+              "value": "4257",
+              "type": "string"
+            },
+            {
+              "id": "file_id",
+              "name": "file_id",
+              "value": "202509091628",
+              "type": "string"
+            },
+            {
+              "id": "pdf_key",
+              "name": "pdf_key",
+              "value": "4257/Output/202509091628-4257-highlighted.pdf",
+              "type": "string"
+            },
+            {
+              "id": "pdf_s3_path",
+              "name": "pdf_s3_path",
+              "value": "s3://finallcpreports/4257/Output/202509091628-4257-highlighted.pdf",
+              "type": "string"
+            },
+            {
+              "id": "pdf_bytes",
+              "name": "pdf_bytes",
+              "value": 126183,
+              "type": "number"
+            },
+            {
+              "id": "pdf_signed_url",
+              "name": "pdf_signed_url",
+              "value": "https://finallcpreports.s3.amazonaws.com/4257/Output/202509091628-4257-highlighted.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA47CRYDBE5XWTMKOR%2F20250909%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250909T164502Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=7b8a038dcba67621655fc362f89e1a476689bacf5cafc41dcc22d6e7b32e02a4",
+              "type": "string"
+            },
+            {
+              "id": "docx_key",
+              "name": "docx_key",
+              "value": "4257/Output/202509091628-4257-highlighted.docx",
+              "type": "string"
+            },
+            {
+              "id": "docx_s3_path",
+              "name": "docx_s3_path",
+              "value": "s3://finallcpreports/4257/Output/202509091628-4257-highlighted.docx",
+              "type": "string"
+            },
+            {
+              "id": "docx_bytes",
+              "name": "docx_bytes",
+              "value": 56918,
+              "type": "number"
+            },
+            {
+              "id": "docx_signed_url",
+              "name": "docx_signed_url",
+              "value": "https://finallcpreports.s3.amazonaws.com/4257/Output/202509091628-4257-highlighted.docx?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA47CRYDBE5XWTMKOR%2F20250909%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250909T164502Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=5886e49154eeaf749468665c7f864e03b3def78912fe6413368d75b822310876",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-fixed-data",
+      "name": "Set Fixed Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "pdf_object",
+              "name": "pdf",
+              "value": "={{ { \"key\": $json.pdf_key, \"s3_path\": $json.pdf_s3_path, \"bytes\": $json.pdf_bytes, \"signed_url\": $json.pdf_signed_url } }}",
+              "type": "object"
+            },
+            {
+              "id": "docx_object",
+              "name": "docx",
+              "value": "={{ { \"key\": $json.docx_key, \"s3_path\": $json.docx_s3_path, \"bytes\": $json.docx_bytes, \"signed_url\": $json.docx_signed_url } }}",
+              "type": "object"
+            },
+            {
+              "id": "case_id",
+              "name": "case_id",
+              "value": "={{ $json.case_id }}",
+              "type": "string"
+            },
+            {
+              "id": "status",
+              "name": "status",
+              "value": "={{ $json.status }}",
+              "type": "string"
+            },
+            {
+              "id": "bucket",
+              "name": "bucket",
+              "value": "={{ $json.bucket }}",
+              "type": "string"
+            },
+            {
+              "id": "file_id",
+              "name": "file_id",
+              "value": "={{ $json.file_id }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/webhook/finalize",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "call-backend",
+      "name": "Call Backend Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"Quick test completed\", \"data\": $json } }}"
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Fixed Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Fixed Data": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Call Backend Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Backend Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1"
+}
+

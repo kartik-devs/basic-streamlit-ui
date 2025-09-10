@@ -236,12 +236,25 @@ def main() -> None:
     # --- Fetch outputs list (non-versioned flat Output/ folder) ---
     outputs: list[dict] = []
     try:
+        # Prefer any immediate AI URL discovered via webhook (ensures the page has something to render)
+        ai_url_from_session = (st.session_state.get("ai_signed_url_by_case", {}) or {}).get(str(case_id))
+        if ai_url_from_session:
+            outputs = [{"label": st.session_state.get("ai_label_by_case", {}).get(str(case_id)) or "AI Report",
+                        "ai_url": ai_url_from_session}]
+        # Fetch from S3 to replace/augment with authoritative list
         r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=8)
         if r.ok:
             data = r.json() or {}
-            outputs = data.get("items", []) or []
+            outputs = data.get("items", []) or outputs
+        # As a final fallback, ask backend for latest run (if S3 hasn’t listed yet)
+        if not outputs:
+            r2 = requests.get(f"{backend}/runs/{case_id}", timeout=6)
+            if r2.ok:
+                run = (r2.json() or {}).get("run")
+                if run and (run.get("pdf_url") or run.get("ai_url")):
+                    outputs = [{"label": "AI Report", "ai_url": run.get("ai_url") or run.get("pdf_url")}]
     except Exception:
-        outputs = []
+        outputs = outputs or []
 
     # Pre-fetch ground truth and patient inference so the table has correct data
     assets = {}
@@ -433,15 +446,119 @@ def main() -> None:
             
             return str(ocr_start), str(ocr_end), str(total_tokens), str(input_tokens), str(output_tokens)
 
-        rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
+        rows: list[tuple[str, str, str, str | None, str | None, str, str, str, str, str]] = []
         if outputs:
             for o in outputs:
                 doc_version = extract_version(o.get("label"))
                 # Use timestamp from S3 metadata instead of fake timestamp
                 report_timestamp = o.get("timestamp") or generated_ts
+                # Load webhook metrics from database
+                try:
+                    import requests
+                    backend = st.session_state.get("backend_url", "http://localhost:8000")
+                    response = requests.get(f"{backend}/runs/{case_id}", timeout=5)
+                    if response.status_code == 200:
+                        _payload = response.json() or {}
+                        run_data = (_payload.get("run") if isinstance(_payload, dict) else None) or {}
+                        metrics = {
+                            "ocr_start_time": run_data.get("ocr_start_time"),
+                            "ocr_end_time": run_data.get("ocr_end_time"),
+                            "total_tokens_used": run_data.get("total_tokens_used"),
+                            "total_input_tokens": run_data.get("total_input_tokens"),
+                            "total_output_tokens": run_data.get("total_output_tokens")
+                        }
+                        # Fallback if DB fields are empty/None: try session + raw webhook text
+                        if not any(v for v in metrics.values()):
+                            # 1) Session metrics bucket
+                            metrics = (st.session_state.get("webhook_metrics_by_case") or {}).get(str(case_id)) or {}
+                            # 2) Parse last_webhook_text if still empty
+                            if (not metrics) and st.session_state.get("last_webhook_text"):
+                                try:
+                                    import json as _json
+                                    raw = st.session_state.get("last_webhook_text") or ""
+                                    data = _json.loads(raw)
+                                    items = data if isinstance(data, list) else [data]
+                                    parsed = {}
+                                    for it in items:
+                                        if not isinstance(it, dict):
+                                            continue
+                                        if isinstance(it.get("docx"), dict) and it["docx"].get("signed_url"):
+                                            parsed["docx_url"] = it["docx"]["signed_url"]
+                                        if isinstance(it.get("pdf"), dict) and it["pdf"].get("signed_url"):
+                                            parsed["pdf_url"] = it["pdf"]["signed_url"]
+                                        for k in [
+                                            "ocr_start_time",
+                                            "ocr_end_time",
+                                            "total_tokens_used",
+                                            "total_input_tokens",
+                                            "total_output_tokens",
+                                        ]:
+                                            if it.get(k) is not None:
+                                                parsed[k] = it.get(k)
+                                    metrics = parsed or {}
+                                except Exception:
+                                    metrics = {}
+                        # Debug: Show what we got
+                        st.write(f"🔍 Debug: Loaded webhook data for case {case_id}: {metrics}")
+                    else:
+                        metrics = {}
+                        st.write(f"🔍 Debug: No webhook data for case {case_id} (status: {response.status_code})")
+                except Exception as e:
+                    # Fallback to session state
+                    metrics = (st.session_state.get("webhook_metrics_by_case") or {}).get(str(case_id)) or {}
+                    st.write(f"🔍 Debug: Error loading webhook data for case {case_id}: {e}")
+                if metrics:
+                    ocr_start = metrics.get("ocr_start_time") or "—"
+                    ocr_end = metrics.get("ocr_end_time") or "—"
+                    tot = metrics.get("total_tokens_used")
+                    inp = metrics.get("total_input_tokens")
+                    out = metrics.get("total_output_tokens")
+                    # Format numbers
+                    try:
+                        total_tokens = f"{int(tot):,}" if tot is not None else "—"
+                    except Exception:
+                        total_tokens = str(tot) if tot is not None else "—"
+                    try:
+                        input_tokens = f"{int(inp):,}" if inp is not None else "—"
+                    except Exception:
+                        input_tokens = str(inp) if inp is not None else "—"
+                    try:
+                        output_tokens = f"{int(out):,}" if out is not None else "—"
+                    except Exception:
+                        output_tokens = str(out) if out is not None else "—"
+                else:
                 ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
                 rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
         else:
+            # No S3 outputs found. Try to build a row from the latest DB run so the UI is not blank.
+            try:
+                import requests as _rq
+                backend = st.session_state.get("backend_url", "http://localhost:8000")
+                r = _rq.get(f"{backend}/runs/{case_id}", timeout=5)
+                if r.ok:
+                    payload = r.json() or {}
+                    run = (payload.get("run") if isinstance(payload, dict) else None) or {}
+                    if run:
+                        gen_time = run.get("created_at") or generated_ts
+                        ai_url = run.get("ai_url")
+                        doc_url = run.get("doc_url")
+                        pdf_url = run.get("pdf_url") or gt_effective_pdf_url
+                        ocr_start = run.get("ocr_start_time") or "—"
+                        ocr_end = run.get("ocr_end_time") or "—"
+                        def _fmt(n):
+                            try:
+                                return f"{int(n):,}" if n is not None else "—"
+                            except Exception:
+                                return str(n) if n is not None else "—"
+                        total_tokens = _fmt(run.get("total_tokens_used"))
+                        input_tokens = _fmt(run.get("total_input_tokens"))
+                        output_tokens = _fmt(run.get("total_output_tokens"))
+                        rows.append((gen_time, code_version, "—", pdf_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
+        else:
+                        rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
+                else:
+                    rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
+            except Exception:
             rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
         table_html = [
@@ -843,9 +960,154 @@ def main() -> None:
         components.html(html, height=sync_height + 16)
 
 
-    # --- Discrepancy notes & export ---
+    # --- Discrepancy: tabbed UI (Comments | AI Report Editor) ---
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
-    st.markdown("### Discrepancy Notes")
+    st.markdown("### Discrepancy")
+    tabs = st.tabs(["Comments", "AI Report Editor"])
+
+    with tabs[1]:
+        st.caption("Edit AI-generated DOCX reports directly. Download, edit with LibreOffice, and upload the edited version.")
+
+        # Version dropdown for AI report - filter to DOCX only
+        docx_outputs = [o for o in (outputs or []) if o.get("ai_url", "").lower().endswith(".docx")]
+        version_labels = [o.get("label") for o in docx_outputs if o.get("label")]
+        
+        if not version_labels:
+            st.warning("No DOCX AI reports available for this case. Only DOCX files can be edited.")
+            st.info("Available outputs:")
+            for output in (outputs or []):
+                file_type = "DOCX" if output.get("ai_url", "").lower().endswith(".docx") else "PDF"
+                st.write(f"- {output.get('label', 'Unknown')} ({file_type})")
+        else:
+            sel_ver_idx = 0
+            if version_labels:
+                sel_ver_idx = version_labels.index(selected_label) if 'selected_label' in locals() and selected_label in version_labels else 0
+            sel_ver = st.selectbox("AI report version (DOCX only)", options=version_labels or ["—"], index=sel_ver_idx if version_labels else 0, key=f"editor_ver_{case_id}")
+            chosen_ai = next((o for o in docx_outputs if o.get("label") == sel_ver), None)
+            chosen_url = (chosen_ai or {}).get("ai_url")
+
+            if chosen_url:
+                # In-browser DOCX Editor with actual document content
+                st.markdown("### Edit Document Online")
+                
+                # Create a proper DOCX editor that shows and allows editing of the actual document content
+                editor_html = f"""
+                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 20px; background: white; font-family: Arial, sans-serif;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee;">
+                        <h3 style="margin: 0; color: #333;">📄 Document Viewer</h3>
+                        <div>
+                            <button onclick="downloadOriginal()" style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">📥 Download Document</button>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px; padding: 10px; background: #e9ecef; border-radius: 4px; font-size: 14px;">
+                        <strong>📄 Document:</strong> {sel_ver} | <strong>Case ID:</strong> {case_id}
+                    </div>
+                    
+                    <div id="editor" style="min-height: 600px; border: 1px solid #ccc; border-radius: 4px; background: white;">
+                        <iframe id="documentViewer" src="" style="width: 100%; height: 600px; border: none; border-radius: 4px;"></iframe>
+                    </div>
+                    
+                    <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 14px; color: #666;">
+                        <strong>💡 Document Viewer:</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px;">
+                            <li>View DOCX files using Microsoft Office Online viewer</li>
+                            <li>View PDF files using PDF.js viewer</li>
+                            <li>Documents are displayed in their original format with full formatting</li>
+                            <li>Use "Download Original" to get the document file</li>
+                            <li>Note: This is a viewer - for editing, download and use your preferred editor</li>
+                        </ul>
+                        <button onclick="loadDocument()" style="margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">🔄 Refresh Document</button>
+                    </div>
+                </div>
+                
+                <script>
+                    let documentContent = '';
+                    let isLoaded = false;
+                    
+                    // Load document in iframe using document viewer
+                    async function loadDocument() {{
+                        try {{
+                            const documentUrl = '{chosen_url}';
+                            const iframe = document.getElementById('documentViewer');
+                            
+                            // Use Microsoft Office Online viewer for DOCX files
+                            if (documentUrl.toLowerCase().includes('.docx')) {{
+                                const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${{encodeURIComponent(documentUrl)}}`;
+                                iframe.src = viewerUrl;
+                            }}
+                            // Use PDF.js viewer for PDF files
+                            else if (documentUrl.toLowerCase().includes('.pdf')) {{
+                                const viewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${{encodeURIComponent(documentUrl)}}`;
+                                iframe.src = viewerUrl;
+                            }}
+                            // Fallback to direct URL
+                            else {{
+                                iframe.src = documentUrl;
+                            }}
+                            
+                            isLoaded = true;
+                        }} catch (error) {{
+                            document.getElementById('editor').innerHTML = `
+                                <div style="text-align: center; padding: 40px; color: #d32f2f;">
+                                    <div style="font-size: 24px; margin-bottom: 10px;">❌</div>
+                                    <p>Error loading document: ${{error.message}}</p>
+                                </div>
+                            `;
+                        }}
+                    }}
+                    
+                    function downloadOriginal() {{
+                        // Use backend proxy for download
+                        const proxyUrl = '{backend}/proxy/docx?url=' + encodeURIComponent('{chosen_url}');
+                        const link = document.createElement('a');
+                        link.href = proxyUrl;
+                        link.download = '{case_id}_original_{sel_ver}.docx';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }}
+                    
+                    // Note: Save functionality removed since we're now using a document viewer
+                    
+                    // Load document when page loads
+                    window.addEventListener('load', loadDocument);
+                </script>
+                """
+                
+                components.html(editor_html, height=750)
+                
+                # Additional download option for convenience
+                st.markdown("### Quick Actions")
+                col1, col2 = st.columns([1, 1])
+                
+                with col1:
+                    if st.button("📥 Download DOCX File", key=f"quick_download_{case_id}", type="primary"):
+                        try:
+                            import requests
+                            # Use backend proxy to avoid CORS issues
+                            proxy_url = f"{backend}/proxy/docx?url={chosen_url}"
+                            response = requests.get(proxy_url, timeout=30)
+                            if response.status_code == 200:
+                                st.download_button(
+                                    "⬇️ Download DOCX",
+                                    data=response.content,
+                                    file_name=f"{case_id}_ai_report_{sel_ver}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    key=f"dl_quick_{case_id}",
+                                )
+                                st.success("DOCX file ready for download!")
+                            else:
+                                st.error("Failed to download DOCX file")
+                        except Exception as e:
+                            st.error(f"Download failed: {str(e)}")
+                
+                with col2:
+                    st.info("💡 **For full editing:**\nDownload the file and open with LibreOffice or Microsoft Word")
+            else:
+                st.info("No DOCX AI report URL available for the selected version.")
+
+    with tabs[0]:
     st.caption("Record mismatches between Ground Truth and AI by section and subsection. Export as PDF/JSON.")
 
     # Initialize state bucket per case + selected AI label
@@ -997,7 +1259,7 @@ def main() -> None:
     with meta_cols[1]:
         st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
 
-    if add_ok and section_choice and comment:
+    if 'add_ok' in locals() and add_ok and section_choice and comment:
         # Persist to backend (shared)
         try:
             if requests is not None:
@@ -1028,6 +1290,9 @@ def main() -> None:
 
     # Load existing comments from backend (shared, user-agnostic)
     notes = st.session_state.get(notes_key, [])
+
+    # Stop here so legacy discrepancy UI below is not rendered outside the tab
+    return
     try:
         if requests is not None:
             params = {"ai_label": selected_label} if selected_label else None

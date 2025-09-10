@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Tuple
 
 import streamlit_authenticator as stauth
+from streamlit_extras.switch_page_button import switch_page
 
 # Local modules
 from app.ui import inject_base_styles, show_header
@@ -63,7 +64,7 @@ def main() -> None:
 
         with tabs[0]:
             st.subheader("Sign in")
-            authenticator.login(location="main")
+            authenticator.login("Login", "main")
 
         with tabs[1]:
             st.subheader("Create an account")
@@ -105,8 +106,10 @@ def main() -> None:
         c1, c2 = st.columns([1, 1])
         with c1:
             if st.button("Go to Case Report", type="primary"):
-                # Use st.switch_page which is the proper Streamlit way
-                st.switch_page("pages/01_Case_Report.py")
+                try:
+                    switch_page("Case_Report")
+                except Exception:
+                    st.experimental_set_query_params(page="case")
         with c2:
             authenticator.logout("Log out", "main")
 

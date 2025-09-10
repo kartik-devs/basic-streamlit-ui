@@ -7,7 +7,7 @@ from datetime import datetime
 from app.ui import inject_base_styles, show_header, top_nav, hero_section, feature_grid, footer_section, theme_provider
 import os
 import requests
-# Removed streamlit_extras import - using st.switch_page instead
+from streamlit_extras.switch_page_button import switch_page
 
 
 def ensure_authenticated() -> bool:
@@ -114,7 +114,11 @@ def main() -> None:
                 except Exception:
                     pass
                 # Navigate to Generating Report page
-                st.switch_page("pages/02_Generating_Report.py")
+                try:
+                    switch_page("Generating_Report")
+                except Exception:
+                    st.experimental_set_query_params(page="02_Generating_Report", case_id=cid, start="1")
+                    st.rerun()
                 st.stop()
 
     # Subtle info card beneath the form

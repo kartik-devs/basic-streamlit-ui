@@ -299,6 +299,33 @@ def main() -> None:
         outputs = []
         assets = {}
     
+    # Augment from DB when no S3 outputs exist (helps for mock cases like 9999)
+    if not outputs:
+        try:
+            import requests as _rq
+            backend_url = _get_backend_base()
+            r = _rq.get(f"{backend_url}/runs/{case_id}", timeout=5)
+            if r.ok:
+                p = r.json() or {}
+                run = (p.get("run") if isinstance(p, dict) else None) or {}
+                if run:
+                    outputs = [
+                        {
+                            "label": run.get("document_version") or "—",
+                            "timestamp": run.get("created_at"),
+                            "gt_url": run.get("pdf_url"),
+                            "ai_url": run.get("ai_url"),
+                            "doctor_url": run.get("doc_url"),
+                            "ocr_start_time": run.get("ocr_start_time"),
+                            "ocr_end_time": run.get("ocr_end_time"),
+                            "total_tokens_used": run.get("total_tokens_used"),
+                            "total_input_tokens": run.get("total_input_tokens"),
+                            "total_output_tokens": run.get("total_output_tokens"),
+                        }
+                    ]
+        except Exception:
+            pass
+    
     gt_pdf = assets.get("ground_truth_pdf")
     gt_generic = assets.get("ground_truth")
     gt_effective_pdf_url = None
@@ -494,6 +521,26 @@ def main() -> None:
         else:
             rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
+        # Pagination controls for summary table (10 per page)
+        sum_page_size = 10
+        sum_total = len(rows)
+        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+        sum_pg_key = f"hist_summary_page_{case_id}"
+        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+        sc1, sc2, sc3 = st.columns([1, 2, 1])
+        with sc1:
+            if st.button("← Prev", key=f"sum_prev_{case_id}", disabled=(sum_cur_page <= 1)):
+                sum_cur_page = max(1, sum_cur_page - 1)
+        with sc2:
+            st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
+        with sc3:
+            if st.button("Next →", key=f"sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages)):
+                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+        st.session_state[sum_pg_key] = sum_cur_page
+        sum_start = (sum_cur_page - 1) * sum_page_size
+        sum_end = min(sum_total, sum_start + sum_page_size)
+        page_rows = rows[sum_start:sum_end]
+
         # Add CSS for horizontal scrolling
         st.markdown("""
         <style>
@@ -545,7 +592,7 @@ def main() -> None:
             '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
             '</div>'
         ]
-        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in rows:
+        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
             gt_dl = dl_link(gt_url)
             ai_dl = dl_link(ai_url)
             doc_dl = dl_link(doc_url)
@@ -803,10 +850,166 @@ def main() -> None:
         components.html(html, height=sync_height + 16)
 
 
-    # --- Discrepancy notes ---
+    # --- Discrepancy: tabbed UI (Comments | AI Report Editor) ---
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
-    st.markdown("### Discrepancy Notes")
-    st.caption("Record mismatches between Ground Truth and AI by section and subsection.")
+    st.markdown("### Discrepancy")
+    tabs = st.tabs(["Comments", "AI Report Editor"])
+
+    with tabs[1]:
+        st.caption("Edit AI-generated DOCX reports directly. Download, edit with LibreOffice, and upload the edited version.")
+        
+        # DOCX detection from multiple possible fields (ai_url/ai_key/doctor_url/doctor_key)
+        from urllib.parse import urlparse
+        def _is_docx_url(u: str) -> bool:
+            if not u:
+                return False
+            try:
+                return urlparse(u).path.lower().endswith('.docx')
+            except Exception:
+                return u.lower().endswith('.docx')
+        def _docx_url_for_item(item: dict) -> str | None:
+            ai_url = (item.get('ai_url') or '').strip()
+            ai_key = (item.get('ai_key') or '').strip().lower()
+            dr_url = (item.get('doctor_url') or '').strip()
+            dr_key = (item.get('doctor_key') or '').strip().lower()
+            if _is_docx_url(ai_url) or ai_key.endswith('.docx'):
+                return ai_url or dr_url
+            if _is_docx_url(dr_url) or dr_key.endswith('.docx'):
+                return dr_url or ai_url
+            return None
+        docx_map = { (it.get('label') or it.get('ai_key') or it.get('doctor_key') or ''): _docx_url_for_item(it) for it in (outputs or []) }
+        docx_map = {k: v for k, v in docx_map.items() if k and v}
+        
+        if not docx_map:
+            st.warning("No DOCX AI reports available for this case. Only DOCX files can be edited.")
+            st.info("Available outputs:")
+            for output in (outputs or []):
+                file_type = "DOCX" if _is_docx_url(output.get('ai_url', '')) or output.get('ai_key', '').lower().endswith('.docx') else "PDF"
+                st.write(f"- {output.get('label', 'Unknown')} ({file_type})")
+        else:
+            labels_docx = list(docx_map.keys())
+            idx = labels_docx.index(selected_label) if selected_label in labels_docx else 0
+            sel_ver = st.selectbox("AI report version (DOCX only)", options=labels_docx, index=idx, key=f"hist_editor_ver_{case_id}")
+            chosen_url = docx_map.get(sel_ver)
+
+            if chosen_url:
+                # In-browser DOCX Editor with actual document content
+                st.markdown("### Edit Document Online")
+                
+                # Create a proper DOCX editor that shows and allows editing of the actual document content
+                editor_html = f"""
+                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 20px; background: white; font-family: Arial, sans-serif;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee;">
+                        <h3 style="margin: 0; color: #333;">📄 Document Viewer</h3>
+                        <div>
+                            <button onclick="downloadOriginal()" style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">📥 Download Document</button>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px; padding: 10px; background: #e9ecef; border-radius: 4px; font-size: 14px;">
+                        <strong>📄 Document:</strong> {sel_ver} | <strong>Case ID:</strong> {case_id}
+                    </div>
+                    
+                    <div id="editor" style="min-height: 600px; border: 1px solid #ccc; border-radius: 4px; background: white;">
+                        <iframe id="documentViewer" src="" style="width: 100%; height: 600px; border: none; border-radius: 4px;"></iframe>
+                    </div>
+                    
+                    <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 14px; color: #666;">
+                        <strong>💡 Document Viewer:</strong>
+                        <ul style="margin: 5px 0; padding-left: 20px;">
+                            <li>View DOCX files using Microsoft Office Online viewer</li>
+                            <li>View PDF files using PDF.js viewer</li>
+                            <li>Documents are displayed in their original format with full formatting</li>
+                            <li>Use "Download Document" to get the document file</li>
+                            <li>Note: This is a viewer - for editing, download and use your preferred editor</li>
+                        </ul>
+                        <button onclick="loadDocument()" style="margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">🔄 Refresh Document</button>
+                    </div>
+                </div>
+                
+                <script>
+                    let documentContent = '';
+                    let isLoaded = false;
+                    
+                    // Load document in iframe using document viewer
+                    async function loadDocument() {{
+                        try {{
+                            const documentUrl = '{chosen_url}';
+                            const iframe = document.getElementById('documentViewer');
+                            
+                            // Use Microsoft Office Online viewer for DOCX files
+                            if (documentUrl.toLowerCase().includes('.docx')) {{
+                                const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${{encodeURIComponent(documentUrl)}}`;
+                                iframe.src = viewerUrl;
+                            }}
+                            // Use PDF.js viewer for PDF files
+                            else if (documentUrl.toLowerCase().includes('.pdf')) {{
+                                const viewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${{encodeURIComponent(documentUrl)}}`;
+                                iframe.src = viewerUrl;
+                            }}
+                            // Fallback to direct URL
+                            else {{
+                                iframe.src = documentUrl;
+                            }}
+                            
+                            isLoaded = true;
+                        }} catch (error) {{
+                            document.getElementById('editor').innerHTML = `
+                                <div style="text-align: center; padding: 40px; color: #d32f2f;">
+                                    <div style="font-size: 24px; margin-bottom: 10px;">❌</div>
+                                    <p>Error loading document: ${{error.message}}</p>
+                                </div>
+                            `;
+                        }}
+                    }}
+                    
+                    function downloadOriginal() {{
+                        // Use backend proxy for download
+                        const proxyUrl = '{backend}/proxy/docx?url=' + encodeURIComponent('{chosen_url}');
+                        const link = document.createElement('a');
+                        link.href = proxyUrl;
+                        link.download = '{case_id}_original_{sel_ver}.docx';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }}
+                    
+                    // Note: Save functionality removed since we're now using a document viewer
+                    
+                    // Load document when page loads
+                    window.addEventListener('load', loadDocument);
+                </script>
+                """
+                
+                components.html(editor_html, height=750)
+                
+                # Additional download option for convenience
+                st.markdown("### Quick Actions")
+                col1, col2 = st.columns([1, 1])
+                
+                with col1:
+                    if st.button("📥 Download Original DOCX", key=f"hist_download_{case_id}", type="primary"):
+                        try:
+                            import requests
+                            # Use backend proxy to avoid CORS issues
+                            proxy_url = f"{backend}/proxy/docx?url={chosen_url}"
+                            response = requests.get(proxy_url, timeout=30)
+                            if response.status_code == 200:
+                                st.download_button(
+                                    "⬇️ Download Original",
+                                    data=response.content,
+                                    file_name=f"{case_id}_original_{sel_ver}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    key=f"hist_dl_{case_id}",
+                                )
+                                st.success("Original DOCX file ready for download!")
+                            else:
+                                st.error("Failed to download DOCX file")
+                        except Exception as e:
+                            st.error(f"Download failed: {str(e)}")
+                
+                with col2:
+                    st.info("💡 **Edit in browser:**\nUse the editor above to edit the document content directly")
 
     # Resolve current user
     current_user = (
@@ -924,142 +1127,148 @@ def main() -> None:
         "10. Overview of Medical Expert": [],
     }
 
-    # Input UI
-    section_options = list(toc_sections.keys())
-    n1, n2 = st.columns([3, 1])
-    with n1:
-        # Create hierarchical options with indentation and arrows
-        hierarchical_options = []
-        section_to_subsection = {}
-        
+    # Comment input UI is rendered inside the Comments tab below.
+
+    with tabs[0]:
+        st.caption("Record mismatches between Ground Truth and AI by section and subsection.")
+        # --- Add comment form (inside Comments tab only; always visible) ---
+        st.markdown("#### Add comment")
+        section_options = list(toc_sections.keys())
+        cfrm1, cfrm2 = st.columns([3, 1])
+        with cfrm1:
+            hierarchical_options: list[str] = []
+            section_to_subsection: dict[str, str] = {}
         for section in section_options:
             subsections = toc_sections.get(section, [])
             if subsections:
-                # Add main section
                 hierarchical_options.append(section)
                 section_to_subsection[section] = section
-                
-                # Add subsections with indentation and arrows
                 for sub in subsections:
-                    indented_sub = f"    └─ {sub}"
-                    hierarchical_options.append(indented_sub)
-                    section_to_subsection[indented_sub] = section
+                        indented = f"    └─ {sub}"
+                        hierarchical_options.append(indented)
+                        section_to_subsection[indented] = section
             else:
-                # Section without subsections
                 hierarchical_options.append(section)
                 section_to_subsection[section] = section
-        
-        section_choice = st.selectbox("Section/Subsection", options=hierarchical_options, index=0, key="history_disc_sec")
-    with n2:
-        severity = st.selectbox("Severity", options=["Low", "Medium", "High"], index=1, key="history_disc_sev")
+        form_section = st.selectbox(
+            "Section/Subsection",
+            options=hierarchical_options,
+            index=0,
+            key="comments_form_section",
+        )
+        with cfrm2:
+            form_severity = st.selectbox("Severity", options=["Low", "Medium", "High"], index=1, key="comments_form_severity")
 
-    comment_text = st.text_area("Describe the discrepancy", key="history_disc_text")
-    add_ok = st.button("Add comment", type="primary", key="history_add_btn")
-
-    # Backend base
-    backend = _get_backend_base()
-
-    if add_ok and section_choice and comment_text:
-        try:
-            import requests as _rq
-            # Parse hierarchical format
-            if section_choice.startswith("    └─ "):
-                # This is a subsection - extract the actual subsection name
-                subsection = section_choice.replace("    └─ ", "")
-                section = section_to_subsection[section_choice]
+        form_text = st.text_area("Describe the discrepancy", key="comments_form_text")
+        submit_col, _ = st.columns([0.25, 0.75])
+        with submit_col:
+            if st.button("Add comment", type="primary", key="comments_form_submit"):
+                if form_text.strip():
+                    try:
+                        import requests as _rq
+                        if form_section.startswith("    └─ "):
+                            subsection = form_section.replace("    └─ ", "")
+                            section = section_to_subsection[form_section]
+                        else:
+                            section = form_section
+                            subsection = form_section
+                            payload = {
+                                "case_id": case_id,
+                                "ai_label": selected_label or None,
+                                "section": section,
+                                "subsection": subsection,
+                                            "username": st.session_state.get("username") or "anonymous",
+                                            "severity": form_severity,
+                                            "comment": form_text.strip(),
+                            }
+                            _rq.post(f"{backend}/comments", json=payload, timeout=8)
+                            _get_case_comments.clear()
+                            st.success("Added.")
+                    except Exception:
+                            st.warning("Failed to add comment.")
             else:
-                # This is a main section
-                section = section_choice
-                subsection = section_choice  # Use section as subsection if no subsection
-            
-            payload = {
-                "case_id": case_id,
-                "ai_label": selected_label or None,
-                "section": section,
-                "subsection": subsection,
-                "username": current_user,
-                "severity": severity,
-                "comment": comment_text.strip(),
-            }
-            _rq.post(f"{backend}/comments", json=payload, timeout=8)
-            # Clear cache for comments to show new comment immediately
-            _get_case_comments.clear()
-            st.success("Added.")
-        except Exception:
-            st.warning("Failed to add comment.")
+                                    st.warning("Please enter a comment.")
 
+        st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+        st.markdown("#### Recorded comments")
     # List comments (cached)
     notes = _get_case_comments(backend, case_id, selected_label)
+    # Render notes table only when there are comments; add pagination (10 per page)
+    page_size = 10
+    total = len(notes)
+    if total > 0:
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        # Track current page in session (per-case)
+        pg_key = f"hist_notes_page_{case_id}"
+        cur_page = int(st.session_state.get(pg_key, 1))
+        # Controls
+        cprev, cinfo, cnext = st.columns([1, 2, 1])
+        with cprev:
+            if st.button("← Prev", disabled=(cur_page <= 1)):
+                cur_page = max(1, cur_page - 1)
+        with cinfo:
+            st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {cur_page} of {total_pages}</div>", unsafe_allow_html=True)
+        with cnext:
+            if st.button("Next →", disabled=(cur_page >= total_pages)):
+                cur_page = min(total_pages, cur_page + 1)
+        st.session_state[pg_key] = cur_page
 
-    if notes:
+        # Slice items for current page
+        start_idx = (cur_page - 1) * page_size
+        end_idx = min(total, start_idx + page_size)
+        page_items = notes[start_idx:end_idx]
+    else:
+        page_items = []
+
+    if page_items:
         st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
         st.markdown("**Recorded comments**")
+    elif total == 0:
+        st.info("No comments yet.")
         
-        # Create HTML table for perfect alignment
-        table_html = [
-            '<div style="border:1px solid rgba(255,255,255,0.12);border-radius:8px;overflow:hidden;margin-top:8px;">',
-            '<div style="display:grid;grid-template-columns:2fr 0.7fr 0.6fr 2fr 1.2fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Section/Subsection</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">User</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Severity</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">When</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Actions</div>',
-            '</div>'
-        ]
-        
-        # Add data rows
-        for n in notes:
+        # Header row
+        h1, h2, h3, h4, h5 = st.columns([2.0, 0.7, 0.6, 2.0, 1.2])
+        h1.markdown("**Section/Subsection**")
+        h2.markdown("**User**")
+        h3.markdown("**Severity**")
+        h4.markdown("**When**")
+        h5.markdown("**Actions**")
+
+        # Rows with inline action buttons in the last column
+        for n in (page_items or []):
+            nid = n.get("id")
             is_resolved = bool(n.get("resolved"))
-            row_style = "opacity:.85;background:rgba(255,255,255,0.03);" if is_resolved else ""
-            text_style = "opacity:.7;color:#9aa0a6;" if is_resolved else ""
-            
             section = n.get('section') or '—'
             subsection = n.get("subsection") or (toc_sections.get(n.get("section") or "", [])[:1] or [n.get("section")])[0]
             combined = f"{section} / {subsection}" if subsection and subsection != '—' else section
             when = (n.get("created_at") or "").replace("T", " ").replace("Z", " UTC")
-            comment = n.get('comment') or ''
-            
-            table_html.append(f'<div style="display:grid;grid-template-columns:2fr 0.7fr 0.6fr 2fr 1.2fr;gap:0;border-bottom:1px solid rgba(255,255,255,0.06);{row_style}">')
-            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{combined}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{n.get("username") or "anonymous"}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{n.get("severity") or "—"}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{when or "—"}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;{text_style}">{comment}</div>')
-            table_html.append('</div>')
-        
-        table_html.append('</div>')
-        st.markdown("".join(table_html), unsafe_allow_html=True)
-        
-        # Add action buttons below the table
-        st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
-        for n in notes:
-            nid = n.get("id")
-            if nid:
-                is_resolved = bool(n.get("resolved"))
-                can_delete = (n.get("username") or "") == (st.session_state.get("username") or st.session_state.get("name") or "")
-                
-                col1, col2, col3 = st.columns([0.3, 0.3, 0.4])
-                with col1:
-                    label = ("Resolve\u00A0\u00A0\u00A0\u00A0" if not is_resolved else "Unresolve\u00A0\u00A0\u00A0")
-                    if st.button(label, key=f"history_disc_res_{nid}"):
+            usernm = n.get("username") or "anonymous"
+            sev = n.get("severity") or "—"
+
+            c1, c2, c3, c4, c5 = st.columns([2.0, 0.7, 0.6, 2.0, 1.2])
+            c1.markdown(combined)
+            c2.markdown(usernm)
+            c3.markdown(sev)
+            c4.markdown(when or '—')
+            with c5:
+                act1, act2 = st.columns([0.6, 0.4])
+                with act1:
+                    label = ("✓ Resolve" if not is_resolved else "✗ Unresolve")
+                    if st.button(label, key=f"row_resolve_{nid}") and nid:
                         try:
                             _rq.patch(f"{backend}/comments/resolve", json={"id": int(nid), "case_id": case_id, "resolved": (not is_resolved)}, timeout=8)
-                            # Clear cache for comments to show updated state immediately
                             _get_case_comments.clear()
                         except Exception:
                             pass
                         st.rerun()
-                with col2:
-                    if can_delete and st.button("Delete\u00A0", key=f"history_disc_del_{nid}"):
+                with act2:
+                    if st.button("🗑️", key=f"row_delete_{nid}") and nid:
                         try:
                             _rq.delete(f"{backend}/comments", json={"case_id": case_id, "ai_label": selected_label, "ids": [int(nid)]}, timeout=8)
-                            # Clear cache for comments to show updated state immediately
                             _get_case_comments.clear()
                         except Exception:
                             pass
                         st.rerun()
-                with col3:
-                    st.markdown("")  # Empty space
 
 if __name__ == "__main__":
     main()

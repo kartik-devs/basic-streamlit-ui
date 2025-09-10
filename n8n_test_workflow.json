@@ -1,0 +1,167 @@
+{
+  "name": "OCR Data Test Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test-ocr-data",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "test-ocr-data"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "case_id",
+              "name": "case_id",
+              "value": "={{ $json.case_id || '4257' }}",
+              "type": "string"
+            },
+            {
+              "id": "run_id",
+              "name": "run_id", 
+              "value": "={{ $json.run_id || '4257202509092354' }}",
+              "type": "string"
+            },
+            {
+              "id": "ocr_start_time",
+              "name": "ocr_start_time",
+              "value": "={{ $json.ocr_start_time || new Date().toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "ocr_end_time",
+              "name": "ocr_end_time",
+              "value": "={{ $json.ocr_end_time || new Date(Date.now() + 5000).toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "total_tokens_used",
+              "name": "total_tokens_used",
+              "value": "={{ $json.total_tokens_used || 1500 }}",
+              "type": "number"
+            },
+            {
+              "id": "total_input_tokens",
+              "name": "total_input_tokens",
+              "value": "={{ $json.total_input_tokens || 800 }}",
+              "type": "number"
+            },
+            {
+              "id": "total_output_tokens",
+              "name": "total_output_tokens",
+              "value": "={{ $json.total_output_tokens || 700 }}",
+              "type": "number"
+            },
+            {
+              "id": "ai_url",
+              "name": "ai_url",
+              "value": "={{ $json.ai_url || 'https://s3.amazonaws.com/bucket/4257/ai_report.pdf' }}",
+              "type": "string"
+            },
+            {
+              "id": "doc_url",
+              "name": "doc_url",
+              "value": "={{ $json.doc_url || 'https://s3.amazonaws.com/bucket/4257/ai_report.docx' }}",
+              "type": "string"
+            },
+            {
+              "id": "pdf_url",
+              "name": "pdf_url",
+              "value": "={{ $json.pdf_url || 'https://s3.amazonaws.com/bucket/4257/ai_report.pdf' }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-ocr-data",
+      "name": "Set OCR Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/webhook/finalize",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "webhook-call",
+      "name": "Call Backend Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"OCR data processed successfully\", \"data\": $json } }}"
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set OCR Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set OCR Data": {
+      "main": [
+        [
+          {
+            "node": "Call Backend Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Backend Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1"
+}
+
