@@ -299,23 +299,7 @@ def main() -> None:
         outputs = []
         assets = {}
     
-    # Fetch backend runs (all) for this case and show in a debug expander
-    backend_runs = []
-    try:
-        import requests as _rq
-        r_all = _rq.get(f"{backend}/runs/{case_id}/all", timeout=6)
-        if r_all.ok:
-            payload = r_all.json() or {}
-            backend_runs = (payload.get("runs") if isinstance(payload, dict) else None) or []
-    except Exception:
-        backend_runs = []
-
-    with st.expander("🔍 Debug: Backend Runs (finalize payloads)", expanded=False):
-        try:
-            import json as _json
-            st.code(_json.dumps(backend_runs, indent=2) if backend_runs else "[]", language="json")
-        except Exception:
-            st.write(backend_runs)
+    # Debug backend runs section removed
     
     # Augment from DB when no S3 outputs exist (helps for mock cases like 9999)
     if not outputs:
@@ -531,7 +515,7 @@ def main() -> None:
         rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
         if outputs:
             for o in outputs:
-                doc_version = extract_version(o.get("label"))
+                doc_version = extract_version(o.get("label")) 
                 # Use timestamp from S3 metadata instead of fake timestamp
                 report_timestamp = o.get("timestamp") or generated_ts
                 ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
@@ -916,10 +900,6 @@ def main() -> None:
         
         if not docx_map:
             st.warning("No DOCX AI reports available for this case. Only DOCX files can be edited.")
-            st.info("Available outputs:")
-            for output in (outputs or []):
-                file_type = "DOCX" if _is_docx_url(output.get('ai_url', '')) or output.get('ai_key', '').lower().endswith('.docx') else "PDF"
-                st.write(f"- {output.get('label', 'Unknown')} ({file_type})")
         else:
             labels_docx = list(docx_map.keys())
             idx = labels_docx.index(selected_label) if selected_label in labels_docx else 0
@@ -960,9 +940,9 @@ def main() -> None:
                         try:
                             import requests
                             # Use backend proxy to avoid CORS issues
-                            proxy_url = f"{backend}/proxy/docx?url={chosen_url}"
-                            response = requests.get(proxy_url, timeout=30)
-                            if response.status_code == 200:
+                            proxy_url = f"{backend}/proxy/docx?url={quote(chosen_url, safe='')}"
+                            response = requests.get(proxy_url, timeout=45)
+                            if response.status_code == 200 and response.content:
                                 st.download_button(
                                     "⬇️ Download Original",
                                     data=response.content,
@@ -972,7 +952,19 @@ def main() -> None:
                                 )
                                 st.success("Original DOCX file ready for download!")
                             else:
-                                st.error("Failed to download DOCX file")
+                                # Fallback: try downloading directly from the DOCX URL
+                                direct = requests.get(chosen_url, timeout=45)
+                                if direct.ok and direct.content:
+                                    st.download_button(
+                                        "⬇️ Download Original",
+                                        data=direct.content,
+                                        file_name=f"{case_id}_original_{sel_ver}.docx",
+                                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        key=f"hist_dl_direct_{case_id}",
+                                    )
+                                    st.info("Downloaded directly from source.")
+                                else:
+                                    st.error("Failed to download DOCX file")
                         except Exception as e:
                             st.error(f"Download failed: {str(e)}")
                 
@@ -1054,29 +1046,7 @@ def main() -> None:
                         st.error(f"Upload error: {str(e)}")
                         st.caption(traceback.format_exc())
 
-                with st.expander("🔧 Debug upload endpoints", expanded=False):
-                    try:
-                        import json as _json
-                        import requests as _rq
-                        hdr = {"ngrok-skip-browser-warning": "true", "Content-Type": "application/json"}
-                        results = {}
-                        for path in ["/s3/upload-ai", "/s3/presign", "/upload/ai"]:
-                            url = f"{backend}{path}"
-                            try:
-                                if path == "/upload/ai":
-                                    # Multipart probe with tiny payload
-                                    files = {"file": ("probe.txt", b"x", "text/plain")}
-                                    data = {"case_id": case_id, "filename": "probe.txt", "dryrun": "1"}
-                                    r = _rq.post(url, files=files, data=data, timeout=15, headers={"ngrok-skip-browser-warning": "true"})
-                                else:
-                                    body = {"case_id": case_id, "type": "ai", "filename": "probe.txt", "dryrun": True}
-                                    r = _rq.post(url, json=body, headers=hdr, timeout=15)
-                                results[path] = {"ok": r.ok, "status": r.status_code, "text": (r.text[:200] if isinstance(r.text, str) else str(r.text))}
-                            except Exception as ex:
-                                results[path] = {"ok": False, "error": str(ex)}
-                        st.code(_json.dumps(results, indent=2), language="json")
-                    except Exception as ex:
-                        st.write(str(ex))
+                # Debug upload endpoints section removed
 
     # Resolve current user
     current_user = (

@@ -1,4 +1,3 @@
-
 import streamlit as st
 from datetime import datetime
 from app.ui import inject_base_styles, theme_provider, top_nav
@@ -243,7 +242,7 @@ def main() -> None:
         if r.ok:
             data = r.json() or {}
             outputs = data.get("items", []) or outputs
-        # As a final fallback, ask backend for latest run (if S3 hasn’t listed yet)
+        # As a final fallback, ask backend for latest run (if S3 hasn't listed yet)
         if not outputs:
             r2 = requests.get(f"{backend}/runs/{case_id}", timeout=6)
             if r2.ok:
@@ -557,6 +556,26 @@ def main() -> None:
             except Exception:
                 rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
+        # Pagination controls for summary table (10 per page)
+        sum_page_size = 10
+        sum_total = len(rows)
+        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+        sum_pg_key = f"results_summary_page_{case_id}"
+        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+        sc1, sc2, sc3 = st.columns([1, 2, 1])
+        with sc1:
+            if st.button("← Prev", key=f"sum_prev_{case_id}", disabled=(sum_cur_page <= 1)):
+                sum_cur_page = max(1, sum_cur_page - 1)
+        with sc2:
+            st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
+        with sc3:
+            if st.button("Next →", key=f"sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages)):
+                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+        st.session_state[sum_pg_key] = sum_cur_page
+        sum_start = (sum_cur_page - 1) * sum_page_size
+        sum_end = min(sum_total, sum_start + sum_page_size)
+        page_rows = rows[sum_start:sum_end]
+
         table_html = [
             '<div class="table-container">',
             '<div class="results-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
@@ -573,7 +592,7 @@ def main() -> None:
             '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
             '</div>'
          ]
-        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in rows:
+        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
             gt_dl = dl_link(gt_url)
             ai_dl = dl_link(ai_url)
             doc_dl = dl_link(doc_url)
@@ -602,8 +621,8 @@ def main() -> None:
     except Exception:
         pass
 
-    # Build layout after table
-    # Build layout first with placeholders
+    # Build layout after table to mirror History page
+    iframe_h = 480
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown(
@@ -618,31 +637,80 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-        gt_area = st.empty()
+        if gt_pdf:
+            st.markdown(f"<iframe src=\"{gt_pdf}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            gt_effective_pdf_url = gt_pdf
+        elif gt_generic:
+            raw_key = assets.get("ground_truth_key") if isinstance(assets, dict) else None
+            params = {"key": raw_key} if raw_key else {"url": gt_generic}
+            try:
+                r2 = requests.get(f"{backend}/s3/ensure-pdf", params=params, timeout=10)
+                if r2.ok:
+                    d2 = r2.json() or {}
+                    url2 = d2.get("url")
+                    fmt = d2.get("format")
+                    if fmt == "pdf" and url2:
+                        st.markdown(f"<iframe src=\"{url2}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                        gt_effective_pdf_url = url2
+                    else:
+                        st.markdown(f"<a href=\"{url2 or gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
+            except Exception:
+                st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
+        else:
+            st.info("Not available")
+
     with col2:
         st.markdown(
             """
-            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;margin-left:8px;'>
+            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
               <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(139,92,246,0.15);border:1px solid rgba(139,92,246,0.35);color:#c4b5fd;font-size:.8rem;font-weight:700;letter-spacing:.02em;">AI</span>
               <span style='font-weight:700;'>AI Generated</span>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        if outputs:
-            labels = [o.get("label") for o in outputs if o.get("label")]
-            default_idx = 0
-            if "v2_ai_label" in st.session_state and st.session_state["v2_ai_label"] in labels:
-                default_idx = labels.index(st.session_state["v2_ai_label"])
-            selected_label = st.selectbox("Select AI output", options=labels, index=default_idx, key="v2_ai_label")
+        # PDF-only AI dropdown like History
+        from urllib.parse import urlparse
+        def _is_pdf(u: str | None) -> bool:
+            if not isinstance(u, str) or not u:
+                return False
+            try:
+                return urlparse(u).path.lower().endswith('.pdf')
+            except Exception:
+                return u.lower().endswith('.pdf')
+        _pdf_outputs = [o for o in outputs if _is_pdf(o.get("ai_url"))]
+        if not _pdf_outputs:
+            _pdf_outputs = [o for o in outputs if _is_pdf(o.get("ai_url")) or _is_pdf(o.get("doctor_url"))]
+        if not _pdf_outputs:
+            _pdf_outputs = outputs
+        labels = [o.get("label") or (o.get("ai_key") or "").split("/")[-1] for o in _pdf_outputs]
+        if labels:
+            current_label = st.session_state.get("v2_ai_label")
+            default_index = labels.index(current_label) if current_label in labels else 0
+            selected_label = st.selectbox(
+                "Select AI output",
+                options=labels,
+                index=default_index,
+                key="v2_ai_label",
+            )
         else:
-            st.caption("No AI outputs found under Output/ for this case.")
             selected_label = None
-        ai_area = st.empty()
+        sel_ai = None
+        if selected_label:
+            sel_ai = next((o for o in _pdf_outputs if (o.get("label") or (o.get("ai_key") or "").split("/")[-1]) == selected_label), None)
+        ai_effective_pdf_url = None
+        if sel_ai and sel_ai.get("ai_url"):
+            st.markdown(f"<iframe src=\"{sel_ai['ai_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            ai_effective_pdf_url = sel_ai["ai_url"]
+        else:
+            st.info("Not available")
+
     with col3:
         st.markdown(
             """
-            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;margin-left:8px;'>
+            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
               <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);color:#86efac;font-size:.8rem;font-weight:700;letter-spacing:.02em;">DR</span>
               <span style='font-weight:700;'>Doctor as LLM</span>
             </div>
@@ -652,7 +720,12 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-        doc_area = st.empty()
+        doc_effective_pdf_url = None
+        if sel_ai and sel_ai.get("doctor_url"):
+            st.markdown(f"<iframe src=\"{sel_ai['doctor_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            doc_effective_pdf_url = sel_ai["doctor_url"]
+        else:
+            st.info("Not available")
 
     # Fetch ground truth separately using existing assets endpoint (latest)
     # (already fetched above; keep variables for rendering)
@@ -681,84 +754,8 @@ def main() -> None:
         """
     )
     header_ph.markdown(header_html, unsafe_allow_html=True)
-    if gt_pdf:
-        with col1:
-            _iframe(gt_pdf)
-        gt_effective_pdf_url = gt_pdf
-    elif gt_generic:
-        with col1:
-            # Try converting by key if provided by backend, else by URL
-            raw_key = assets.get("ground_truth_key") if isinstance(assets, dict) else None
-            params = {"key": raw_key} if raw_key else {"url": gt_generic}
-            try:
-                r2 = requests.get(f"{backend}/s3/ensure-pdf", params=params, timeout=10)
-                if r2.ok:
-                    data2 = r2.json() or {}
-                    url2 = data2.get("url")
-                    fmt = data2.get("format")
-                    if fmt == "pdf" and url2:
-                        _iframe(url2)
-                        gt_effective_pdf_url = url2
-                    else:
-                        st.markdown(f"<a href=\"{url2 or gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
-            except Exception:
-                st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
-    else:
-        with col1:
-            st.info("Not available")
 
-    # Render AI/Doctor using outputs list selection
-    sel_ai = None
-    if selected_label:
-        for o in outputs:
-            if o.get("label") == selected_label:
-                sel_ai = o
-                break
-    ai_effective_pdf_url = None
-    # Prefer immediate AI URL from session (webhook response), else from outputs
-    ai_url_from_session = (st.session_state.get("ai_signed_url_by_case", {}) or {}).get(str(case_id))
-    if ai_url_from_session:
-        with col2:
-            _iframe(ai_url_from_session)
-        ai_effective_pdf_url = ai_url_from_session
-    elif sel_ai and sel_ai.get("ai_url"):
-        with col2:
-            _iframe(sel_ai["ai_url"])
-        ai_effective_pdf_url = sel_ai["ai_url"]
-    else:
-        with col2:
-            st.info("Not available")
-
-    # Attempt to find a matching Doctor-as-LLM file
-    doc_pdf = None
-    if sel_ai and sel_ai.get("doctor_url"):
-        doc_pdf = sel_ai.get("doctor_url")
-    else:
-        # Heuristic: match by prefix timestamp of AI label in outputs
-        try:
-            import re
-            ai_label = (sel_ai or {}).get("label") or (st.session_state.get("ai_label_by_case", {}) or {}).get(str(case_id))
-            if ai_label:
-                m = re.match(r"^(\d{12})", ai_label)
-                if m:
-                    prefix = m.group(1)
-                    for o in outputs:
-                        doc_label = o.get("doctor_label") or o.get("label") or ""
-                        if isinstance(doc_label, str) and doc_label.startswith(prefix) and o.get("doctor_url"):
-                            doc_pdf = o.get("doctor_url")
-                            break
-        except Exception:
-            pass
-    doc_effective_pdf_url = None
-    if doc_pdf:
-        with col3:
-            _iframe(doc_pdf)
-        doc_effective_pdf_url = doc_pdf
-    else:
-        with col3:
-            st.info("Not available")
+    # Duplicate rendering removed - PDFs are already rendered in the 3-column layout above
 
     # Actions: Download all PDFs, Share
     try:
@@ -829,125 +826,119 @@ def main() -> None:
         # Add lock/unlock controls with persistent state
         st.markdown("<div style='text-align:center;margin-bottom:0.5rem;'><small>💡 <strong>Tip:</strong> Scroll to align pages first, then use the lock button in the viewer</small></div>", unsafe_allow_html=True)
         st.markdown("<div style='text-align:center;margin-bottom:0.5rem;'><small>🔓 <strong>Unlocked:</strong> Scroll independently • 🔒 <strong>Locked:</strong> Scroll together</small></div>", unsafe_allow_html=True)
-        sync_height = 640
+        sync_height = 600
         html = """
         <div style=\"position:relative;\">
-          <div style=\"display:grid;grid-template-columns:1fr 1fr;gap:12px;\">
-            <div id=\"leftPane\" style=\"height:__H__px;overflow:auto;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px;\"></div>
+          <div style=\"display:grid;grid-template-columns:1fr 1fr;gap:12px;\">\n            <div id=\"leftPane\" style=\"height:__H__px;overflow:auto;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px;\"></div>
             <div id=\"rightPane\" style=\"height:__H__px;overflow:auto;border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:6px;\"></div>
-          </div>
-          <button id=\"lockButton\" style=\"position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.8);color:white;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;z-index:1000;transition:all 0.2s;\">🔓 UNLOCKED</button>
-        </div>
-        <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
-        <script>
-        const pdfjsLib = window['pdfjs-dist/build/pdf'];
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+           </div>
+           <button id=\"lockButton\" style=\"position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.8);color:white;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:bold;cursor:pointer;z-index:1000;transition:all 0.2s;\">🔓 UNLOCKED</button>
+         </div>
+         <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
+         <script>
+         const pdfjsLib = window['pdfjs-dist/build/pdf'];
+         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        async function renderPdf(url, containerId) {
-          const container = document.getElementById(containerId);
-          container.innerHTML = '';
-          try {
-            const res = await fetch(url, { method: 'GET', mode: 'cors', headers: { 'Accept': 'application/pdf' } });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const buf = await res.arrayBuffer();
-            const loadingTask = pdfjsLib.getDocument({ data: buf });
-            const pdf = await loadingTask.promise;
-            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-              const page = await pdf.getPage(pageNum);
-              const viewport = page.getViewport({ scale: 1.2 });
-              const canvas = document.createElement('canvas');
-              const context = canvas.getContext('2d');
-              canvas.style.display = 'block';
-              canvas.style.width = '100%';
-              const scale = container.clientWidth / viewport.width;
-              const scaledViewport = page.getViewport({ scale });
-              canvas.width = Math.floor(scaledViewport.width);
-              canvas.height = Math.floor(scaledViewport.height);
-              container.appendChild(canvas);
-              await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
-            }
-          } catch (e) {
-            const div = document.createElement('div');
-            div.textContent = 'Failed to render PDF.';
-            div.style.opacity = '0.8';
-            container.appendChild(div);
-          }
-        }
+         async function renderPdf(url, containerId) {
+           const container = document.getElementById(containerId);
+           container.innerHTML = '';
+           try {
+             const res = await fetch(url, { method: 'GET', mode: 'cors', headers: { 'Accept': 'application/pdf' } });
+             if (!res.ok) throw new Error('HTTP ' + res.status);
+             const buf = await res.arrayBuffer();
+             const loadingTask = pdfjsLib.getDocument({ data: buf });
+             const pdf = await loadingTask.promise;
+             for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+               const page = await pdf.getPage(pageNum);
+               const viewport = page.getViewport({ scale: 1.2 });
+               const canvas = document.createElement('canvas');
+               const context = canvas.getContext('2d');
+               canvas.style.display = 'block';
+               canvas.style.width = '100%';
+               const scale = container.clientWidth / viewport.width;
+               const scaledViewport = page.getViewport({ scale });
+               canvas.width = Math.floor(scaledViewport.width);
+               canvas.height = Math.floor(scaledViewport.height);
+               container.appendChild(canvas);
+               await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
+             }
+           } catch (e) {
+             const div = document.createElement('div');
+             div.textContent = 'Failed to render PDF.';
+             div.style.opacity = '0.8';
+             container.appendChild(div);
+           }
+         }
 
-        let syncing = false;
-        let scrollLocked = false; // Start unlocked by default
-        let lockedScrollRatio = 0; // Store the ratio when locking
-        
-        function linkScroll(a, b) {
-          a.addEventListener('scroll', () => {
-            if (syncing || !scrollLocked) return;
-            syncing = true;
-            
-            // Calculate the scroll delta (how much was scrolled)
-            const delta = a.scrollTop - (a.lastScrollTop || 0);
-            a.lastScrollTop = a.scrollTop;
-            
-            // Apply the same delta to the other pane
-            b.scrollTop += delta;
-            b.lastScrollTop = b.scrollTop;
-            
-            syncing = false;
-          }, { passive: true });
-        }
-        
-        function updateLockButton() {
-          const button = document.getElementById('lockButton');
-          if (button) {
-            button.textContent = scrollLocked ? '🔒 LOCKED' : '🔓 UNLOCKED';
-            button.style.color = scrollLocked ? '#4CAF50' : '#FF9800';
-            button.style.background = scrollLocked ? 'rgba(76,175,80,0.9)' : 'rgba(0,0,0,0.8)';
-          }
-        }
-        
-        function lockScroll() {
-          const left = document.getElementById('leftPane');
-          const right = document.getElementById('rightPane');
-          
-          // Don't change positions - just enable synchronization from current positions
-          scrollLocked = true;
-          updateLockButton();
-        }
-        
-        function unlockScroll() {
-          scrollLocked = false;
-          updateLockButton();
-        }
+         let syncing = false;
+         let scrollLocked = false; // Start unlocked by default
+         
+         function linkScroll(a, b) {
+           a.addEventListener('scroll', () => {
+             if (syncing || !scrollLocked) return;
+             syncing = true;
+             
+             // Calculate the scroll delta (how much was scrolled)
+             const delta = a.scrollTop - (a.lastScrollTop || 0);
+             a.lastScrollTop = a.scrollTop;
+             
+             // Apply the same delta to the other pane
+             b.scrollTop += delta;
+             b.lastScrollTop = b.scrollTop;
+             
+             syncing = false;
+           }, { passive: true });
+         }
+         
+         function updateLockButton() {
+           const button = document.getElementById('lockButton');
+           if (button) {
+             button.textContent = scrollLocked ? '🔒 LOCKED' : '🔓 UNLOCKED';
+             button.style.color = scrollLocked ? '#4CAF50' : '#FF9800';
+             button.style.background = scrollLocked ? 'rgba(76,175,80,0.9)' : 'rgba(0,0,0,0.8)';
+           }
+         }
+         
+         function lockScroll() {
+           scrollLocked = true;
+           updateLockButton();
+         }
+         
+         function unlockScroll() {
+           scrollLocked = false;
+           updateLockButton();
+         }
 
-        (async () => {
-          await Promise.all([
-            renderPdf('__GT__', 'leftPane'),
-            renderPdf('__AI__', 'rightPane')
-          ]);
-          const left = document.getElementById('leftPane');
-          const right = document.getElementById('rightPane');
-          
-          // Setup lock button functionality
-          const lockButton = document.getElementById('lockButton');
-          lockButton.addEventListener('click', () => {
-            if (scrollLocked) {
-              unlockScroll();
-            } else {
-              lockScroll();
-            }
-          });
-          updateLockButton();
-          
-          linkScroll(left, right);
-          linkScroll(right, left);
-          
-          // Recompute layout on resize
-          window.addEventListener('resize', () => {
-            renderPdf('__GT__', 'leftPane');
-            renderPdf('__AI__', 'rightPane');
-          });
-        })();
-        </script>
-        """
+         (async () => {
+           await Promise.all([
+             renderPdf('__GT__', 'leftPane'),
+             renderPdf('__AI__', 'rightPane')
+           ]);
+           const left = document.getElementById('leftPane');
+           const right = document.getElementById('rightPane');
+           
+           // Setup lock button functionality
+           const lockButton = document.getElementById('lockButton');
+           lockButton.addEventListener('click', () => {
+             if (scrollLocked) {
+               unlockScroll();
+             } else {
+               lockScroll();
+             }
+           });
+           updateLockButton();
+           
+           linkScroll(left, right);
+           linkScroll(right, left);
+           
+           // Recompute layout on resize
+           window.addEventListener('resize', () => {
+             renderPdf('__GT__', 'leftPane');
+             renderPdf('__AI__', 'rightPane');
+           });
+         })();
+         </script>
+         """
         html = html.replace("__H__", str(sync_height))
         # Route via backend proxy to avoid CORS with PDF.js
         proxy_gt = f"{backend}/proxy/pdf?url=" + quote(gt_effective_pdf_url, safe="")
@@ -970,10 +961,6 @@ def main() -> None:
         
         if not version_labels:
             st.warning("No DOCX AI reports available for this case. Only DOCX files can be edited.")
-            st.info("Available outputs:")
-            for output in (outputs or []):
-                file_type = "DOCX" if output.get("ai_url", "").lower().endswith(".docx") else "PDF"
-                st.write(f"- {output.get('label', 'Unknown')} ({file_type})")
         else:
             sel_ver_idx = 0
             if version_labels:
