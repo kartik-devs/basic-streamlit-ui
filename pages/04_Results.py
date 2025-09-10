@@ -97,10 +97,10 @@ def main() -> None:
         
         /* Fixed width table for horizontal scrolling */
         .results-table {
-            min-width: 1800px;
+            min-width: 2400px;
             display: grid;
             gap: 0;
-            grid-template-columns: 220px 160px 140px 1fr 1fr 1fr 120px 120px 140px 140px 140px;
+            grid-template-columns: 220px 160px 140px 3.6fr 3.6fr 3.6fr 120px 120px 140px 140px 140px;
         }
         
         /* Add visual separation between Ground Truth and AI Generated columns */
@@ -141,10 +141,7 @@ def main() -> None:
     )
     if "username" not in st.session_state and current_user:
         st.session_state["username"] = current_user
-    # Debug: show logged-in user (matches Case Report UX)
-    if st.session_state.get("username") or st.session_state.get("name"):
-        _uname = st.session_state.get("username") or st.session_state.get("name")
-        st.info(f"👤 Logged in as: {_uname}")
+    
 
     # Top nav with History
     top_nav(active="Results")
@@ -498,15 +495,14 @@ def main() -> None:
                                     metrics = parsed or {}
                                 except Exception:
                                     metrics = {}
-                        # Debug: Show what we got
-                        st.write(f"🔍 Debug: Loaded webhook data for case {case_id}: {metrics}")
+                        
                     else:
                         metrics = {}
-                        st.write(f"🔍 Debug: No webhook data for case {case_id} (status: {response.status_code})")
+                        
                 except Exception as e:
                     # Fallback to session state
                     metrics = (st.session_state.get("webhook_metrics_by_case") or {}).get(str(case_id)) or {}
-                    st.write(f"🔍 Debug: Error loading webhook data for case {case_id}: {e}")
+                    
                 if metrics:
                     ocr_start = metrics.get("ocr_start_time") or "—"
                     ocr_end = metrics.get("ocr_end_time") or "—"
@@ -564,17 +560,17 @@ def main() -> None:
         table_html = [
             '<div class="table-container">',
             '<div class="results-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Report Generated</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Code Version</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Document Version</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Ground Truth</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">AI Generated</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Doctor as LLM</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">OCR Start</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">OCR End</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Total Tokens</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Input Tokens</div>',
-            '<div style="padding:.5rem .75rem;font-weight:700;">Output Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
             '</div>'
          ]
         for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in rows:

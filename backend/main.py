@@ -369,6 +369,22 @@ def s3_presign(key: str, expires: int = 900) -> str:
         ExpiresIn=expires,
     )
 
+def s3_presign_put(key: str, content_type: str = "application/octet-stream", expires: int = 900) -> str:
+    return s3_client().generate_presigned_url(
+        "put_object",
+        Params={"Bucket": S3_BUCKET, "Key": key, "ContentType": content_type},
+        ExpiresIn=expires,
+    )
+
+def s3_presign_post(key: str, content_type: str = "application/octet-stream", expires: int = 900) -> dict:
+    return s3_client().generate_presigned_post(
+        Bucket=S3_BUCKET,
+        Key=key,
+        Fields={"Content-Type": content_type},
+        Conditions=[["content-length-range", 1, 200 * 1024 * 1024]],
+        ExpiresIn=expires,
+    )
+
 # --- Simple PDF proxy to avoid CORS issues in client-side PDF.js ---
 @app.get("/proxy/pdf")
 def proxy_pdf(url: str):
@@ -393,6 +409,90 @@ def proxy_pdf(url: str):
         raise
     except Exception:
         raise HTTPException(status_code=502, detail="Failed to fetch PDF")
+
+# --- Upload endpoints for edited AI DOCX ---
+@app.post("/s3/presign")
+def api_presign_upload(body: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Returns a PUT presigned URL (and also a POST form alternative) for uploading
+    an edited AI report DOCX to the canonical location:
+      {case_id}/Output/Edited/{filename}
+    Body: { case_id: str, filename: str, type: "ai" }
+    """
+    case_id = str(body.get("case_id") or "").strip()
+    filename = str(body.get("filename") or "").strip()
+    if not case_id or not filename:
+        raise HTTPException(status_code=400, detail="case_id and filename required")
+    # Normalize path
+    key = f"{case_id}/Output/Edited/{filename}"
+    # Prefer PUT (simpler on client). Many S3 setups reject Content-Type on presigned PUT,
+    # so we provide URL without enforcing Content-Type, and also include a POST form fallback.
+    put_url = s3_client().generate_presigned_url(
+        "put_object",
+        Params={"Bucket": S3_BUCKET, "Key": key},
+        ExpiresIn=900,
+    )
+    post = s3_presign_post(key, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", expires=900)
+    return {
+        "url": put_url,
+        "method": "PUT",
+        "key": key,
+        "post": post,
+    }
+
+@app.post("/upload/ai")
+def api_direct_upload_ai(case_id: str = Form(...), filename: str = Form(...), file: UploadFile = File(...)) -> Dict[str, Any]:
+    """Server-side multipart upload to S3 for edited AI report DOCX."""
+    if not case_id or not filename:
+        raise HTTPException(status_code=400, detail="case_id and filename required")
+    key = f"{case_id}/Output/Edited/{filename}"
+    try:
+        data = file.file.read()
+        s3_client().put_object(
+            Bucket=S3_BUCKET,
+            Key=key,
+            Body=data,
+            ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        return {"ok": True, "key": key, "url": s3_presign(key)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Playwright DOCX → PDF renderer shim (uses local converters fallback) ---
+@app.post("/render/docx-to-pdf")
+def render_docx_to_pdf(body: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Accepts { url, case_id, filename } where url points to a DOCX.
+    Converts to PDF (using local converters), uploads to S3 under
+      {case_id}/Output/Rendered/{filename}
+    and returns { url } to the PDF.
+    """
+    url = str(body.get("url") or "").strip()
+    case_id = str(body.get("case_id") or "").strip()
+    filename = str(body.get("filename") or "rendered.pdf").strip()
+    if not url or not case_id:
+        raise HTTPException(status_code=400, detail="url and case_id required")
+    try:
+        import requests as _rq, io, tempfile
+        from pathlib import Path as _Path
+        r = _rq.get(url, timeout=30)
+        if not r.ok:
+            raise HTTPException(status_code=502, detail="failed to fetch docx")
+        with tempfile.TemporaryDirectory() as td:
+            docx_path = _Path(td) / "input.docx"
+            pdf_path = _Path(td) / "output.pdf"
+            with open(docx_path, "wb") as f:
+                f.write(r.content)
+            if not _convert_docx_to_pdf_local(str(docx_path), str(pdf_path)):
+                raise HTTPException(status_code=500, detail="conversion failed")
+            key = f"{case_id}/Output/Rendered/{filename}"
+            with open(pdf_path, "rb") as f:
+                s3_client().put_object(Bucket=S3_BUCKET, Key=key, Body=f.read(), ContentType="application/pdf")
+            return {"url": s3_presign(key)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Ensure a given object has a PDF representation (for docx inputs)
 @app.get("/s3/ensure-pdf")

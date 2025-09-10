@@ -299,6 +299,24 @@ def main() -> None:
         outputs = []
         assets = {}
     
+    # Fetch backend runs (all) for this case and show in a debug expander
+    backend_runs = []
+    try:
+        import requests as _rq
+        r_all = _rq.get(f"{backend}/runs/{case_id}/all", timeout=6)
+        if r_all.ok:
+            payload = r_all.json() or {}
+            backend_runs = (payload.get("runs") if isinstance(payload, dict) else None) or []
+    except Exception:
+        backend_runs = []
+
+    with st.expander("🔍 Debug: Backend Runs (finalize payloads)", expanded=False):
+        try:
+            import json as _json
+            st.code(_json.dumps(backend_runs, indent=2) if backend_runs else "[]", language="json")
+        except Exception:
+            st.write(backend_runs)
+    
     # Augment from DB when no S3 outputs exist (helps for mock cases like 9999)
     if not outputs:
         try:
@@ -683,7 +701,23 @@ def main() -> None:
         if ai_key not in st.session_state:
             st.session_state[ai_key] = None
             
-        labels = [o.get("label") or (o.get("ai_key") or "").split("/")[-1] for o in outputs]
+        # Only show PDF AI outputs in dropdown (DOCX handled in editor below)
+        from urllib.parse import urlparse
+        def _is_pdf(u: str | None) -> bool:
+            if not isinstance(u, str) or not u:
+                return False
+            try:
+                return urlparse(u).path.lower().endswith('.pdf')
+            except Exception:
+                return u.lower().endswith('.pdf')
+        _pdf_outputs = [o for o in outputs if _is_pdf(o.get("ai_url"))]
+        # Fallback: some pipelines attach PDF on doctor_url or rename; include those
+        if not _pdf_outputs:
+            _pdf_outputs = [o for o in outputs if _is_pdf(o.get("ai_url")) or _is_pdf(o.get("doctor_url"))]
+        # Final fallback: if still empty, show original outputs to avoid a blank dropdown
+        if not _pdf_outputs:
+            _pdf_outputs = outputs
+        labels = [o.get("label") or (o.get("ai_key") or "").split("/")[-1] for o in _pdf_outputs]
         
         # Use session state to maintain selection across reruns
         if labels:
@@ -708,7 +742,7 @@ def main() -> None:
             
         sel_ai = None
         if selected_label:
-            sel_ai = next((o for o in outputs if (o.get("label") or (o.get("ai_key") or "").split("/")[-1]) == selected_label), None)
+            sel_ai = next((o for o in _pdf_outputs if (o.get("label") or (o.get("ai_key") or "").split("/")[-1]) == selected_label), None)
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
             st.markdown(f"<iframe src=\"{sel_ai['ai_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
@@ -1011,6 +1045,128 @@ def main() -> None:
                 with col2:
                     st.info("💡 **Edit in browser:**\nUse the editor above to edit the document content directly")
 
+                st.markdown("### Upload edited DOCX back to S3")
+                up_col1, up_col2 = st.columns([1, 1])
+                with up_col1:
+                    uploaded = st.file_uploader("Select edited DOCX", type=["docx"], key=f"hist_docx_upl_{case_id}")
+                with up_col2:
+                    target_name = st.text_input("Target filename", value=f"{case_id}_{(sel_ver or 'edited').replace(' ', '_')}.docx", key=f"hist_docx_name_{case_id}")
+
+                def _try_presign_and_upload(_backend: str, _case_id: str, _fname: str, _bytes: bytes) -> tuple[bool, str | None]:
+                    try:
+                        import requests as _rq
+                        headers = {"ngrok-skip-browser-warning": "true", "Content-Type": "application/json"}
+                        # Try a few common endpoints for presign
+                        candidates = [
+                            ("POST", f"{_backend}/s3/upload-ai"),
+                            ("POST", f"{_backend}/s3/presign"),
+                        ]
+                        presigned = None
+                        for method, url in candidates:
+                            try:
+                                body = {"case_id": _case_id, "type": "ai", "filename": _fname}
+                                r = _rq.post(url, json=body, headers=headers, timeout=15)
+                                if r.ok:
+                                    data = r.json() or {}
+                                    if data.get("url"):
+                                        presigned = data
+                                        break
+                            except Exception:
+                                continue
+                        if not presigned:
+                            # Fallback: direct upload endpoint (multipart)
+                            try:
+                                files = {"file": (_fname, _bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+                                r2 = _rq.post(f"{_backend}/upload/ai", files=files, data={"case_id": _case_id, "filename": _fname}, timeout=30, headers={"ngrok-skip-browser-warning": "true"})
+                                if r2.ok:
+                                    return True, (r2.json() or {}).get("key") or None
+                            except Exception:
+                                pass
+                            return False, None
+                        # Upload with PUT (common) or POST (form)
+                        url = presigned.get("url")
+                        method = (presigned.get("method") or "PUT").upper()
+                        if method == "POST" and isinstance(presigned.get("fields"), dict):
+                            form = presigned["fields"]
+                            files = {"file": (_fname, _bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+                            r3 = _rq.post(url, data=form, files=files, timeout=60)
+                            return (r3.ok, presigned.get("key"))
+                        else:
+                            # Default to PUT
+                            # Note: some presigned URLs fail if Content-Type is set; try without first
+                            r3 = _rq.put(url, data=_bytes, timeout=60)
+                            if not r3.ok:
+                                # Retry with content-type header
+                                r3 = _rq.put(url, data=_bytes, headers={"Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}, timeout=60)
+                            return (r3.ok, presigned.get("key"))
+                    except Exception as _e:
+                        return False, None
+
+                if uploaded and st.button("Upload edited DOCX", type="primary", key=f"hist_docx_upload_btn_{case_id}"):
+                    try:
+                        content = uploaded.read()
+                        ok, key = _try_presign_and_upload(backend, case_id, target_name.strip() or uploaded.name, content)
+                        if ok:
+                            st.success("Uploaded successfully to S3.")
+                            # Optionally refresh outputs list next run
+                            try:
+                                st.cache_data.clear()
+                            except Exception:
+                                pass
+                        else:
+                            st.error("Upload failed. Please try again later or contact support.")
+                    except Exception as e:
+                        import traceback
+                        st.error(f"Upload error: {str(e)}")
+                        st.caption(traceback.format_exc())
+
+                with st.expander("🔧 Debug upload endpoints", expanded=False):
+                    try:
+                        import json as _json
+                        import requests as _rq
+                        hdr = {"ngrok-skip-browser-warning": "true", "Content-Type": "application/json"}
+                        results = {}
+                        for path in ["/s3/upload-ai", "/s3/presign", "/upload/ai"]:
+                            url = f"{backend}{path}"
+                            try:
+                                if path == "/upload/ai":
+                                    # Multipart probe with tiny payload
+                                    files = {"file": ("probe.txt", b"x", "text/plain")}
+                                    data = {"case_id": case_id, "filename": "probe.txt", "dryrun": "1"}
+                                    r = _rq.post(url, files=files, data=data, timeout=15, headers={"ngrok-skip-browser-warning": "true"})
+                                else:
+                                    body = {"case_id": case_id, "type": "ai", "filename": "probe.txt", "dryrun": True}
+                                    r = _rq.post(url, json=body, headers=hdr, timeout=15)
+                                results[path] = {"ok": r.ok, "status": r.status_code, "text": (r.text[:200] if isinstance(r.text, str) else str(r.text))}
+                            except Exception as ex:
+                                results[path] = {"ok": False, "error": str(ex)}
+                        st.code(_json.dumps(results, indent=2), language="json")
+                    except Exception as ex:
+                        st.write(str(ex))
+
+                st.markdown("### High‑fidelity Preview (Playwright — default)")
+                try:
+                    import requests as _rq
+                    headers = {"ngrok-skip-browser-warning": "true", "Content-Type": "application/json"}
+                    cache_key = f"pw_pdf_{case_id}_{(sel_ver or '').strip()}"
+                    if cache_key not in st.session_state:
+                        with st.spinner("Rendering DOCX via Playwright…"):
+                            body = {"url": chosen_url, "case_id": case_id, "filename": f"{case_id}_{(sel_ver or 'docx').replace(' ', '_')}.pdf"}
+                            r = _rq.post(f"{backend}/render/docx-to-pdf", json=body, headers=headers, timeout=180)
+                            if r.ok:
+                                data = r.json() or {}
+                                st.session_state[cache_key] = data.get("url")
+                            else:
+                                st.session_state[cache_key] = None
+                    pw_url = st.session_state.get(cache_key)
+                    if pw_url:
+                        st.markdown(f"<iframe src=\"{pw_url}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                    else:
+                        st.warning("Playwright renderer unavailable. Falling back to quick viewer.")
+                        st.markdown(f"<iframe src=\"https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                except Exception:
+                    st.markdown(f"<iframe src=\"https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+
     # Resolve current user
     current_user = (
         st.session_state.get("username")
@@ -1166,9 +1322,10 @@ def main() -> None:
                 if form_text.strip():
                     try:
                         import requests as _rq
+                        backend = st.session_state.get("backend_url", "http://localhost:8000")
                         if form_section.startswith("    └─ "):
-                            subsection = form_section.replace("    └─ ", "")
-                            section = section_to_subsection[form_section]
+                                subsection = form_section.replace("    └─ ", "")
+                                section = section_to_subsection[form_section]
                         else:
                             section = form_section
                             subsection = form_section
@@ -1177,15 +1334,15 @@ def main() -> None:
                                 "ai_label": selected_label or None,
                                 "section": section,
                                 "subsection": subsection,
-                                            "username": st.session_state.get("username") or "anonymous",
-                                            "severity": form_severity,
-                                            "comment": form_text.strip(),
+                                                            "username": st.session_state.get("username") or "anonymous",
+                                                            "severity": form_severity,
+                                                            "comment": form_text.strip(),
                             }
                             _rq.post(f"{backend}/comments", json=payload, timeout=8)
                             _get_case_comments.clear()
                             st.success("Added.")
                     except Exception:
-                            st.warning("Failed to add comment.")
+                        st.warning("Failed to add comment.")
             else:
                                     st.warning("Please enter a comment.")
 
@@ -1223,19 +1380,17 @@ def main() -> None:
     if page_items:
         st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
         st.markdown("**Recorded comments**")
-    elif total == 0:
-        st.info("No comments yet.")
-        
         # Header row
-        h1, h2, h3, h4, h5 = st.columns([2.0, 0.7, 0.6, 2.0, 1.2])
+        h1, h2, h3, h4, h5, h6 = st.columns([2.0, 0.7, 0.6, 1.8, 2.8, 1.2])
         h1.markdown("**Section/Subsection**")
         h2.markdown("**User**")
         h3.markdown("**Severity**")
         h4.markdown("**When**")
-        h5.markdown("**Actions**")
+        h5.markdown("**Comment**")
+        h6.markdown("**Actions**")
 
         # Rows with inline action buttons in the last column
-        for n in (page_items or []):
+        for n in page_items:
             nid = n.get("id")
             is_resolved = bool(n.get("resolved"))
             section = n.get('section') or '—'
@@ -1245,18 +1400,20 @@ def main() -> None:
             usernm = n.get("username") or "anonymous"
             sev = n.get("severity") or "—"
 
-            c1, c2, c3, c4, c5 = st.columns([2.0, 0.7, 0.6, 2.0, 1.2])
+            c1, c2, c3, c4, c5, c6 = st.columns([2.0, 0.7, 0.6, 1.8, 2.8, 1.2])
             c1.markdown(combined)
             c2.markdown(usernm)
             c3.markdown(sev)
             c4.markdown(when or '—')
-            with c5:
+            c5.markdown((n.get('comment') or '').strip() or '—')
+            with c6:
                 act1, act2 = st.columns([0.6, 0.4])
                 with act1:
                     label = ("✓ Resolve" if not is_resolved else "✗ Unresolve")
                     if st.button(label, key=f"row_resolve_{nid}") and nid:
                         try:
-                            _rq.patch(f"{backend}/comments/resolve", json={"id": int(nid), "case_id": case_id, "resolved": (not is_resolved)}, timeout=8)
+                            import requests as _rq
+                            _rq.patch(f"{backend}/comments/resolve", json={"id": int(nid), "case_id": case_id, "resolved": (not is_resolved)}, timeout=8, headers={"ngrok-skip-browser-warning": "true"})
                             _get_case_comments.clear()
                         except Exception:
                             pass
@@ -1264,11 +1421,14 @@ def main() -> None:
                 with act2:
                     if st.button("🗑️", key=f"row_delete_{nid}") and nid:
                         try:
-                            _rq.delete(f"{backend}/comments", json={"case_id": case_id, "ai_label": selected_label, "ids": [int(nid)]}, timeout=8)
+                            import requests as _rq
+                            _rq.delete(f"{backend}/comments", json={"case_id": case_id, "ai_label": selected_label, "ids": [int(nid)]}, timeout=8, headers={"ngrok-skip-browser-warning": "true"})
                             _get_case_comments.clear()
                         except Exception:
                             pass
                         st.rerun()
+    elif total == 0:
+        st.info("No comments yet.")
 
 if __name__ == "__main__":
     main()

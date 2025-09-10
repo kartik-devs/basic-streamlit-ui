@@ -319,14 +319,7 @@ def main() -> None:
                         st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
                 except Exception:
                     st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
-            # Relaxed fallback: if webhook returned 2xx, mark complete even without metrics
-            elif isinstance(st.session_state.get("last_webhook_status"), int) and 200 <= int(st.session_state["last_webhook_status"]) < 300:
-                st.session_state["generation_progress"] = 100
-                st.session_state["generation_step"] = 4
-                st.session_state["generation_complete"] = True
-                st.session_state["generation_in_progress"] = False
-                st.session_state["generation_end"] = datetime.now()
-                st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
+            # Do not auto-complete on 2xx alone; wait for explicit completion indicators
         except Exception:
             pass
         try:
@@ -337,42 +330,25 @@ def main() -> None:
         except Exception:
             pass
  
-    # DEBUG SECTION - ALWAYS VISIBLE AT TOP
-    st.write("🔍 DEBUG SECTION - ALWAYS VISIBLE")
-    with st.expander("🔍 Debug: Webhook Status", expanded=True):
-        st.write("**Generation Status:**")
-        st.write(f"- In Progress: {st.session_state.get('generation_in_progress', False)}")
-        st.write(f"- Complete: {st.session_state.get('generation_complete', False)}")
-        st.write(f"- Progress: {st.session_state.get('generation_progress', 0)}%")
-        st.write(f"- Step: {st.session_state.get('generation_step', 0)}")
-        st.write(f"- Case ID: {case_id}")
-        
-        # Check webhook completion data directly from stored response
-        webhook_completion = _check_webhook_completion(case_id)
-        
-        st.write("**Webhook Completion Data:**")
-        if webhook_completion:
-            st.write("✅ Webhook contains completion data!")
-            st.json(webhook_completion)
-            
-            # Check if we should mark as complete
-            has_artifacts = bool(webhook_completion.get("docx_url") or webhook_completion.get("pdf_url"))
-            has_end_time = bool(webhook_completion.get("ocr_end_time"))
-            has_tokens = bool(webhook_completion.get("total_tokens_used"))
-            
-            if has_artifacts and has_end_time and has_tokens:
-                st.success("🎉 All completion indicators present - should mark as complete!")
-            else:
-                st.warning("⚠️ Missing some completion indicators")
-        else:
-            st.write("❌ No webhook completion data yet")
-        
-        if st.session_state.get("last_webhook_text"):
-            st.write("**Initial Webhook Response (trigger):**")
-            st.code(st.session_state["last_webhook_text"][:500] + "..." if len(st.session_state["last_webhook_text"]) > 500 else st.session_state["last_webhook_text"])
-            st.write("**Status Code:**", st.session_state.get("last_webhook_status", "Unknown"))
-        else:
-            st.write("**No initial webhook response received yet**")
+    # Helper to reset state for retry without page reload
+    def _reset_generation_state(cid: str) -> None:
+        st.session_state["generation_in_progress"] = False
+        st.session_state["generation_complete"] = False
+        st.session_state["generation_progress"] = 0
+        st.session_state["generation_step"] = 0
+        st.session_state["generation_start"] = datetime.now()
+        st.session_state["generation_end"] = None
+        st.session_state["processing_seconds"] = 0
+        # Clear fired flag and last webhook response for this case
+        try:
+            fm = st.session_state.get("__webhook_fired__", {})
+            if cid in fm:
+                del fm[cid]
+            st.session_state["__webhook_fired__"] = fm
+        except Exception:
+            pass
+        st.session_state.pop("last_webhook_status", None)
+        st.session_state.pop("last_webhook_text", None)
     
     # Check if no case has been selected yet (case_id is 0000)
     if case_id == "0000":
@@ -467,29 +443,6 @@ def main() -> None:
                 pass
             st.rerun()
         
-        # Debug section - show current webhook status (ALWAYS VISIBLE - BEFORE RETURN)
-        st.write("🔍 DEBUG SECTION SHOULD BE VISIBLE HERE")
-        with st.expander("🔍 Debug: Webhook Status", expanded=False):
-            st.write("**Generation Status:**")
-            st.write(f"- In Progress: {st.session_state.get('generation_in_progress', False)}")
-            st.write(f"- Complete: {st.session_state.get('generation_complete', False)}")
-            st.write(f"- Progress: {st.session_state.get('generation_progress', 0)}%")
-            st.write(f"- Step: {st.session_state.get('generation_step', 0)}")
-            
-            st.write("**Backend Data:**")
-            st.write("❌ No webhook data in backend yet (generation not started)")
-            
-            if st.session_state.get("last_webhook_text"):
-                st.write("**Initial Webhook Response (trigger):**")
-                st.code(st.session_state["last_webhook_text"][:500] + "..." if len(st.session_state["last_webhook_text"]) > 500 else st.session_state["last_webhook_text"])
-                st.write("**Status Code:**", st.session_state.get("last_webhook_status", "Unknown"))
-            else:
-                st.write("**No initial webhook response received yet**")
-                st.write("This means either:")
-                st.write("- The webhook hasn't been triggered yet")
-                st.write("- The webhook failed to send a response")
-                st.write("- The response was empty or invalid")
-        
         st.markdown('</div>', unsafe_allow_html=True)
         return
  
@@ -576,12 +529,61 @@ def main() -> None:
         # Demo mode: simulate progress without external dependencies
         n8n_ph.info(f"🔄 Generating report for Case ID: {case_id}")
         
+        # Long-running workflow note and retry controls (only on explicit non-2xx)
+        non_2xx = (st.session_state.get("last_webhook_status") is not None) and (not (200 <= int(st.session_state.get("last_webhook_status", 0)) < 300))
+        if not st.session_state.get("generation_complete") and not non_2xx:
+            st.info("This workflow can take 60–90 minutes. Keep this tab open; it will update automatically on completion.")
+        if non_2xx:
+            st.warning("The webhook call returned a non-success status. You can retry without reloading.")
+            rcol1, rcol2, rcol3 = st.columns([0.4, 0.3, 0.3])
+            with rcol1:
+                if st.button("Retry now", type="primary"):
+                    _reset_generation_state(case_id)
+                    try:
+                        url = _n8n_webhook_url()
+                        status, text, final_url = _trigger_webhook(url, {"case_id": case_id}, attempts=1, timeout=10)
+                        st.session_state["last_webhook_status"] = status
+                        st.session_state["last_webhook_text"] = (text or "")[:300]
+                        fm = st.session_state.get("__webhook_fired__", {})
+                        fm[str(case_id)] = True
+                        st.session_state["__webhook_fired__"] = fm
+                        if final_url != url:
+                            _set_n8n_webhook_url(final_url)
+                        st.session_state["generation_in_progress"] = True
+                    except Exception:
+                        pass
+                    st.rerun()
+            with rcol2:
+                if st.button("Cancel"):
+                    _reset_generation_state(case_id)
+                    st.rerun()
+            with rcol3:
+                new_cid = st.text_input("Change Case ID", value=case_id, key="retry_change_case")
+                if st.button("Start with new ID") and new_cid:
+                    _reset_generation_state(new_cid)
+                    st.session_state["last_case_id"] = new_cid
+                    try:
+                        url = _n8n_webhook_url()
+                        status, text, final_url = _trigger_webhook(url, {"case_id": new_cid}, attempts=1, timeout=10)
+                        st.session_state["last_webhook_status"] = status
+                        st.session_state["last_webhook_text"] = (text or "")[:300]
+                        fm = st.session_state.get("__webhook_fired__", {})
+                        fm[str(new_cid)] = True
+                        st.session_state["__webhook_fired__"] = fm
+                        if final_url != url:
+                            _set_n8n_webhook_url(final_url)
+                        st.session_state["generation_in_progress"] = True
+                    except Exception:
+                        pass
+                    st.rerun()
+        
         # Continue from where we left off
         current_progress = st.session_state["generation_progress"]
         current_step = st.session_state["generation_step"]
         
         # Simple progress animation - continue from current state
-        for i in range(current_progress, 100):
+        # Simulate up to 95% max while waiting for webhook
+        for i in range(current_progress, 95):
             # Break early if webhook already marked complete
             if st.session_state.get("generation_complete"):
                 progress.progress(100)
@@ -611,65 +613,21 @@ def main() -> None:
                 line(4, "active")
             else:
                 st.session_state["generation_step"] = 4
-                line(4, "done")
+                line(4, "active")
             
             time.sleep(18)  # 30 minutes total: 100 steps * 18 seconds = 1800 seconds = 30 minutes
         
         
-        if not st.session_state.get("generation_complete"):
-            # Mark as complete (fallback if webhook didn't set it)
-            st.session_state["generation_complete"] = True
-            st.session_state["generation_end"] = datetime.now()
-            st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - start_time).total_seconds())
-        n8n_ph.success(f"✅ Report generation complete for Case ID: {case_id}!")
+        if st.session_state.get("generation_complete"):
+            n8n_ph.success(f"✅ Report generation complete for Case ID: {case_id}!")
+        else:
+            n8n_ph.info("Awaiting webhook completion… This may take a few minutes.")
     elif st.session_state["generation_complete"]:
         # Show completion status if already done
         n8n_ph.success(f"✅ Report generation complete for Case ID: {case_id}!")
     
     
-    # Debug section - show current webhook status (ALWAYS VISIBLE)
-    st.write("🔍 DEBUG SECTION SHOULD BE VISIBLE HERE")
-    with st.expander("🔍 Debug: Webhook Status", expanded=False):
-        st.write("**Generation Status:**")
-        st.write(f"- In Progress: {st.session_state.get('generation_in_progress', False)}")
-        st.write(f"- Complete: {st.session_state.get('generation_complete', False)}")
-        st.write(f"- Progress: {st.session_state.get('generation_progress', 0)}%")
-        st.write(f"- Step: {st.session_state.get('generation_step', 0)}")
-        
-        # Check webhook completion data directly from stored response
-        webhook_completion = _check_webhook_completion(case_id)
-        
-        st.write("**Webhook Completion Data:**")
-        if webhook_completion:
-            st.write("✅ Webhook contains completion data!")
-            st.json(webhook_completion)
-            
-            # Check if we should mark as complete
-            has_artifacts = bool(webhook_completion.get("docx_url") or webhook_completion.get("pdf_url"))
-            has_end_time = bool(webhook_completion.get("ocr_end_time"))
-            has_tokens = bool(webhook_completion.get("total_tokens_used"))
-            
-            if has_artifacts and has_end_time and has_tokens:
-                st.success("🎉 All completion indicators present - should mark as complete!")
-            else:
-                st.warning("⚠️ Missing some completion indicators")
-        else:
-            st.write("❌ No webhook completion data yet")
-        
-        if st.session_state.get("last_webhook_text"):
-            st.write("**Initial Webhook Response (trigger):**")
-            st.code(st.session_state["last_webhook_text"][:500] + "..." if len(st.session_state["last_webhook_text"]) > 500 else st.session_state["last_webhook_text"])
-            st.write("**Status Code:**", st.session_state.get("last_webhook_status", "Unknown"))
-            
-            # Check if n8n workflow might still be running
-            if st.session_state.get("generation_complete") and "error" in st.session_state.get("last_webhook_text", "").lower():
-                st.warning("⚠️ Webhook contains errors - n8n workflow may still be running. Check n8n dashboard for actual status.")
-        else:
-            st.write("**No initial webhook response received yet**")
-            st.write("This means either:")
-            st.write("- The webhook hasn't been triggered yet")
-            st.write("- The webhook failed to send a response")
-            st.write("- The response was empty or invalid")
+    # (Debug sections removed for cleaner UI)
     
     # End info section
     end_time = st.session_state["generation_end"] or datetime.now()
