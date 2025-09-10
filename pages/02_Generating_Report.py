@@ -532,7 +532,7 @@ def main() -> None:
         # Long-running workflow note and retry controls (only on explicit non-2xx)
         non_2xx = (st.session_state.get("last_webhook_status") is not None) and (not (200 <= int(st.session_state.get("last_webhook_status", 0)) < 300))
         if not st.session_state.get("generation_complete") and not non_2xx:
-            st.info("This workflow can take 60–90 minutes. Keep this tab open; it will update automatically on completion.")
+            st.info("This workflow can take up to 2 hours. Keep this tab open; it will update automatically on completion.")
         if non_2xx:
             st.warning("The webhook call returned a non-success status. You can retry without reloading.")
             rcol1, rcol2, rcol3 = st.columns([0.4, 0.3, 0.3])
@@ -615,7 +615,7 @@ def main() -> None:
                 st.session_state["generation_step"] = 4
                 line(4, "active")
             
-            time.sleep(18)  # 30 minutes total: 100 steps * 18 seconds = 1800 seconds = 30 minutes
+            time.sleep(76)  # ~2 hours to reach 95%: 95 steps * 76s ≈ 7220s ≈ 2 hours
         
         
         if st.session_state.get("generation_complete"):

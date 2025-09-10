@@ -927,95 +927,29 @@ def main() -> None:
             chosen_url = docx_map.get(sel_ver)
 
             if chosen_url:
-                # In-browser DOCX Editor with actual document content
-                st.markdown("### Edit Document Online")
-                
-                # Create a proper DOCX editor that shows and allows editing of the actual document content
-                editor_html = f"""
-                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 20px; background: white; font-family: Arial, sans-serif;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee;">
-                        <h3 style="margin: 0; color: #333;">📄 Document Viewer</h3>
-                        <div>
-                            <button onclick="downloadOriginal()" style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">📥 Download Document</button>
-                        </div>
-                    </div>
-                    
-                    <div style="margin-bottom: 15px; padding: 10px; background: #e9ecef; border-radius: 4px; font-size: 14px;">
-                        <strong>📄 Document:</strong> {sel_ver} | <strong>Case ID:</strong> {case_id}
-                    </div>
-                    
-                    <div id="editor" style="min-height: 600px; border: 1px solid #ccc; border-radius: 4px; background: white;">
-                        <iframe id="documentViewer" src="" style="width: 100%; height: 600px; border: none; border-radius: 4px;"></iframe>
-                    </div>
-                    
-                    <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 14px; color: #666;">
-                        <strong>💡 Document Viewer:</strong>
-                        <ul style="margin: 5px 0; padding-left: 20px;">
-                            <li>View DOCX files using Microsoft Office Online viewer</li>
-                            <li>View PDF files using PDF.js viewer</li>
-                            <li>Documents are displayed in their original format with full formatting</li>
-                            <li>Use "Download Document" to get the document file</li>
-                            <li>Note: This is a viewer - for editing, download and use your preferred editor</li>
-                        </ul>
-                        <button onclick="loadDocument()" style="margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">🔄 Refresh Document</button>
-                    </div>
-                </div>
-                
-                <script>
-                    let documentContent = '';
-                    let isLoaded = false;
-                    
-                    // Load document in iframe using document viewer
-                    async function loadDocument() {{
-                        try {{
-                            const documentUrl = '{chosen_url}';
-                            const iframe = document.getElementById('documentViewer');
-                            
-                            // Use Microsoft Office Online viewer for DOCX files
-                            if (documentUrl.toLowerCase().includes('.docx')) {{
-                                const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${{encodeURIComponent(documentUrl)}}`;
-                                iframe.src = viewerUrl;
-                            }}
-                            // Use PDF.js viewer for PDF files
-                            else if (documentUrl.toLowerCase().includes('.pdf')) {{
-                                const viewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${{encodeURIComponent(documentUrl)}}`;
-                                iframe.src = viewerUrl;
-                            }}
-                            // Fallback to direct URL
-                            else {{
-                                iframe.src = documentUrl;
-                            }}
-                            
-                            isLoaded = true;
-                        }} catch (error) {{
-                            document.getElementById('editor').innerHTML = `
-                                <div style="text-align: center; padding: 40px; color: #d32f2f;">
-                                    <div style="font-size: 24px; margin-bottom: 10px;">❌</div>
-                                    <p>Error loading document: ${{error.message}}</p>
-                                </div>
-                            `;
-                        }}
-                    }}
-                    
-                    function downloadOriginal() {{
-                        // Use backend proxy for download
-                        const proxyUrl = '{backend}/proxy/docx?url=' + encodeURIComponent('{chosen_url}');
-                        const link = document.createElement('a');
-                        link.href = proxyUrl;
-                        link.download = '{case_id}_original_{sel_ver}.docx';
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                    }}
-                    
-                    // Note: Save functionality removed since we're now using a document viewer
-                    
-                    // Load document when page loads
-                    window.addEventListener('load', loadDocument);
-                </script>
-                """
-                
-                components.html(editor_html, height=750)
+                # High‑fidelity Preview (Playwright — default)
+                st.markdown("### High‑fidelity Preview (Playwright — default)")
+                try:
+                    import requests as _rq
+                    headers = {"ngrok-skip-browser-warning": "true", "Content-Type": "application/json"}
+                    cache_key = f"pw_pdf_{case_id}_{(sel_ver or '').strip()}"
+                    if cache_key not in st.session_state:
+                        with st.spinner("Rendering DOCX via Playwright…"):
+                            body = {"url": chosen_url, "case_id": case_id, "filename": f"{case_id}_{(sel_ver or 'docx').replace(' ', '_')}.pdf"}
+                            r = _rq.post(f"{backend}/render/docx-to-pdf", json=body, headers=headers, timeout=180)
+                            if r.ok:
+                                data = r.json() or {}
+                                st.session_state[cache_key] = data.get("url")
+                            else:
+                                st.session_state[cache_key] = None
+                    pw_url = st.session_state.get(cache_key)
+                    if pw_url:
+                        st.markdown(f"<iframe src=\"{pw_url}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                    else:
+                        st.warning("Playwright renderer unavailable. Falling back to quick viewer.")
+                        st.markdown(f"<iframe src=\"https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                except Exception:
+                    st.markdown(f"<iframe src=\"https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
                 
                 # Additional download option for convenience
                 st.markdown("### Quick Actions")
@@ -1143,29 +1077,6 @@ def main() -> None:
                         st.code(_json.dumps(results, indent=2), language="json")
                     except Exception as ex:
                         st.write(str(ex))
-
-                st.markdown("### High‑fidelity Preview (Playwright — default)")
-                try:
-                    import requests as _rq
-                    headers = {"ngrok-skip-browser-warning": "true", "Content-Type": "application/json"}
-                    cache_key = f"pw_pdf_{case_id}_{(sel_ver or '').strip()}"
-                    if cache_key not in st.session_state:
-                        with st.spinner("Rendering DOCX via Playwright…"):
-                            body = {"url": chosen_url, "case_id": case_id, "filename": f"{case_id}_{(sel_ver or 'docx').replace(' ', '_')}.pdf"}
-                            r = _rq.post(f"{backend}/render/docx-to-pdf", json=body, headers=headers, timeout=180)
-                            if r.ok:
-                                data = r.json() or {}
-                                st.session_state[cache_key] = data.get("url")
-                            else:
-                                st.session_state[cache_key] = None
-                    pw_url = st.session_state.get(cache_key)
-                    if pw_url:
-                        st.markdown(f"<iframe src=\"{pw_url}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
-                    else:
-                        st.warning("Playwright renderer unavailable. Falling back to quick viewer.")
-                        st.markdown(f"<iframe src=\"https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
-                except Exception:
-                    st.markdown(f"<iframe src=\"https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
 
     # Resolve current user
     current_user = (

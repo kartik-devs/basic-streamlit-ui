@@ -410,6 +410,28 @@ def proxy_pdf(url: str):
     except Exception:
         raise HTTPException(status_code=502, detail="Failed to fetch PDF")
 
+# Simple download proxy with filename hint
+@app.get("/proxy/download")
+def proxy_download(url: str, filename: Optional[str] = None):
+    try:
+        import requests as _req
+        from urllib.parse import unquote
+        import io as _io
+        target = unquote(url)
+        r = _req.get(target, timeout=30)
+        if not r.ok:
+            raise HTTPException(status_code=r.status_code, detail="Upstream error")
+        name = filename or target.split("/")[-1] or "download.bin"
+        headers = {
+            "Content-Disposition": f"attachment; filename=\"{name}\"",
+            "Content-Type": r.headers.get("Content-Type", "application/octet-stream"),
+        }
+        return StreamingResponse(_io.BytesIO(r.content), headers=headers, media_type=headers["Content-Type"])
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail="Failed to download file")
+
 # --- Upload endpoints for edited AI DOCX ---
 @app.post("/s3/presign")
 def api_presign_upload(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -1033,6 +1055,11 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
                 comps.append(version)
     response["comparison_versions"] = sorted(comps, reverse=True)
     return response
+
+# Alias for latest assets to match frontend contract
+@app.get("/s3/{case_id}/latest/assets")
+def api_s3_latest_assets(case_id: str) -> Dict[str, Any]:
+    return api_s3_assets(case_id, "latest")
 
 @app.get("/s3/{case_id}/{report_id}/comparison/{version}")
 def api_s3_comparison(case_id: str, report_id: str, version: str) -> Dict[str, Any]:
