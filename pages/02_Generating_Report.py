@@ -207,20 +207,7 @@ def main() -> None:
         st.session_state["__webhook_last_fired_ts__"] = {}
     last_ts_map = st.session_state["__webhook_last_fired_ts__"]
  
-    # n8n settings (runtime configurable; no debug)
-    with st.expander("n8n settings", expanded=False):
-        current_url = _n8n_webhook_url()
-        new_url = st.text_input("Webhook URL", value=current_url)
-        if st.button("Save URL"):
-            _set_n8n_webhook_url(new_url)
-    # Show last webhook status if present (lightweight)
-    if st.session_state.get("last_webhook_status") is not None:
-        lw_status = st.session_state.get("last_webhook_status")
-        lw_text = st.session_state.get("last_webhook_text") or ""
-        if lw_status and 200 <= int(lw_status) < 300:
-            st.info(f"Webhook OK (status {lw_status})")
-        else:
-            st.warning(f"Webhook result: status {lw_status} | {lw_text[:180]}")
+    # n8n settings and webhook status removed for cleaner UI
 
     # Initialize session state for progress tracking
     if "generation_progress" not in st.session_state:

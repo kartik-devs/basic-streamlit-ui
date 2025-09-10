@@ -32,6 +32,55 @@ def main() -> None:
     )
 
     ensure_authenticated()
+    
+    # Check if generation is already in progress
+    if st.session_state.get("generation_in_progress", False):
+        st.markdown("## Case Report Generation")
+        st.markdown(
+            """
+            <div style="text-align: center; padding: 2rem 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; margin: 1rem 0; max-width: 600px; margin-left: auto; margin-right: auto;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">⏳</div>
+                <h3 style="color: white; margin-bottom: 0.5rem; font-weight: 600;">Report Generation in Progress</h3>
+                <p style="color: rgba(255,255,255,0.9); font-size: 0.95rem; margin-bottom: 1rem;">
+                    You are already generating a report. If you want to generate another report, you can proceed and the previous report will be saved to the History page.
+                </p>
+                <div style="display: flex; justify-content: center; margin-top: 1rem;">
+                    <div style="width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid white; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                </div>
+            </div>
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Show current generation info
+        current_case = st.session_state.get("current_case_id", "Unknown")
+        generation_start = st.session_state.get("generation_start")
+        if generation_start:
+            from datetime import datetime
+            elapsed = datetime.now() - generation_start
+            elapsed_minutes = int(elapsed.total_seconds() / 60)
+            st.info(f"🔄 Currently generating report for Case ID: **{current_case}** (Running for {elapsed_minutes} minutes)")
+        
+        # Option to continue with new report
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("---")
+            st.markdown("**Want to generate another report?**")
+            if st.button("Generate New Report", type="secondary", use_container_width=True):
+                # Clear the current generation state
+                st.session_state["generation_in_progress"] = False
+                st.session_state["generation_start"] = None
+                st.session_state["current_case_id"] = None
+                st.rerun()
+        
+        return
+    
     # Backend base URL
     params = st.query_params if hasattr(st, "query_params") else {}
     BACKEND_BASE = (
