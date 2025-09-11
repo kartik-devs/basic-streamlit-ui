@@ -1997,3 +1997,4 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
         except Exception:
             pass
         return False
+    

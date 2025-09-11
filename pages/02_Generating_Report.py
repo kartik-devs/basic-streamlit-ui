@@ -9,6 +9,29 @@ except Exception:
     requests = None
 from streamlit_extras.switch_page_button import switch_page
 
+# Backend base URL resolver
+def _get_backend_base() -> str:
+    params = st.query_params if hasattr(st, "query_params") else {}
+    return (
+        (params.get("api", [None])[0] if isinstance(params.get("api"), list) else params.get("api"))
+        or os.getenv("BACKEND_BASE")
+        or "http://localhost:8000"
+    ).rstrip("/")
+
+# Check if case exists in S3 via backend
+def _case_exists(case_id: str) -> bool:
+    if not requests:
+        return True  # Do not block when requests missing
+    try:
+        backend = _get_backend_base()
+        r = requests.get(f"{backend}/s3/cases", timeout=8)
+        if r.ok:
+            data = r.json() or {}
+            cases = data.get("cases") or []
+            return str(case_id) in {str(c) for c in cases}
+    except Exception:
+        return False
+    return False
 
  
  
@@ -178,6 +201,82 @@ def _check_webhook_completion(case_id: str) -> dict:
     return {}
 
 
+def _poll_workflow_status(case_id: str) -> dict:
+    """Poll n8n workflow status to detect completion, cancellation, or errors."""
+    if not requests:
+        return {}
+    
+    try:
+        # Use the actual n8n status endpoint
+        status_url = f"http://3.82.11.141:5678/webhook-test/workflow-status?case_id={case_id}"
+        
+        response = requests.get(status_url, timeout=5)
+        if response.ok:
+            data = response.json()
+            return {
+                "status": data.get("status", "unknown"),  # running, completed, cancelled, failed
+                "message": data.get("message", ""),
+                "progress": data.get("progress", 0),
+                "error": data.get("error", ""),
+                "cancelled": data.get("cancelled", False),
+                "completed": data.get("completed", False)
+            }
+    except Exception as e:
+        # If status endpoint doesn't exist or fails, return empty dict
+        # This is expected for workflows that don't support status polling
+        pass
+    
+    return {}
+
+
+def _check_workflow_cancellation(case_id: str) -> bool:
+    """Check if workflow was cancelled externally and update UI state accordingly."""
+    status = _poll_workflow_status(case_id)
+    
+    if status.get("cancelled") or status.get("status") == "cancelled":
+        # Workflow was cancelled externally
+        st.session_state["generation_cancelled"] = True
+        st.session_state["generation_in_progress"] = False
+        st.session_state["generation_end"] = datetime.now()
+        if st.session_state.get("generation_start"):
+            st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
+        return True
+    
+    if status.get("completed") or status.get("status") == "completed":
+        # Workflow completed - extract any completion data
+        if status.get("message"):
+            # Try to parse completion data from status response
+            try:
+                import json
+                completion_data = json.loads(status.get("message", "{}"))
+                metrics = _extract_runtime_metrics(json.dumps(completion_data))
+                if metrics:
+                    st.session_state.setdefault("webhook_metrics_by_case", {})[str(case_id)] = metrics
+            except:
+                pass
+        
+        # Mark as complete
+        st.session_state["generation_progress"] = 100
+        st.session_state["generation_step"] = 4
+        st.session_state["generation_complete"] = True
+        st.session_state["generation_in_progress"] = False
+        st.session_state["generation_end"] = datetime.now()
+        if st.session_state.get("generation_start"):
+            st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
+        return True
+    
+    if status.get("status") == "failed" or status.get("error"):
+        # Workflow failed
+        st.session_state["generation_failed"] = True
+        st.session_state["generation_in_progress"] = False
+        st.session_state["generation_end"] = datetime.now()
+        if st.session_state.get("generation_start"):
+            st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
+        return True
+    
+    return False
+
+
 def ensure_authenticated() -> bool:
     if st.session_state.get("authentication_status") is True:
         return True
@@ -237,14 +336,28 @@ def main() -> None:
     last_ts = last_ts_map.get(case_id) or 0
     within_window = (now_ts - last_ts) < 60
     if triggered and (not fired_map.get(case_id)) and (not within_window):
+        # Validate case ID against S3 list
+        if not _case_exists(case_id):
+            st.error(f"Case ID {case_id} not found. Please verify the ID and try again.")
+            st.session_state["generation_in_progress"] = False
+            return
+        # Begin generation and reset state
         st.session_state["generation_in_progress"] = True
-        # Reset progress when starting fresh (new case or first time)
         st.session_state["generation_progress"] = 0
         st.session_state["generation_step"] = 0
         st.session_state["generation_complete"] = False
+        st.session_state["generation_failed"] = False
+        st.session_state["generation_timeout"] = False
+        st.session_state["generation_cancelled"] = False
         st.session_state["generation_start"] = datetime.now()
         st.session_state["generation_end"] = None
         st.session_state["processing_seconds"] = 0
+        # Clear any stale webhook/completion state
+        st.session_state.pop("last_webhook_status", None)
+        st.session_state.pop("last_webhook_text", None)
+        # Nudge: mark validation complete immediately
+        st.session_state["generation_step"] = 1
+        st.session_state["generation_progress"] = 5
         # Trigger n8n webhook non-blocking, no debug
         try:
             url = _n8n_webhook_url()
@@ -286,7 +399,6 @@ def main() -> None:
             )
             has_end = bool(metrics.get("ocr_end_time"))
             # Additional check: ensure the webhook response indicates actual completion
-            # Look for explicit completion indicators in the response
             response_complete = "error" not in text.lower() and "invalid" not in text.lower()
             if metrics and has_artifacts and has_end and response_complete:
                 st.session_state.setdefault("webhook_metrics_by_case", {})[str(case_id)] = metrics
@@ -382,13 +494,27 @@ def main() -> None:
         start_click = st.button("Start", type="primary")
         if start_click and not fired_map.get(new_id or case_id):
             st.session_state["last_case_id"] = (new_id or case_id).strip()
+            # Validate before starting
+            if not _case_exists(st.session_state["last_case_id"]):
+                st.error(f"Case ID {st.session_state['last_case_id']} not found. Please verify the ID and try again.")
+                return
+            # Begin generation and reset state
             st.session_state["generation_in_progress"] = True
             st.session_state["generation_progress"] = 0
             st.session_state["generation_step"] = 0
             st.session_state["generation_complete"] = False
+            st.session_state["generation_failed"] = False
+            st.session_state["generation_timeout"] = False
+            st.session_state["generation_cancelled"] = False
             st.session_state["generation_start"] = datetime.now()
             st.session_state["generation_end"] = None
             st.session_state["processing_seconds"] = 0
+            # Clear any stale webhook/completion state
+            st.session_state.pop("last_webhook_status", None)
+            st.session_state.pop("last_webhook_text", None)
+            # Nudge: mark validation complete immediately
+            st.session_state["generation_step"] = 1
+            st.session_state["generation_progress"] = 5
             # Trigger n8n webhook on manual start (no debug)
             cid = st.session_state.get("last_case_id") or case_id
             try:
@@ -436,41 +562,53 @@ def main() -> None:
     case_id = st.session_state.get("last_case_id", params.get("case_id", ["UNKNOWN"])[0])
     start_time = st.session_state["generation_start"]
  
-    st.markdown('<div class="section-bg" style="max-width:900px;margin:0 auto;">', unsafe_allow_html=True)
-    st.markdown("<div style='text-align:center;'>", unsafe_allow_html=True)
-    st.markdown("""
-        <div style='font-size:32px'>☕</div>
-        <h3>Generating Your Report</h3>
-        <p style='opacity:.9;margin-top:-6px;'>Hey there, Doctor! ☕ Why not grab a coffee while we work our magic? Your comprehensive report is being crafted with care, and we'll email you the results as soon as it's ready!</p>
-    """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    # Simple header without the big purple section
+    st.markdown("## Generating Your Report")
+    st.markdown("Your comprehensive medical report is being crafted with advanced AI technology. This process typically takes 60-90 minutes to complete.")
  
-    progress = st.progress(st.session_state["generation_progress"])  # will be 100 if completed
-    n8n_ph = st.empty()
-    st.markdown("""
-        <div style="display:flex;justify-content:space-between;margin-top:4px;padding:0 4px;">
-          <span style="opacity:.8;">0%</span>
-          <span style="opacity:.8;padding-right:2px;">100%</span>
+    # Bigger progress display
+    progress_value = st.session_state["generation_progress"]
+    st.markdown(f"""
+        <div style="text-align: center; margin: 2rem 0;">
+            <div style="font-size: 5rem; font-weight: 700; color: var(--accent); margin-bottom: 0.5rem;">{progress_value}%</div>
+            <div style="font-size: 1.2rem; color: var(--text); font-weight: 600;">Progress</div>
         </div>
     """, unsafe_allow_html=True)
+    
+    n8n_ph = st.empty()
  
+    # Modern steps with better icons and styling
     steps = [
-        "Validating case ID",
-        "Fetching data",
-        "Compiling report",
-        "Finalizing",
-        "Preparing download",
+        ("Validating case ID", "🔍"),
+        ("Fetching medical data", "📊"),
+        ("AI analysis in progress", "🤖"),
+        ("Generating report", "📝"),
+        ("Finalizing & quality check", "✨"),
     ]
     placeholders = [st.empty() for _ in steps]
- 
+
     def line(idx: int, state: str):
-        icon = {"waiting": "○", "active": "⏳", "done": "✅"}[state]
-        style = {
-            "waiting": "opacity:.8;",
-            "active": "font-weight:600;",
-            "done": "opacity:.9; text-decoration: line-through;",
-        }[state]
-        placeholders[idx].markdown(f"- {icon} <span style='{style}'>{steps[idx]}...</span>", unsafe_allow_html=True)
+        step_name, step_icon = steps[idx]
+        if state == "waiting":
+            icon = "○"
+            style = "opacity: 0.5; color: var(--text);"
+            bg_style = "background: rgba(255,255,255,0.05);"
+        elif state == "active":
+            icon = "⏳"
+            style = "font-weight: 600; color: var(--accent);"
+            bg_style = "background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3);"
+        else:  # done
+            icon = "✅"
+            style = "color: #10b981; font-weight: 500;"
+            bg_style = "background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3);"
+        
+        placeholders[idx].markdown(f"""
+            <div style="display: flex; align-items: center; padding: 0.75rem 1rem; margin: 0.5rem 0; border-radius: 8px; {bg_style}">
+                <span style="font-size: 1.2rem; margin-right: 0.75rem;">{icon}</span>
+                <span style="font-size: 1.1rem; margin-right: 0.5rem;">{step_icon}</span>
+                <span style="{style}">{step_name}</span>
+            </div>
+        """, unsafe_allow_html=True)
  
     # Update step status based on current progress
     current_step = st.session_state["generation_step"]
@@ -489,6 +627,7 @@ def main() -> None:
         st.session_state["generation_progress"] = 100
         st.session_state["generation_step"] = 4
         st.session_state["generation_complete"] = True
+        st.session_state["generation_in_progress"] = False
         st.session_state["generation_end"] = datetime.now()
         st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - start_time).total_seconds())
         
@@ -510,16 +649,166 @@ def main() -> None:
             by_case_label = st.session_state.get("ai_label_by_case", {})
             by_case_label[str(case_id)] = "AI Report (PDF)"
             st.session_state["ai_label_by_case"] = by_case_label
+        
+        # Force rerun to show completion immediately
+        st.rerun()
+
+
+    # Check for cancelled state and display appropriate message
+    if st.session_state.get("generation_cancelled"):
+        n8n_ph.markdown(f"""
+            <div style="background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white; padding: 1.5rem; border-radius: 12px; text-align: center; margin: 1rem 0;">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏹️</div>
+                <h3 style="color: white; margin: 0; font-weight: 600;">Report Generation Cancelled</h3>
+                <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0;">Case ID: <strong>{case_id}</strong></p>
+                <p style="color: rgba(255,255,255,0.8); margin: 0.5rem 0 0 0; font-size: 0.9rem;">The workflow was cancelled externally or by the system.</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔄 Start New Generation", type="primary", use_container_width=True):
+                # Reset cancelled state and restart
+                st.session_state["generation_cancelled"] = False
+                st.session_state["generation_in_progress"] = True
+                st.session_state["generation_progress"] = 0
+                st.session_state["generation_step"] = 0
+                st.session_state["generation_complete"] = False
+                st.session_state["generation_start"] = datetime.now()
+                st.rerun()
+        return
+
+    # Check for error states and display appropriate messages
+    if st.session_state.get("generation_failed"):
+        n8n_ph.markdown(f"""
+            <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 1.5rem; border-radius: 12px; text-align: center; margin: 1rem 0;">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">❌</div>
+                <h3 style="color: white; margin: 0; font-weight: 600;">Report Generation Failed</h3>
+                <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0;">Case ID: <strong>{case_id}</strong></p>
+                <p style="color: rgba(255,255,255,0.8); margin: 0.5rem 0 0 0; font-size: 0.9rem;">The workflow encountered an error or crashed. Please try again.</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔄 Retry Generation", type="primary", use_container_width=True):
+                # Reset error state and restart
+                st.session_state["generation_failed"] = False
+                st.session_state["generation_in_progress"] = True
+                st.session_state["generation_progress"] = 0
+                st.session_state["generation_step"] = 0
+                st.session_state["generation_complete"] = False
+                st.session_state["generation_start"] = datetime.now()
+                st.rerun()
+        return
+    
+    if st.session_state.get("generation_timeout"):
+        n8n_ph.markdown(f"""
+            <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 1.5rem; border-radius: 12px; text-align: center; margin: 1rem 0;">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏰</div>
+                <h3 style="color: white; margin: 0; font-weight: 600;">Report Generation Timeout</h3>
+                <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0;">Case ID: <strong>{case_id}</strong></p>
+                <p style="color: rgba(255,255,255,0.8); margin: 0.5rem 0 0 0; font-size: 0.9rem;">The workflow took longer than expected. It may still be processing in the background.</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔄 Check Again", type="primary", use_container_width=True):
+                # Reset timeout state and check for completion
+                st.session_state["generation_timeout"] = False
+                st.session_state["generation_in_progress"] = True
+                st.rerun()
+        return
 
     # Only run progress animation if not complete and we're in progress, or if it's a new case
     if (not st.session_state["generation_complete"] and st.session_state.get("generation_in_progress")) or is_new_case:
         # Demo mode: simulate progress without external dependencies
         n8n_ph.info(f"🔄 Generating report for Case ID: {case_id}")
         
+        # Check for timeout (2+ hours without completion)
+        elapsed_time = (datetime.now() - start_time).total_seconds()
+        if elapsed_time > 7200:  # 2 hours = 7200 seconds
+            st.session_state["generation_timeout"] = True
+            st.session_state["generation_in_progress"] = False
+            st.rerun()
+        
+        # Poll workflow status every 10 seconds to detect external cancellation/completion
+        last_poll_time = st.session_state.get("last_poll_time", 0)
+        current_time = time.time()
+        if current_time - last_poll_time >= 10:  # Poll every 10 seconds
+            st.session_state["last_poll_time"] = current_time
+            # Check for external cancellation/completion and update state accordingly
+            status = _poll_workflow_status(case_id)
+            
+            if status.get("cancelled") or status.get("status") == "cancelled":
+                # Workflow was cancelled externally
+                st.session_state["generation_cancelled"] = True
+                st.session_state["generation_in_progress"] = False
+                st.session_state["generation_end"] = datetime.now()
+                if st.session_state.get("generation_start"):
+                    st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
+                st.rerun()
+            
+            elif status.get("completed") or status.get("status") == "completed":
+                # Workflow completed - extract any completion data
+                if status.get("message"):
+                    try:
+                        import json
+                        completion_data = json.loads(status.get("message", "{}"))
+                        metrics = _extract_runtime_metrics(json.dumps(completion_data))
+                        if metrics:
+                            st.session_state.setdefault("webhook_metrics_by_case", {})[str(case_id)] = metrics
+                    except:
+                        pass
+                
+                # Mark as complete
+                st.session_state["generation_progress"] = 100
+                st.session_state["generation_step"] = 4
+                st.session_state["generation_complete"] = True
+                st.session_state["generation_in_progress"] = False
+                st.session_state["generation_end"] = datetime.now()
+                if st.session_state.get("generation_start"):
+                    st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
+                st.rerun()
+            
+            elif status.get("status") == "failed" or status.get("error"):
+                # Workflow failed
+                st.session_state["generation_failed"] = True
+                st.session_state["generation_in_progress"] = False
+                st.session_state["generation_end"] = datetime.now()
+                if st.session_state.get("generation_start"):
+                    st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
+                st.rerun()
+            
+            # Update progress if status provides it
+            elif status.get("progress") is not None:
+                new_progress = min(int(status.get("progress", 0)), 95)  # Cap at 95% until completion
+                if new_progress > st.session_state.get("generation_progress", 0):
+                    st.session_state["generation_progress"] = new_progress
+                    # Update step based on progress
+                    if new_progress < 20:
+                        st.session_state["generation_step"] = 0
+                    elif new_progress < 40:
+                        st.session_state["generation_step"] = 1
+                    elif new_progress < 60:
+                        st.session_state["generation_step"] = 2
+                    elif new_progress < 80:
+                        st.session_state["generation_step"] = 3
+                    else:
+                        st.session_state["generation_step"] = 4
+        
         # Long-running workflow note and retry controls (only on explicit non-2xx)
         non_2xx = (st.session_state.get("last_webhook_status") is not None) and (not (200 <= int(st.session_state.get("last_webhook_status", 0)) < 300))
         if not st.session_state.get("generation_complete") and not non_2xx:
-            st.info("This workflow can take up to 2 hours. Keep this tab open; it will update automatically on completion.")
+            remaining_time = max(0, 7200 - elapsed_time)
+            hours_left = int(remaining_time // 3600)
+            minutes_left = int((remaining_time % 3600) // 60)
+            if hours_left > 0:
+                time_msg = f"This workflow can take up to 2 hours. Keep this tab open; it will update automatically on completion. (Approximately {hours_left}h {minutes_left}m remaining)"
+            else:
+                time_msg = f"This workflow can take up to 2 hours. Keep this tab open; it will update automatically on completion. (Approximately {minutes_left}m remaining)"
+            st.info(time_msg)
         if non_2xx:
             st.warning("The webhook call returned a non-success status. You can retry without reloading.")
             rcol1, rcol2, rcol3 = st.columns([0.4, 0.3, 0.3])
@@ -564,119 +853,156 @@ def main() -> None:
                         pass
                     st.rerun()
         
-        # Continue from where we left off
-        current_progress = st.session_state["generation_progress"]
-        current_step = st.session_state["generation_step"]
+        # Linear progression over 2 hours (7200 seconds)
+        # Start at 5% after validation, reach 95% after 2 hours
+        elapsed_time = (datetime.now() - start_time).total_seconds()
         
-        # Simple progress animation - continue from current state
-        # Simulate up to 95% max while waiting for webhook
-        for i in range(current_progress, 95):
-            # Break early if webhook already marked complete
-            if st.session_state.get("generation_complete"):
-                progress.progress(100)
-                break
-            st.session_state["generation_progress"] = i + 1
-            progress.progress(i + 1)
+        # Calculate linear progress: 5% to 95% over 7200 seconds (2 hours)
+        # Progress = 5 + (elapsed_time / 7200) * 90
+        if elapsed_time < 7200:  # Within 2 hours
+            linear_progress = min(5 + (elapsed_time / 7200) * 90, 95)
+            st.session_state["generation_progress"] = int(linear_progress)
             
-            # Update step status as we progress
-            if i < 20:
+            # Update step status based on progress
+            progress = st.session_state["generation_progress"]
+            if progress < 20:
                 st.session_state["generation_step"] = 0
-                line(0, "active")
-            elif i < 40:
+            elif progress < 40:
                 st.session_state["generation_step"] = 1
-                line(0, "done")
-                line(1, "active")
-            elif i < 60:
+            elif progress < 60:
                 st.session_state["generation_step"] = 2
-                line(1, "done")
-                line(2, "active")
-            elif i < 80:
+            elif progress < 80:
                 st.session_state["generation_step"] = 3
-                line(2, "done")
-                line(3, "active")
-            elif i < 95:
-                st.session_state["generation_step"] = 4
-                line(3, "done")
-                line(4, "active")
             else:
                 st.session_state["generation_step"] = 4
-                line(4, "active")
+        else:
+            # After 2 hours, mark as complete
+            st.session_state["generation_progress"] = 100
+            st.session_state["generation_step"] = 4
+            st.session_state["generation_complete"] = True
+            st.session_state["generation_in_progress"] = False
+            st.session_state["generation_end"] = datetime.now()
+            st.session_state["processing_seconds"] = int(elapsed_time)
             
-            time.sleep(76)  # ~2 hours to reach 95%: 95 steps * 76s ≈ 7220s ≈ 2 hours
+            # Simulate completion metrics for testing
+            test_metrics = {
+                "ocr_start_time": start_time.isoformat() + "Z",
+                "ocr_end_time": datetime.now().isoformat() + "Z",
+                "total_tokens_used": 1500,
+                "total_input_tokens": 800,
+                "total_output_tokens": 700,
+                "docx_url": "https://example.com/test-report.docx",
+                "pdf_url": "https://example.com/test-report.pdf"
+            }
+            st.session_state.setdefault("webhook_metrics_by_case", {})[str(case_id)] = test_metrics
+            st.rerun()
         
         
         if st.session_state.get("generation_complete"):
-            n8n_ph.success(f"✅ Report generation complete for Case ID: {case_id}!")
+            n8n_ph.markdown(f"""
+                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 1.5rem; border-radius: 12px; text-align: center; margin: 1rem 0;">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">🎉</div>
+                    <h3 style="color: white; margin: 0; font-weight: 600;">Report Generation Complete!</h3>
+                    <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0;">Case ID: <strong>{case_id}</strong></p>
+                </div>
+            """, unsafe_allow_html=True)
         else:
-            n8n_ph.info("Awaiting webhook completion… This may take a few minutes.")
+            n8n_ph.markdown(f"""
+                <div style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); color: var(--accent); padding: 1rem; border-radius: 8px; text-align: center; margin: 1rem 0;">
+                    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏳</div>
+                    <p style="margin: 0; font-weight: 500;">Generating report for Case ID: <strong>{case_id}</strong></p>
+                    <p style="margin: 0.5rem 0 0 0; opacity: 0.8; font-size: 0.9rem;">Awaiting completion... This may take a few minutes.</p>
+                </div>
+            """, unsafe_allow_html=True)
     elif st.session_state["generation_complete"]:
         # Show completion status if already done
-        n8n_ph.success(f"✅ Report generation complete for Case ID: {case_id}!")
+        n8n_ph.markdown(f"""
+            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 1.5rem; border-radius: 12px; text-align: center; margin: 1rem 0;">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">🎉</div>
+                <h3 style="color: white; margin: 0; font-weight: 600;">Report Generation Complete!</h3>
+                <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0;">Case ID: <strong>{case_id}</strong></p>
+            </div>
+        """, unsafe_allow_html=True)
     
     
     # (Debug sections removed for cleaner UI)
     
-    # End info section
-    end_time = st.session_state["generation_end"] or datetime.now()
-    processing_seconds = st.session_state["processing_seconds"]
- 
-    st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
-    with st.container():
-        st.markdown('<div class="section-bg">', unsafe_allow_html=True)
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.caption("STARTED")
-            st.write(start_time.strftime("%b %d, %Y %I:%M %p").lstrip('0'))
-        with c2:
-            st.caption("FINISHED")
-            st.write(end_time.strftime("%b %d, %Y %I:%M %p").lstrip('0'))
-        with c3:
-            st.caption("ELAPSED TIME")
-            st.write(f"{processing_seconds // 60}m {processing_seconds % 60}s")
-            st.info("We will email you upon completion with the download link.")
-    
-    # Clean demo completion - no external workflow status needed
-    
+    # Modern timing information section (show only when complete)
+    if st.session_state.get("generation_complete"):
+        end_time = st.session_state["generation_end"] or datetime.now()
+        processing_seconds = st.session_state["processing_seconds"]
+        
+        st.markdown(f"""
+            <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; text-align: center;">
+                    <div>
+                        <div style="font-size: 0.8rem; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">Started</div>
+                        <div style="font-weight: 500; color: var(--text);">{start_time.strftime("%b %d, %Y %I:%M %p").lstrip('0')}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">Finished</div>
+                        <div style="font-weight: 500; color: var(--text);">{end_time.strftime("%b %d, %Y %I:%M %p").lstrip('0')}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8rem; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5rem;">Elapsed Time</div>
+                        <div style="font-weight: 500; color: var(--text);">{processing_seconds // 60}m {processing_seconds % 60}s</div>
+                    </div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
     st.markdown('</div>', unsafe_allow_html=True)
  
-    st.markdown("<div style='text-align:center;margin-top:.5rem;'>", unsafe_allow_html=True)
-    if st.button("View Results", type="primary"):
-        # Prefer programmatic navigation with fallbacks
-        tried = False
-        for label in [
-            "04_Results",
-            "Results",
-            "Results Page",
-            "Results+",
-        ]:
-            try:
-                switch_page(label)
-                tried = True
-                break
-            except Exception:
-                continue
-        # Fallback: update query params and inject client redirect
-        if not tried:
-            try:
-                qp = st.query_params if hasattr(st, "query_params") else None
-                if qp is not None:
-                    qp["page"] = "04_Results"
-                    qp["case_id"] = case_id
-            except Exception:
-                pass
-            st.markdown(
-                f"""
-                <script>
-                  const params = new URLSearchParams(window.location.search);
-                  params.set('page', '04_Results');
-                  params.set('case_id', '{case_id}');
-                  window.location.search = '?' + params.toString();
-                </script>
-                """,
-                unsafe_allow_html=True,
-            )
-        st.stop()
-    st.markdown("</div>", unsafe_allow_html=True)
+    # Only show "Report Ready" section when generation is actually complete
+    if st.session_state.get("generation_complete"):
+        # Modern action button section
+        st.markdown("""
+            <div style="text-align: center; margin: 2rem 0;">
+                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 12px; padding: 1.5rem; margin: 0 auto; max-width: 400px;">
+                    <div style="color: white; font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;">🎉 Report Ready!</div>
+                    <p style="color: rgba(255,255,255,0.9); margin: 0; font-size: 0.95rem;">Your comprehensive medical report has been generated and is ready for review.</p>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("📊 View Results", type="primary", use_container_width=True):
+                # Prefer programmatic navigation with fallbacks
+                tried = False
+                for label in [
+                    "04_Results",
+                    "Results",
+                    "Results Page",
+                    "Results+",
+                ]:
+                    try:
+                        switch_page(label)
+                        tried = True
+                        break
+                    except Exception:
+                        continue
+                # Fallback: update query params and inject client redirect
+                if not tried:
+                    try:
+                        qp = st.query_params if hasattr(st, "query_params") else None
+                        if qp is not None:
+                            qp["page"] = "04_Results"
+                            qp["case_id"] = case_id
+                    except Exception:
+                        pass
+                    st.markdown(
+                        f"""
+                        <script>
+                          const params = new URLSearchParams(window.location.search);
+                          params.set('page', '04_Results');
+                          params.set('case_id', '{case_id}');
+                          window.location.search = '?' + params.toString();
+                        </script>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                st.stop()
  
  
 main()

@@ -73,10 +73,30 @@ def main() -> None:
             st.markdown("---")
             st.markdown("**Want to generate another report?**")
             if st.button("Generate New Report", type="secondary", use_container_width=True):
-                # Clear the current generation state
+                # Clear ALL generation-related state to ensure clean reset
                 st.session_state["generation_in_progress"] = False
+                st.session_state["generation_complete"] = False
+                st.session_state["generation_failed"] = False
+                st.session_state["generation_timeout"] = False
+                st.session_state["generation_progress"] = 0
+                st.session_state["generation_step"] = 0
                 st.session_state["generation_start"] = None
+                st.session_state["generation_end"] = None
+                st.session_state["processing_seconds"] = 0
                 st.session_state["current_case_id"] = None
+                st.session_state["last_completed_case_id"] = None
+                
+                # Clear webhook-related state
+                st.session_state.pop("last_webhook_status", None)
+                st.session_state.pop("last_webhook_text", None)
+                
+                # Clear fired flags for all cases to allow fresh start
+                st.session_state["__webhook_fired__"] = {}
+                st.session_state["__webhook_last_fired_ts__"] = {}
+                
+                # Clear navigation flag
+                st.session_state.pop("nav_to_generating", None)
+                
                 st.rerun()
         
         return
@@ -175,7 +195,7 @@ def main() -> None:
         st.markdown(
             """
             <div class="section-bg fade-in" style="max-width:900px;margin:0.75rem auto 0 auto;text-align:center;">
-              <span style="opacity:.9;">Report generation typically takes 25 - 30 minutes to complete.</span>
+              <span style="opacity:.9;">Report generation typically takes 60 - 90 minutes to complete (up to 2 hours).</span>
             </div>
             """,
             unsafe_allow_html=True,

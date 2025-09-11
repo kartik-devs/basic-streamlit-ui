@@ -152,8 +152,8 @@ def main() -> None:
     )
     backend = _get_backend_base()
 
-    # Check if generation is in progress and show loading state
-    if st.session_state.get("generation_in_progress", False):
+    # Check if generation is in progress and show loading state (but allow access if complete)
+    if st.session_state.get("generation_in_progress", False) and not st.session_state.get("generation_complete", False):
         st.markdown("## Results Page")
         st.markdown(
             """
