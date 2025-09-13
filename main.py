@@ -64,7 +64,7 @@ def main() -> None:
 
         with tabs[0]:
             st.subheader("Sign in")
-            authenticator.login("Login")
+            authenticator.login("Login", "main")
 
         with tabs[1]:
             st.subheader("Create an account")
@@ -111,7 +111,7 @@ def main() -> None:
                 except Exception:
                     st.experimental_set_query_params(page="case")
         with c2:
-            authenticator.logout("Log out")
+            authenticator.logout("Log out", "main")
 
     elif st.session_state.get("authentication_status") is False:
         st.error("Invalid username or password.")
