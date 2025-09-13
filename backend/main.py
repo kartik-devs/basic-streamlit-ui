@@ -2048,38 +2048,38 @@ def webhook_finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
     Stores a row in runs and returns {ok: True}.
     """
+    try:
+        case_id = str(payload.get("case_id") or payload.get("patient_id") or "").strip()
+        if not case_id:
+            raise ValueError("case_id required")
+        def _pick_url(obj: Any) -> str | None:
+            if isinstance(obj, dict):
+                return obj.get("signed_url") or obj.get("url") or obj.get("href")
+            return None
+        ai_url = _pick_url(payload.get("ai"))
+        doc_url = _pick_url(payload.get("docx"))
+        pdf_url = _pick_url(payload.get("pdf"))
+        ocr_start = payload.get("ocr_start_time")
+        ocr_end = payload.get("ocr_end_time")
+        tot = payload.get("total_tokens_used")
+        tin = payload.get("total_input_tokens")
+        tout = payload.get("total_output_tokens")
+        conn = get_conn()
         try:
-            case_id = str(payload.get("case_id") or payload.get("patient_id") or "").strip()
-            if not case_id:
-                raise ValueError("case_id required")
-            def _pick_url(obj: Any) -> str | None:
-                if isinstance(obj, dict):
-                    return obj.get("signed_url") or obj.get("url") or obj.get("href")
-                return None
-            ai_url = _pick_url(payload.get("ai"))
-            doc_url = _pick_url(payload.get("docx"))
-            pdf_url = _pick_url(payload.get("pdf"))
-            ocr_start = payload.get("ocr_start_time")
-            ocr_end = payload.get("ocr_end_time")
-            tot = payload.get("total_tokens_used")
-            tin = payload.get("total_input_tokens")
-            tout = payload.get("total_output_tokens")
-            conn = get_conn()
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO runs (case_id, created_at, ai_url, doc_url, pdf_url, ocr_start_time, ocr_end_time,
-                                    total_tokens_used, total_input_tokens, total_output_tokens)
-                    VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (case_id, ai_url, doc_url, pdf_url, ocr_start, ocr_end, tot, tin, tout),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-            return {"ok": True}
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            conn.execute(
+                """
+                INSERT INTO runs (case_id, created_at, ai_url, doc_url, pdf_url, ocr_start_time, ocr_end_time,
+                                total_tokens_used, total_input_tokens, total_output_tokens)
+                VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (case_id, ai_url, doc_url, pdf_url, ocr_start, ocr_end, tot, tin, tout),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
     @app.get("/runs/{case_id}")
