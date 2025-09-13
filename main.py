@@ -30,9 +30,9 @@ def build_authenticator():
     config, cookie_name, cookie_key = load_auth_config()
     authenticator = stauth.Authenticate(
         config["credentials"],
-        cookie_name,
-        cookie_key,
-        cookie_expiry_days=1,
+        config["cookie"]["name"],
+        config["cookie"]["key"],
+        config["cookie"]["expiry_days"],
     )
     return authenticator
 
@@ -64,7 +64,10 @@ def main() -> None:
 
         with tabs[0]:
             st.subheader("Sign in")
-            authenticator.login()
+            try:
+                authenticator.login()
+            except Exception as e:
+                st.error(f"Login error: {e}")
 
         with tabs[1]:
             st.subheader("Create an account")
@@ -100,7 +103,7 @@ def main() -> None:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    if st.session_state.get("authentication_status") is True:
+    if st.session_state.get("authentication_status"):
         st.success(f"Welcome {st.session_state.get('name', '')}!")
 
         c1, c2 = st.columns([1, 1])
@@ -111,11 +114,14 @@ def main() -> None:
                 except Exception:
                     st.experimental_set_query_params(page="case")
         with c2:
-            authenticator.logout("Log out")
+            try:
+                authenticator.logout("Log out")
+            except Exception as e:
+                st.error(f"Logout error: {e}")
 
     elif st.session_state.get("authentication_status") is False:
         st.error("Invalid username or password.")
-    else:
+    elif st.session_state.get("authentication_status") is None:
         st.info("Please enter your credentials to continue.")
 
 

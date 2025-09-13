@@ -104,3 +104,7 @@ credentials:
       email: navpreet4@gmail.com
       name: Navpreet Singh
       password: $2b$12$Gf1OAxPqqsnu/Cazkp7SWu1zfUKOabu2nSD7glcQDFb1PHKCLeXRa
+cookie:
+  expiry_days: 30
+  key: some_random_key_for_casetracker
+  name: casetracker_auth
