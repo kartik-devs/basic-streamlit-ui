@@ -195,7 +195,7 @@ def main() -> None:
         st.markdown(
             """
             <div class="section-bg fade-in" style="max-width:900px;margin:0.75rem auto 0 auto;text-align:center;">
-              <span style="opacity:.9;">Report generation typically takes 60 - 90 minutes to complete (up to 2 hours).</span>
+              <span style="opacity:.9;">Report generation takes approximately 2 hours to complete.</span>
             </div>
             """,
             unsafe_allow_html=True,

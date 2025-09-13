@@ -85,7 +85,7 @@ def main() -> None:
                     if not reg_username or not reg_name or not reg_email or not reg_password:
                         st.error("Please fill all fields.")
                     elif not email_ok:
-                        st.error("Please use a supported email provider (e.g., gmail.com, outlook.com).")
+                        st.error("Invalid email. Please enter something like name@domain.com")
                     elif reg_password != reg_password2:
                         st.error("Passwords do not match.")
                     elif user_exists(load_config(), reg_username):
@@ -94,7 +94,7 @@ def main() -> None:
                         try:
                             register_user(reg_username, reg_name, email_input, reg_password)
                         except ValueError:
-                            st.error("Email domain not allowed or invalid format.")
+                            st.error("Invalid email. Must contain '@' and end with '.com'.")
                         else:
                             st.success("Account created. You can now sign in.")
 

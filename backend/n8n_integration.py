@@ -29,6 +29,12 @@ class N8nWorkflowManager:
         self.session = requests.Session()
         if self.api_key:
             self.session.headers.update({"X-N8N-API-KEY": self.api_key})
+        # Optional explicit cancel webhook URL (preferred when API stop endpoint not available)
+        self.cancel_webhook_url = os.getenv("N8N_CANCEL_WEBHOOK_URL")
+        # Trigger webhook URL (used to start the main workflow if API trigger is not available)
+        self.trigger_webhook_url = os.getenv("N8N_TRIGGER_WEBHOOK_URL") or os.getenv("N8N_WEBHOOK_URL")
+        # Main workflow id (string or number), used to identify executions
+        self.main_workflow_id = os.getenv("N8N_MAIN_WORKFLOW_ID")
     
     def trigger_ocr_workflow(self, patient_id: str, s3_key: str = None) -> Dict[str, Any]:
         """
@@ -53,12 +59,19 @@ class N8nWorkflowManager:
         try:
             response = self.session.post(webhook_url, json=payload, timeout=30)
             response.raise_for_status()
-            return {
+            out = {
                 "success": True,
                 "execution_id": response.json().get("executionId"),
                 "status": "triggered",
                 "timestamp": datetime.now().isoformat()
             }
+            # Persist execution id if present
+            try:
+                if out.get("execution_id"):
+                    _store_execution_id(patient_id, out["execution_id"])
+            except Exception:
+                pass
+            return out
         except Exception as e:
             logger.error(f"Failed to trigger OCR workflow: {e}")
             return {
@@ -93,12 +106,18 @@ class N8nWorkflowManager:
         try:
             response = self.session.post(webhook_url, json=payload, timeout=30)
             response.raise_for_status()
-            return {
+            out = {
                 "success": True,
                 "execution_id": response.json().get("executionId"),
                 "status": "triggered",
                 "timestamp": datetime.now().isoformat()
             }
+            try:
+                if out.get("execution_id"):
+                    _store_execution_id(patient_id, out["execution_id"])
+            except Exception:
+                pass
+            return out
         except Exception as e:
             logger.error(f"Failed to trigger Section {section_number} workflow: {e}")
             return {
@@ -131,12 +150,18 @@ class N8nWorkflowManager:
         try:
             response = self.session.post(webhook_url, json=payload, timeout=30)
             response.raise_for_status()
-            return {
+            out = {
                 "success": True,
                 "execution_id": response.json().get("executionId"),
                 "status": "triggered",
                 "timestamp": datetime.now().isoformat()
             }
+            try:
+                if out.get("execution_id"):
+                    _store_execution_id(patient_id, out["execution_id"])
+            except Exception:
+                pass
+            return out
         except Exception as e:
             logger.error(f"Failed to trigger complete report workflow: {e}")
             return {
@@ -191,6 +216,127 @@ class N8nWorkflowManager:
                 "success": False,
                 "error": str(e)
             }
+
+    def trigger_main_workflow_and_capture_execution(self, case_id: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Start the main workflow via webhook (or API if available) and attempt to capture execution id.
+        Returns a dict with at least { started: bool, success: bool, execution_id?: str, error?: str }.
+        Execution id capture depends on N8N_API_KEY and N8N_MAIN_WORKFLOW_ID.
+        """
+        payload = payload or {"case_id": case_id}
+        # Enforce case_id consistency; drop patient_id in favor of case_id
+        if "patient_id" in payload and not payload.get("case_id"):
+            payload["case_id"] = payload.get("patient_id")
+        if "patient_id" in payload:
+            try:
+                del payload["patient_id"]
+            except Exception:
+                pass
+        exec_id: Optional[str] = None
+        started = False
+        # Step 1: Start the workflow via webhook if configured
+        try:
+            if self.trigger_webhook_url:
+                # Enforce case_id key in payload for consistency
+                if "case_id" not in payload:
+                    payload = {**payload, "case_id": case_id}
+                r = self.session.post(self.trigger_webhook_url, json=payload, timeout=10)
+                r.raise_for_status()
+                started = True
+        except Exception as e:
+            # Continue; we may still be able to detect execution if it started
+            logger.warning(f"Trigger webhook failed: {e}")
+        # Step 2: Poll executions API and pick latest running for main workflow
+        try:
+            if not (self.api_key and self.main_workflow_id):
+                return {"success": started, "started": started, "error": "N8N_API_KEY and N8N_MAIN_WORKFLOW_ID required"}
+            # Query recent executions then detect running by finished==False or no stoppedAt
+            urls = [
+                f"{self.n8n_base_url}/api/v1/executions?limit=25",
+            ]
+            import time
+            for _ in range(10):  # short poll window ~3-4s
+                for url in urls:
+                    try:
+                        resp = self.session.get(url, timeout=5)
+                        if not resp.ok:
+                            continue
+                        data = resp.json()
+                        items: List[Dict[str, Any]] = data if isinstance(data, list) else data.get("data") or data.get("items") or []
+                        # Normalize workflow id compare
+                        target = str(self.main_workflow_id)
+                        candidates = []
+                        for it in items:
+                            wid = it.get("workflowId") or it.get("workflow_id")
+                            if wid is not None and str(wid) == target:
+                                # running only when finished == False AND no stoppedAt
+                                finished = it.get("finished")
+                                stopped = it.get("stoppedAt") or it.get("stopped_at")
+                                if (finished is False) and (not stopped):
+                                    candidates.append(it)
+                        if candidates:
+                            # Pick the newest by id or startedAt
+                            def _key(it):
+                                return it.get("id") or it.get("startedAt") or it.get("started_at") or 0
+                            latest = sorted(candidates, key=_key, reverse=True)[0]
+                            e = latest.get("id") or latest.get("executionId") or latest.get("execution_id")
+                            if e:
+                                exec_id = str(e)
+                                _store_execution_id(case_id, exec_id)
+                                return {"success": True, "started": True, "execution_id": exec_id}
+                    except Exception:
+                        continue
+                time.sleep(0.3)
+            # Could not capture exec id, but report start state
+            return {"success": started, "started": started, "error": "could not capture execution id"}
+        except Exception as e:
+            return {"success": started, "started": started, "error": str(e)}
+
+    def cancel_by_execution_id(self, execution_id: str) -> Dict[str, Any]:
+        """Best-effort cancellation by execution id.
+        Prefers explicit cancel webhook when configured; otherwise attempts n8n API if available.
+        """
+        try:
+            headers = {"Content-Type": "application/json"}
+            # Preferred: explicit cancel webhook
+            if self.cancel_webhook_url:
+                r = self.session.post(self.cancel_webhook_url, json={"execution_id": execution_id, "action": "cancel"}, timeout=10)
+                ok = r.ok
+                return {"ok": ok, "via": "webhook", "status": r.status_code}
+            # Fallback: attempt n8n API stop endpoint (version dependent)
+            # Common patterns across versions (may not exist on all installs)
+            candidates = [
+                # API v1 endpoints
+                ("POST", f"{self.n8n_base_url}/api/v1/executions/{execution_id}/stop"),
+                ("DELETE", f"{self.n8n_base_url}/api/v1/executions/{execution_id}"),
+                # Legacy REST endpoints (older n8n builds)
+                ("POST", f"{self.n8n_base_url}/rest/executions/{execution_id}/stop"),
+                ("DELETE", f"{self.n8n_base_url}/rest/executions/{execution_id}"),
+            ]
+            for method, url in candidates:
+                try:
+                    if method == "POST":
+                        r = self.session.post(url, timeout=10)
+                    else:
+                        r = self.session.delete(url, timeout=10)
+                    if r.ok:
+                        return {"ok": True, "via": url, "status": r.status_code}
+                except Exception:
+                    continue
+            return {"ok": False, "error": "no cancel endpoint available"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def cancel_by_case_id(self, case_id: str) -> Dict[str, Any]:
+        """Deprecated broad cancel by case. Keep for compatibility but make it a no-op unless an execution id is resolvable.
+        """
+        try:
+            # Fallback: look up last execution id for case and cancel that
+            exec_id = _get_last_execution_id(case_id)
+            if exec_id:
+                return self.cancel_by_execution_id(exec_id)
+            return {"ok": False, "error": "no execution id recorded for case"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
 
 class ReportGenerator:
@@ -309,3 +455,79 @@ class ReportGenerator:
 # Global instance
 n8n_manager = N8nWorkflowManager()
 report_generator = ReportGenerator(n8n_manager)
+
+
+# --- Lightweight execution-id persistence helpers (SQLite) ---
+_DB_PATH = os.getenv("REPORTS_DB", "reports.db")
+
+def _store_execution_id(case_id: str, execution_id: str) -> None:
+    """Store last execution id in reports.metadata for the most recent row of the case."""
+    import sqlite3, json as _json
+    conn = sqlite3.connect(_DB_PATH)
+    try:
+        cur = conn.cursor()
+        # Ensure table exists minimally
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reports (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              case_id TEXT NOT NULL,
+              email TEXT,
+              status TEXT,
+              started_at TEXT,
+              finished_at TEXT,
+              s3_key TEXT,
+              file_path TEXT,
+              file_size INTEGER,
+              checksum TEXT,
+              metadata TEXT,
+              code_version TEXT
+            )
+            """
+        )
+        conn.commit()
+        # Fetch latest row for case
+        row = cur.execute("SELECT id, metadata FROM reports WHERE case_id=? ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
+        if row:
+            rid, meta_text = row
+            try:
+                meta = _json.loads(meta_text) if meta_text else {}
+            except Exception:
+                meta = {}
+            meta["n8n_execution_id"] = execution_id
+            cur.execute("UPDATE reports SET metadata=? WHERE id=?", (_json.dumps(meta), rid))
+        else:
+            meta = {"n8n_execution_id": execution_id}
+            cur.execute(
+                "INSERT INTO reports (case_id, status, started_at, metadata) VALUES (?, ?, datetime('now'), ?)",
+                (case_id, "processing", _json.dumps(meta)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_last_execution_id(case_id: str) -> Optional[str]:
+    import sqlite3, json as _json
+    conn = sqlite3.connect(_DB_PATH)
+    try:
+        row = conn.execute("SELECT metadata FROM reports WHERE case_id=? ORDER BY id DESC LIMIT 1", (case_id,)).fetchone()
+        if not row:
+            return None
+        meta_text = row[0]
+        try:
+            meta = _json.loads(meta_text) if meta_text else {}
+        except Exception:
+            meta = {}
+        val = meta.get("n8n_execution_id")
+        return val if isinstance(val, str) and val else None
+    finally:
+        conn.close()
+
+
+# Public helper wrapper for main app
+def get_last_execution_id(case_id: str) -> Optional[str]:
+    return _get_last_execution_id(case_id)
+
+def store_execution_id(case_id: str, execution_id: str) -> None:
+    _store_execution_id(case_id, execution_id)

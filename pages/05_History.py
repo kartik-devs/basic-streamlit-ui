@@ -121,7 +121,7 @@ def _get_case_outputs(backend: str, case_id: str) -> list[dict]:
     """Fetch outputs for a specific case with caching."""
     try:
         import requests
-        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=8)
+        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
         if r.ok:
             data = r.json() or {}
             items = data.get("items", []) or []
@@ -158,6 +158,71 @@ def _get_case_comments(backend: str, case_id: str, ai_label: str = None) -> list
         pass
     return []
 
+
+@st.cache_data(show_spinner=False, ttl=120)
+def _get_metrics_for_version(backend: str, case_id: str, version: str) -> dict | None:
+    try:
+        import requests
+        r = requests.get(f"{backend}/s3/{case_id}/metrics", params={"version": version}, timeout=8)
+        if r.ok:
+            data = r.json() or {}
+            if data.get("ok"):
+                return data
+    except Exception:
+        pass
+    return None
+
+
+def _probe_metrics_from_outputs(backend: str, case_id: str, outputs: list[dict]) -> None:
+    """Scan output file names for 12-digit timestamps and warm backend metrics cache.
+    This helps populate OCR/tokens when the JSON exists in S3.
+    """
+    try:
+        import re
+        seen: set[str] = set()
+        for it in outputs or []:
+            for src in (it.get("label"), it.get("ai_key"), it.get("doctor_key")):
+                if not src:
+                    continue
+                m = re.search(r"(\\d{12})", str(src))
+                if not m:
+                    continue
+                ts = m.group(1)
+                for v in (f"{case_id}-{ts}", f"{ts}-{case_id}"):
+                    if v in seen:
+                        continue
+                    seen.add(v)
+                    _ = _get_metrics_for_version(backend, case_id, v)
+    except Exception:
+        pass
+
+
+def _infer_versions_from_label(case_id: str, label: str | None, ai_key: str | None) -> list[str]:
+    import re
+    cand: list[str] = []
+    def push(v: str):
+        if v and v not in cand:
+            cand.append(v)
+    srcs = [label or "", ai_key or ""]
+    for s in srcs:
+        # Look for 12-digit timestamp and case id
+        m1 = re.search(r"(\d{12})-([0-9]{3,})", s)
+        if m1:
+            ts, cid = m1.group(1), m1.group(2)
+            push(f"{cid}-{ts}")
+            push(f"{ts}-{cid}")
+        m2 = re.search(r"([0-9]{3,})-(\d{12})", s)
+        if m2:
+            cid, ts = m2.group(1), m2.group(2)
+            push(f"{cid}-{ts}")
+            push(f"{ts}-{cid}")
+        # If starts with 12-digit ts, combine with provided case_id
+        m3 = re.match(r"^(\d{12})", s)
+        if m3:
+            ts = m3.group(1)
+            push(f"{case_id}-{ts}")
+            push(f"{ts}-{case_id}")
+    return cand
 
 def _initials(name: str) -> str:
     parts = [p for p in (name or "").split() if p]
@@ -242,8 +307,8 @@ def main() -> None:
         p = cid_to_patient.get(cid)
         return f"{cid} — {p}" if p else cid
 
-    # Only build labels for first 50 cases for speed
-    visible_cases = cases[:50]
+    # Build labels for all cases so users can select any case (avoid blank table due to slicing)
+    visible_cases = cases
     display_labels = [_label_for(cid) for cid in visible_cases]
     label_to_cid = {lbl: cid for lbl, cid in zip(display_labels, visible_cases)}
 
@@ -293,13 +358,40 @@ def main() -> None:
     if case_id:
         with st.spinner("Loading case data…"):
             outputs = _get_case_outputs(backend, case_id)
+            # Exclude legacy Edited subfolder entries from display
+            try:
+                outputs = [o for o in outputs if not (
+                    (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
+                    (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
+                )]
+            except Exception:
+                pass
             # Fetch ground truth assets (cached)
             assets = _get_case_assets(backend, case_id)
+            # Warm metrics cache based on outputs so summary fills in
+            _probe_metrics_from_outputs(backend, case_id, outputs)
     else:
         outputs = []
         assets = {}
     
-    # Debug backend runs section removed
+    # Optionally show only canonical workflow reports which can have metrics JSON
+    st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
+    only_canonical = st.checkbox(
+        "Show only canonical workflow reports (with metrics)",
+        value=True,
+        key=f"hist_only_canon_{case_id}",
+    )
+    if outputs and only_canonical:
+        try:
+            import re as _re
+            def _base_name(it: dict) -> str:
+                return (it.get("label") or (it.get("ai_key") or "").split("/")[-1] or "").strip()
+            canon_re = _re.compile(rf"^(\d{{12}})-{case_id}-CompleteAIGeneratedReport\.(pdf|docx)$", _re.IGNORECASE)
+            outputs = [o for o in outputs if canon_re.match(_base_name(o) or "")]
+        except Exception:
+            pass
+    
+    # Debug panel removed for production cleanliness
     
     # Augment from DB when no S3 outputs exist (helps for mock cases like 9999)
     if not outputs:
@@ -363,83 +455,61 @@ def main() -> None:
         from urllib.parse import quote as _q
         return f"{backend}/proxy/download?url={_q(raw_url, safe='')}&filename={_q(fname, safe='')}"
 
-    # Code version fetching - prioritize stored version over GitHub
+    # Code version fetching - backend, then GitHub state file by default
     @st.cache_data(ttl=300)
     def _fetch_code_version_for_case(case_id: str) -> str:
         try:
             import requests as _rq
-            import json as _json, base64 as _b64
+            import json as _json, base64 as _b64, os as _os
+            backend_url = _get_backend_base()
             
-            # First try to get stored version from backend
+            # 1) Try stored version from backend
             try:
-                backend_url = st.session_state.get("backend_url", "http://localhost:8000")
                 backend_r = _rq.get(f"{backend_url}/reports/{case_id}/code-version", timeout=5)
                 if backend_r.ok:
-                    backend_data = backend_r.json()
+                    backend_data = backend_r.json() or {}
                     stored_version = backend_data.get("code_version")
-                    if stored_version and stored_version != "Unknown" and stored_version != "—":
+                    if stored_version and stored_version not in ("Unknown", "—"):
                         return stored_version
-            except Exception as e:
+            except Exception:
                 pass
-            
-            # Only fetch from GitHub if we have a webhook response (new report)
-            webhook_text = st.session_state.get("last_webhook_text")
-            if not webhook_text:
-                # Check session state as fallback
-                sess_ver = (st.session_state.get("code_version_by_case") or {}).get(str(case_id)) or st.session_state.get("code_version")
-                return sess_ver if sess_ver else "—"
-            
-            # GitHub API configuration
-            github_token = "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"
+
+            # 2) Session-state fallback
+            sess_ver = (st.session_state.get("code_version_by_case") or {}).get(str(case_id)) or st.session_state.get("code_version")
+            if sess_ver and sess_ver not in ("Unknown", "—"):
+                return sess_ver
+
+            # 3) Fetch GitHub state file
+            github_token = _os.getenv("GITHUB_TOKEN") or "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"
             github_username = "samarth0211"
             repo_name = "n8n-workflows-backup"
             branch = "main"
             file_path = "state/QTgwEEZYYfbRhhPu.version"
-            
-            # Construct GitHub API URL
-            github_url = f"https://api.github.com/repos/{github_username}/{repo_name}/contents/{file_path}?ref={branch}"
-            
-            # Make authenticated request to GitHub API
-            headers = {
-                "Authorization": f"token {github_token}",
-                "Accept": "application/vnd.github.v3+json"
-            }
-            
-            r = _rq.get(github_url, headers=headers, timeout=10)
+            url = f"https://api.github.com/repos/{github_username}/{repo_name}/contents/{file_path}?ref={branch}"
+            headers = {"Accept": "application/vnd.github.v3+json"}
+            if github_token:
+                headers["Authorization"] = f"token {github_token}"
+            r = _rq.get(url, headers=headers, timeout=10)
             if r.ok:
-                try:
-                    data = r.json()
-                    if isinstance(data, dict):
-                        content = data.get("content")
-                        encoding = data.get("encoding")
-                        if content and encoding and encoding.lower() == "base64":
-                            # Decode base64 content
-                            raw_content = _b64.b64decode(content).decode("utf-8", "ignore")
-                            # Parse JSON content
-                            version_data = _json.loads(raw_content)
-                            version = version_data.get("version", "—")
-                            github_version = version.replace(".json", "") if isinstance(version, str) else "—"
-                            
-                            # Store the version in backend for future use
-                            try:
-                                store_r = _rq.post(
-                                    f"{backend_url}/reports/{case_id}/code-version",
-                                    json={"code_version": github_version},
-                                    timeout=5
-                                )
-                                if store_r.ok:
-                                    return github_version
-                            except Exception:
-                                pass
-                            return github_version
-                except Exception as e:
-                    print(f"Error parsing GitHub response: {e}")
-                    return "—"
-            else:
-                print(f"GitHub API error: {r.status_code} - {r.text}")
-                return "—"
-        except Exception as e:
-            print(f"Error fetching code version: {e}")
+                data = r.json() or {}
+                content = data.get("content")
+                encoding = (data.get("encoding") or "").lower()
+                if content and encoding == "base64":
+                    raw = _b64.b64decode(content).decode("utf-8", "ignore")
+                    try:
+                        version_data = _json.loads(raw)
+                        version = version_data.get("version", "—")
+                        code_ver = version.replace(".json", "") if isinstance(version, str) else "—"
+                    except Exception:
+                        code_ver = "—"
+                    # Store back to backend for future reads
+                    try:
+                        _rq.post(f"{backend_url}/reports/{case_id}/code-version", json={"code_version": code_ver}, timeout=5)
+                    except Exception:
+                        pass
+                    return code_ver
+            return "—"
+        except Exception:
             return "—"
 
     # Build table data
@@ -521,6 +591,7 @@ def main() -> None:
                 ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
                 rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
         else:
+            st.warning("No outputs returned for this case. Verify the backend `/s3/{case_id}/outputs` endpoint and try Refetch/Cache Clear in Debug.")
             rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
         # Pagination controls for summary table (10 per page)
@@ -554,10 +625,10 @@ def main() -> None:
         }
         
         .history-table {
-            min-width: 2400px;
+            min-width: 3200px;
             display: grid;
             gap: 0;
-            grid-template-columns: 220px 160px 140px 3.6fr 3.6fr 3.6fr 120px 120px 140px 140px 140px;
+            grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px;
         }
         
         /* Add visual separation between Ground Truth and AI Generated columns */
@@ -571,7 +642,7 @@ def main() -> None:
         }
         
         /* Remove right border from last column */
-        .history-table > div:nth-child(11n) {
+        .history-table > div:nth-child(15n) {
             border-right: none;
         }
         </style>
@@ -592,9 +663,84 @@ def main() -> None:
             '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
             '</div>'
         ]
         for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
+            # If metrics are blank, try S3 JSON lookup; prefer direct version if doc_ver looks like timestamp
+            if (ocr_start == '—' and ocr_end == '—' and total_tokens == '—'):
+                met = None
+                # Direct probe when doc_ver is a 12-digit timestamp
+                try:
+                    import re as _re
+                    if _re.match(r"^\d{12}$", str(doc_ver or "")):
+                        met = _get_metrics_for_version(backend, case_id, f"{case_id}-{doc_ver}")
+                except Exception:
+                    met = None
+                # Fallback: infer from label/ai_key in outputs
+                try:
+                    # Find source item in outputs to get label/ai_key
+                    src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('label') or '') == doc_ver or (it.get('ai_key') or '').endswith(doc_ver)), None)
+                except Exception:
+                    src = None
+                if not met:
+                    versions = _infer_versions_from_label(case_id, (src or {}).get('label'), (src or {}).get('ai_key'))
+                    for v in versions:
+                        met = _get_metrics_for_version(backend, case_id, v)
+                        if met:
+                            break
+                if met:
+                    def _fmt_time(t):
+                        try:
+                            return str(t).split('T')[1].split('+')[0][:8]
+                        except Exception:
+                            return t or '—'
+                    ocr_start = _fmt_time(met.get('ocr_start_time') or '—')
+                    ocr_end = _fmt_time(met.get('ocr_end_time') or '—')
+                    def _fmt_num(n):
+                        try:
+                            return f"{int(n):,}" if n is not None else '—'
+                        except Exception:
+                            return str(n) if n is not None else '—'
+                    total_tokens = _fmt_num(met.get('total_tokens_used'))
+                    input_tokens = _fmt_num(met.get('total_input_tokens'))
+                    output_tokens = _fmt_num(met.get('total_output_tokens'))
+                    # Section durations if provided by backend (extras dict)
+                    from datetime import datetime as _dt
+                    def _parse_iso(x):
+                        try:
+                            return _dt.fromisoformat(str(x).replace('Z', '+00:00')) if x else None
+                        except Exception:
+                            return None
+                    def _fmt_dur(s, e):
+                        if not s or not e:
+                            return '—'
+                        try:
+                            secs = max(0.0, (e - s).total_seconds())
+                            m, s2 = divmod(int(round(secs)), 60)
+                            return f"{m:02d}:{s2:02d}"
+                        except Exception:
+                            return '—'
+                    extras = met.get('extras') or {}
+                    _s2s = _parse_iso(extras.get('section2 start time'))
+                    _s2e = _parse_iso(extras.get('section2 end time'))
+                    _s3s = _parse_iso(extras.get('section3 start time'))
+                    _s3e = _parse_iso(extras.get('section3 end time'))
+                    _s4s = _parse_iso(extras.get('section4 start time'))
+                    _s4e = _parse_iso(extras.get('section4 end time'))
+                    _s9s = _parse_iso(extras.get('section9 start time'))
+                    _s9e = _parse_iso(extras.get('section9 end time'))
+                    sec2dur = _fmt_dur(_s2s, _s2e)
+                    sec3dur = _fmt_dur(_s3s, _s3e)
+                    sec4dur = _fmt_dur(_s4s, _s4e)
+                    sec9dur = _fmt_dur(_s9s, _s9e)
+                else:
+                    sec2dur = sec3dur = sec4dur = sec9dur = '—'
+            else:
+                sec2dur = sec3dur = sec4dur = sec9dur = '—'
             gt_dl = dl_link(gt_url)
             ai_dl = dl_link(ai_url)
             doc_dl = dl_link(doc_url)
@@ -615,6 +761,10 @@ def main() -> None:
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
             table_html.append('</div>')
         table_html.append('</div>')
         st.markdown("".join(table_html), unsafe_allow_html=True)
@@ -976,7 +1126,13 @@ def main() -> None:
                 with up_col1:
                     uploaded = st.file_uploader("Select edited DOCX", type=["docx"], key=f"hist_docx_upl_{case_id}")
                 with up_col2:
-                    target_name = st.text_input("Target filename", value=f"{case_id}_{(sel_ver or 'edited').replace(' ', '_')}.docx", key=f"hist_docx_name_{case_id}")
+                    # Filename locked to original basename with _edited suffix (strip any S3 path prefix)
+                    _orig = (sel_ver or "report").split("/")[-1]
+                    if _orig.lower().endswith('.docx'):
+                        target_name = _orig[:-5] + "_edited.docx"
+                    else:
+                        target_name = _orig + "_edited.docx"
+                    st.text_input("Target filename", value=target_name, key=f"hist_docx_name_{case_id}", disabled=True)
 
                 def _try_presign_and_upload(_backend: str, _case_id: str, _fname: str, _bytes: bytes) -> tuple[bool, str | None]:
                     try:
@@ -1031,7 +1187,7 @@ def main() -> None:
                 if uploaded and st.button("Upload edited DOCX", type="primary", key=f"hist_docx_upload_btn_{case_id}"):
                     try:
                         content = uploaded.read()
-                        ok, key = _try_presign_and_upload(backend, case_id, target_name.strip() or uploaded.name, content)
+                        ok, key = _try_presign_and_upload(backend, case_id, target_name.strip(), content)
                         if ok:
                             st.success("Uploaded successfully to S3.")
                             # Optionally refresh outputs list next run

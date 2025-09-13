@@ -31,33 +31,21 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-ALLOWED_EMAIL_DOMAINS: List[str] = [
-    "gmail.com",
-    "outlook.com",
-    "hotmail.com",
-    "live.com",
-    "yahoo.com",
-    "icloud.com",
-    "proton.me",
-    "protonmail.com",
-]
+ALLOWED_EMAIL_DOMAINS: List[str] = []  # no domain whitelist; accept any .com
 
 
 def is_allowed_email(email: str) -> bool:
     if not email:
         return False
     email = email.strip().lower()
-    # Basic email format check
-    if not re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", email):
-        return False
-    domain = email.split("@", 1)[-1]
-    return domain in ALLOWED_EMAIL_DOMAINS
+    # Relaxed rule: must contain '@' and end with '.com'
+    return re.match(r"^.+@.+\.com$", email) is not None
 
 
 def register_user(username: str, name: str, email: str, password: str) -> None:
-    # Enforce email-only usernames and whitelist domains
+    # Enforce relaxed email format (any *@*.com)
     if not is_allowed_email(email):
-        raise ValueError("Email domain not allowed. Use a common provider like gmail.com or outlook.com.")
+        raise ValueError("Invalid email. Must contain '@' and end with '.com'.")
 
     config = load_config()
     credentials = config.setdefault("credentials", {}).setdefault("usernames", {})

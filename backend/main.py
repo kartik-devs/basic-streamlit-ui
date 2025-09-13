@@ -31,6 +31,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Fallback DB connector (ensures availability for comment/history endpoints)
+def get_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect("reports.db")
+    conn.row_factory = sqlite3.Row
+    return conn
+
 # Ensure database schema is initialized on startup
 @app.on_event("startup")
 def _startup_init_db() -> None:
@@ -41,7 +47,7 @@ def _startup_init_db() -> None:
         pass
 
 # Import n8n integration
-from .n8n_integration import report_generator, n8n_manager
+from .n8n_integration import report_generator, n8n_manager, get_last_execution_id, store_execution_id
 
 @app.get("/health")
 def health() -> Dict[str, Any]:
@@ -187,6 +193,120 @@ def save_docx_text(request: Dict[str, Any]):
 @app.get("/version")
 def version() -> Dict[str, Any]:
     return {"version": app.version if hasattr(app, "version") else "unknown"}
+
+@app.post("/n8n/start")
+def api_n8n_start(case_id: str, username: Optional[str] = None):
+    """Start the main n8n workflow and attempt to capture execution id.
+    Returns JSON with { ok: bool, execution_id?: str, started?: bool, error?: str } and
+    uses HTTP 202 for started, 500 for failure.
+    """
+    try:
+        res = n8n_manager.trigger_main_workflow_and_capture_execution(case_id, {"case_id": case_id, "username": username})
+        ok = bool(res.get("success") or res.get("started"))
+        status = 202 if ok else 500
+        body: Dict[str, Any] = {
+            "ok": ok,
+            "execution_id": res.get("execution_id"),
+            "started": bool(res.get("started")),
+            "error": res.get("error"),
+        }
+        return JSONResponse(content=body, status_code=status)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/n8n/execution/{case_id}")
+def api_n8n_get_execution(case_id: str) -> Dict[str, Any]:
+    """Return the stored execution id for a case if present. If absent and API
+    credentials are configured, return the latest execution id for the main workflow
+    as a best-effort hint (useful for debugging).
+    """
+    try:
+        stored = get_last_execution_id(case_id)
+        if stored:
+            # If we have API access, verify the stored id is still running; otherwise treat as stale
+            try:
+                if getattr(n8n_manager, "api_key", None) and getattr(n8n_manager, "n8n_base_url", None):
+                    r0 = n8n_manager.session.get(f"{n8n_manager.n8n_base_url}/api/v1/executions/{stored}", timeout=6)
+                    if r0.ok:
+                        info = r0.json() or {}
+                        finished = info.get("finished")
+                        stopped = info.get("stoppedAt") or info.get("stopped_at")
+                        if (finished is False) and (not stopped):
+                            return {"execution_id": stored, "source": "stored"}
+                        # else stale; fall through to latest lookup
+            except Exception:
+                # If verification fails, keep returning stored to avoid breaking existing behavior
+                return {"execution_id": stored, "source": "stored"}
+        # Best-effort hint using API
+        try:
+            if getattr(n8n_manager, "api_key", None) and getattr(n8n_manager, "main_workflow_id", None):
+                import requests
+                r = n8n_manager.session.get(f"{n8n_manager.n8n_base_url}/api/v1/executions?limit=25", timeout=6)
+                if r.ok:
+                    data = r.json()
+                    items = data if isinstance(data, list) else (data.get("data") or [])
+                    target = str(n8n_manager.main_workflow_id)
+                    cand = []
+                    for it in items:
+                        if str(it.get("workflowId")) == target:
+                            finished = it.get("finished")
+                            stopped = it.get("stoppedAt") or it.get("stopped_at")
+                            if (finished is False) and (not stopped):
+                                cand.append(it)
+                    if cand:
+                        newest = sorted(cand, key=lambda it: it.get("id") or 0, reverse=True)[0]
+                        return {"execution_id": newest.get("id"), "source": "latest"}
+        except Exception:
+            pass
+        return {"execution_id": None, "source": None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/n8n/cancel")
+def api_n8n_cancel(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Cancel an n8n execution. Accepts { execution_id? , case_id? }.
+    Prefers execution_id; falls back to case_id lookup. Returns { ok: bool } and details.
+    """
+    try:
+        execution_id = (payload.get("execution_id") or "").strip()
+        case_id = (payload.get("case_id") or "").strip()
+        if not execution_id and not case_id:
+            raise HTTPException(status_code=400, detail="execution_id or case_id required")
+        # Prefer explicit execution id
+        if execution_id:
+            res = n8n_manager.cancel_by_execution_id(execution_id)
+            return {"ok": bool(res.get("ok")), "result": res}
+        # Otherwise try last execution id recorded for this case
+        exec_id = get_last_execution_id(case_id)
+        if exec_id:
+            res = n8n_manager.cancel_by_execution_id(exec_id)
+            return {"ok": bool(res.get("ok")), "result": res, "execution_id": exec_id}
+        # Safety: do not perform broad cancellations when we cannot identify the execution
+        raise HTTPException(status_code=409, detail="No execution_id available for case; cannot safely cancel")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/n8n/execution")
+def api_n8n_execution(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Record execution id for a case. Body: { case_id, execution_id }"""
+    try:
+        case_id = str(payload.get("case_id") or "").strip()
+        execution_id = str(payload.get("execution_id") or "").strip()
+        if not case_id or not execution_id:
+            # Allow clearing the stored id by sending an empty execution_id
+            if case_id and not execution_id:
+                store_execution_id(case_id, "")
+                return {"ok": True, "cleared": True}
+            raise HTTPException(status_code=400, detail="case_id and execution_id required")
+        store_execution_id(case_id, execution_id)
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/code-version")
 def get_code_version() -> Dict[str, Any]:
@@ -438,15 +558,15 @@ def api_presign_upload(body: Dict[str, Any]) -> Dict[str, Any]:
     """
     Returns a PUT presigned URL (and also a POST form alternative) for uploading
     an edited AI report DOCX to the canonical location:
-      {case_id}/Output/Edited/{filename}
+      {case_id}/Output/{filename}
     Body: { case_id: str, filename: str, type: "ai" }
     """
     case_id = str(body.get("case_id") or "").strip()
     filename = str(body.get("filename") or "").strip()
     if not case_id or not filename:
         raise HTTPException(status_code=400, detail="case_id and filename required")
-    # Normalize path
-    key = f"{case_id}/Output/Edited/{filename}"
+    # Normalize path (store directly under Output/)
+    key = f"{case_id}/Output/{filename}"
     # Prefer PUT (simpler on client). Many S3 setups reject Content-Type on presigned PUT,
     # so we provide URL without enforcing Content-Type, and also include a POST form fallback.
     put_url = s3_client().generate_presigned_url(
@@ -467,7 +587,7 @@ def api_direct_upload_ai(case_id: str = Form(...), filename: str = Form(...), fi
     """Server-side multipart upload to S3 for edited AI report DOCX."""
     if not case_id or not filename:
         raise HTTPException(status_code=400, detail="case_id and filename required")
-    key = f"{case_id}/Output/Edited/{filename}"
+    key = f"{case_id}/Output/{filename}"
     try:
         data = file.file.read()
         s3_client().put_object(
@@ -721,6 +841,88 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
         return it.get("ai_key", it.get("label", ""))
     items = sorted(items, key=_key_sort, reverse=True)
     return {"case_id": case_id, "items": items}
+
+
+# --- Metrics lookup from S3 JSON ({case_id}/Output/{version}.json) ---
+@app.get("/s3/{case_id}/metrics")
+def api_s3_metrics(case_id: str, version: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Fetch metrics for a report from a JSON file stored in S3.
+    Accepts versions in either order and normalizes:
+      - {case_id}-{timestamp}
+      - {timestamp}-{case_id}
+    Example: 9999-202509110653.json for PDF 202509110653-9999-CompleteAIGeneratedReport.pdf
+    """
+    if not case_id:
+        raise HTTPException(status_code=400, detail="case_id required")
+    import re as _re, json as _json
+    client = s3_client()
+    candidates: list[str] = []
+    # Normalize provided version or try to infer parts
+    if version:
+        version = version.strip()
+        # If it's "timestamp-case", also try "case-timestamp"
+        m = _re.match(r"^(\d{12})-(\d{3,})$", version)
+        if m:
+            ts, cid = m.group(1), m.group(2)
+            candidates.append(f"{cid}-{ts}")
+            candidates.append(f"{ts}-{cid}")
+        else:
+            # If it's "case-timestamp", also try reversed
+            m2 = _re.match(r"^(\d{3,})-(\d{12})$", version)
+            if m2:
+                cid, ts = m2.group(1), m2.group(2)
+                candidates.append(f"{cid}-{ts}")
+                candidates.append(f"{ts}-{cid}")
+            else:
+                candidates.append(version)
+    if not candidates:
+        raise HTTPException(status_code=400, detail="version required")
+    seen = set()
+    ordered: list[str] = []
+    for v in candidates:
+        if v not in seen:
+            seen.add(v)
+            ordered.append(v)
+    for v in ordered:
+        key = f"{case_id}/Output/{v}.json"
+        try:
+            obj = client.get_object(Bucket=S3_BUCKET, Key=key)
+            text = obj["Body"].read().decode("utf-8", "ignore")
+            data = _json.loads(text) if text else {}
+            # Some pipelines write a list of dicts; merge them
+            if isinstance(data, list):
+                merged: dict[str, any] = {}
+                for item in data:
+                    if isinstance(item, dict):
+                        # Normalize keys with spaces as-is; keep later entries as extras
+                        for k, v in item.items():
+                            if k not in merged:
+                                merged[k] = v
+                data = merged
+            if isinstance(data, dict):
+                # Split known fields vs extras to preserve all data
+                known_keys = {
+                    "ocr_start_time", "ocrStartTime",
+                    "ocr_end_time", "ocrEndTime",
+                    "total_tokens_used", "totalTokensUsed",
+                    "total_input_tokens", "totalInputTokens",
+                    "total_output_tokens", "totalOutputTokens",
+                }
+                extras = {k: v for (k, v) in data.items() if k not in known_keys}
+                return {
+                    "ok": True,
+                    "key": key,
+                    "ocr_start_time": data.get("ocr_start_time") or data.get("ocrStartTime"),
+                    "ocr_end_time": data.get("ocr_end_time") or data.get("ocrEndTime"),
+                    "total_tokens_used": data.get("total_tokens_used") or data.get("totalTokensUsed"),
+                    "total_input_tokens": data.get("total_input_tokens") or data.get("totalInputTokens"),
+                    "total_output_tokens": data.get("total_output_tokens") or data.get("totalOutputTokens"),
+                    "extras": extras,
+                }
+        except Exception:
+            continue
+    return {"ok": False, "error": "metrics json not found", "tried": [f"{case_id}/Output/{v}.json" for v in ordered]}
 
 
 # --- Shared comments (user-agnostic) ---
@@ -1315,6 +1517,23 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
                 """
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_case ON runs(case_id)")
+            
+            # Progress updates table for real-time progress tracking
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS progress_updates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id TEXT NOT NULL,
+                progress INTEGER NOT NULL,
+                step INTEGER NOT NULL,
+                message TEXT,
+                timestamp TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_progress_case ON progress_updates(case_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_progress_timestamp ON progress_updates(timestamp)")
             conn.commit()
         finally:
             conn.close()
@@ -1710,7 +1929,7 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
 
     # n8n Workflow Integration Endpoints
     @app.post("/n8n/generate-report")
-    async def generate_medical_report(patient_id: str, username: str = None) -> Dict[str, Any]:
+    async def generate_medical_report(patient_id: Optional[str] = None, username: Optional[str] = None, case_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Triggers the complete medical report generation workflow via n8n.
         
@@ -1722,7 +1941,27 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
             Dict containing report generation status and details
         """
         try:
-            result = await report_generator.generate_complete_report(patient_id, username)
+            # Normalize to case_id
+            cid = (case_id or patient_id or "").strip()
+            if not cid:
+                raise HTTPException(status_code=400, detail="case_id required")
+            # New: start main workflow via API/webhook and capture execution id
+            try:
+                capture = n8n_manager.trigger_main_workflow_and_capture_execution(cid, {"case_id": cid, "username": username})
+            except Exception:
+                capture = {"success": False}
+            result = await report_generator.generate_complete_report(cid, username)
+            if capture.get("success") and capture.get("execution_id"):
+                # Persist captured execution id as well
+                try:
+                    conn = get_conn()
+                    with conn:
+                        conn.execute(
+                            "INSERT INTO reports (case_id, status, started_at, metadata) VALUES (?, 'processing', datetime('now'), ?)",
+                            (cid, json.dumps({"n8n_execution_id": capture["execution_id"], "source": "api_capture"})),
+                        )
+                except Exception:
+                    pass
             
             # Store the report generation request in the database
             conn = get_conn()
@@ -1733,7 +1972,7 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
                     VALUES (?, ?, ?, ?, ?)
                     """,
                     (
-                        patient_id,
+                        cid,
                         username,
                         "processing",
                         datetime.utcnow().isoformat(),
@@ -1753,22 +1992,62 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
             raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
 
 
-    @app.post("/webhook/finalize")
-    def webhook_finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Endpoint for n8n to POST final artifacts/metrics when the workflow completes.
-        Expected payload (examples accepted):
-        {
-            "case_id": "9999",
-            "pdf": {"signed_url": "...", "key": "..."},
-            "docx": {"signed_url": "...", "key": "..."},
-            "ocr_start_time": "...",
-            "ocr_end_time": "...",
-            "total_tokens_used": 123,
-            "total_input_tokens": 456,
-            "total_output_tokens": 789
-        }
-        Stores a row in runs and returns {ok: True}.
-        """
+@app.post("/webhook/progress")
+def webhook_progress(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Endpoint for n8n to POST progress updates during workflow execution.
+    Expected payload:
+    {
+        "case_id": "9999",
+        "progress": 45,
+        "step": 2,
+        "message": "Processing OCR data...",
+        "timestamp": "2024-01-01T12:00:00Z"
+    }
+    """
+    try:
+        case_id = str(payload.get("case_id") or "").strip()
+        progress = int(payload.get("progress", 0))
+        step = int(payload.get("step", 0))
+        message = str(payload.get("message", ""))
+        timestamp = str(payload.get("timestamp", ""))
+        
+        if not case_id:
+            raise ValueError("case_id required")
+        
+        # Store progress in database
+        conn = get_conn()
+        try:
+            conn.execute(
+                """
+                INSERT INTO progress_updates (case_id, progress, step, message, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (case_id, progress, step, message, timestamp),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        
+        return {"ok": True, "case_id": case_id, "progress": progress}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/webhook/finalize")
+def webhook_finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Endpoint for n8n to POST final artifacts/metrics when the workflow completes.
+    Expected payload (examples accepted):
+    {
+        "case_id": "9999",
+        "pdf": {"signed_url": "...", "key": "..."},
+        "docx": {"signed_url": "...", "key": "..."},
+        "ocr_start_time": "...",
+        "ocr_end_time": "...",
+        "total_tokens_used": 123,
+        "total_input_tokens": 456,
+        "total_output_tokens": 789
+    }
+    Stores a row in runs and returns {ok: True}.
+    """
         try:
             case_id = str(payload.get("case_id") or payload.get("patient_id") or "").strip()
             if not case_id:
@@ -1833,34 +2112,82 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
             conn.close()
 
 
-    @app.get("/runs/{case_id}/all")
-    def list_runs(case_id: str) -> Dict[str, Any]:
-        """Return all runs for a case, newest first, so UI can map rows accurately."""
-        conn = get_conn()
-        try:
-            rows = conn.execute(
-                "SELECT * FROM runs WHERE case_id=? ORDER BY id DESC",
-                (case_id,),
-            ).fetchall()
-            runs: list[Dict[str, Any]] = []
-            for row in rows:
-                runs.append(
-                    {
-                        "case_id": row[1],
-                        "created_at": row[2],
-                        "ai_url": row[3],
-                        "doc_url": row[4],
-                        "pdf_url": row[5],
-                        "ocr_start_time": row[6],
-                        "ocr_end_time": row[7],
-                        "total_tokens_used": row[8],
-                        "total_input_tokens": row[9],
-                        "total_output_tokens": row[10],
-                    }
-                )
-            return {"ok": True, "runs": runs}
-        finally:
-            conn.close()
+@app.get("/runs/{case_id}/all")
+def list_runs(case_id: str) -> Dict[str, Any]:
+    """Return all runs for a case, newest first, so UI can map rows accurately."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM runs WHERE case_id=? ORDER BY id DESC",
+            (case_id,),
+        ).fetchall()
+        runs: list[Dict[str, Any]] = []
+        for row in rows:
+            runs.append(
+                {
+                    "case_id": row[1],
+                    "created_at": row[2],
+                    "ai_url": row[3],
+                    "doc_url": row[4],
+                    "pdf_url": row[5],
+                    "ocr_start_time": row[6],
+                    "ocr_end_time": row[7],
+                    "total_tokens_used": row[8],
+                    "total_input_tokens": row[9],
+                    "total_output_tokens": row[10],
+                }
+            )
+        return {"ok": True, "runs": runs}
+    finally:
+        conn.close()
+
+@app.get("/progress/{case_id}/latest")
+def get_latest_progress(case_id: str) -> Dict[str, Any]:
+    """Get the latest progress update for a case."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM progress_updates WHERE case_id=? ORDER BY created_at DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+        if not row:
+            return {"ok": True, "progress": None}
+        return {
+            "ok": True,
+            "progress": {
+                "case_id": row[1],
+                "progress": row[2],
+                "step": row[3],
+                "message": row[4],
+                "timestamp": row[5],
+                "created_at": row[6],
+            }
+        }
+    finally:
+        conn.close()
+
+@app.get("/progress/{case_id}/all")
+def get_all_progress(case_id: str) -> Dict[str, Any]:
+    """Get all progress updates for a case, newest first."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM progress_updates WHERE case_id=? ORDER BY created_at DESC",
+            (case_id,),
+        ).fetchall()
+        updates = []
+        for row in rows:
+            updates.append({
+                "case_id": row[1],
+                "progress": row[2],
+                "step": row[3],
+                "message": row[4],
+                "timestamp": row[5],
+                "created_at": row[6],
+            })
+        return {"ok": True, "updates": updates}
+    finally:
+        conn.close()
 
     @app.get("/n8n/report-status/{report_id}")
     def get_report_status(report_id: str) -> Dict[str, Any]:
