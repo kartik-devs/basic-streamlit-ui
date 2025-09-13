@@ -492,7 +492,7 @@ def main() -> None:
             r = _rq.get(url, headers=headers, timeout=10)
             if r.ok:
                 data = r.json() or {}
-                        content = data.get("content")
+                content = data.get("content")
                 encoding = (data.get("encoding") or "").lower()
                 if content and encoding == "base64":
                     raw = _b64.b64decode(content).decode("utf-8", "ignore")
