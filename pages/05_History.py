@@ -7,21 +7,10 @@ import time
 
 
 def ensure_authenticated() -> bool:
-    # Check if user is authenticated
-    auth_status = st.session_state.get("authentication_status")
-    
-    if auth_status is True:
+    if st.session_state.get("authentication_status") is True:
         return True
-    elif auth_status is False:
-        st.error("❌ Invalid username or password. Please login again.")
+    st.warning("Please login to access this page.")
     st.stop()
-    else:  # auth_status is None
-        st.warning("🔐 Please login to access this page.")
-        
-        # Add login button to redirect
-        if st.button("Go to Login Page", type="primary"):
-            st.switch_page("main.py")
-        st.stop()
 
 
 def _get_backend_base() -> str:
@@ -1382,17 +1371,17 @@ def main() -> None:
                 "ai_label": selected_label or None,
                 "section": section,
                 "subsection": subsection,
-                            "username": st.session_state.get("username") or "anonymous",
-                            "severity": form_severity,
-                            "comment": form_text.strip(),
+                                                            "username": st.session_state.get("username") or "anonymous",
+                                                            "severity": form_severity,
+                                                            "comment": form_text.strip(),
             }
             _rq.post(f"{backend}/comments", json=payload, timeout=8)
             _get_case_comments.clear()
             st.success("Added.")
         except Exception:
             st.warning("Failed to add comment.")
-                        else:
-                                                st.warning("Please enter a comment.")
+            else:
+                                    st.warning("Please enter a comment.")
 
         st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
         st.markdown("#### Recorded comments")
