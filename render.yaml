@@ -15,7 +15,7 @@ services:
       - key: N8N_MAIN_WORKFLOW_ID
         value: QTgwEEZYYfbRhhPu
       - key: N8N_TRIGGER_WEBHOOK_URL
-        value: http://3.81.112.43:5678/webhook/1c5dde6b-ad1d-4b91-bb9c-130492d15d15
+        value: http://3.81.112.43:5678/webhook/af770afa-01a0-4cda-b95f-4cc94a920691
       - key: AWS_ACCESS_KEY_ID
         fromDatabase:
           name: aws-credentials
@@ -43,7 +43,7 @@ services:
       - key: N8N_MAIN_WORKFLOW_ID
         value: QTgwEEZYYfbRhhPu
       - key: N8N_TRIGGER_WEBHOOK_URL
-        value: http://3.81.112.43:5678/webhook/1c5dde6b-ad1d-4b91-bb9c-130492d15d15
+        value: http://3.81.112.43:5678/webhook/af770afa-01a0-4cda-b95f-4cc94a920691
 
 databases:
   - name: aws-credentials
