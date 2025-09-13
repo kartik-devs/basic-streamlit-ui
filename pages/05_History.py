@@ -14,7 +14,7 @@ def ensure_authenticated() -> bool:
         return True
     elif auth_status is False:
         st.error("❌ Invalid username or password. Please login again.")
-        st.stop()
+    st.stop()
     else:  # auth_status is None
         st.warning("🔐 Please login to access this page.")
         
@@ -503,21 +503,21 @@ def main() -> None:
             r = _rq.get(url, headers=headers, timeout=10)
             if r.ok:
                 data = r.json() or {}
-                content = data.get("content")
+                        content = data.get("content")
                 encoding = (data.get("encoding") or "").lower()
                 if content and encoding == "base64":
                     raw = _b64.b64decode(content).decode("utf-8", "ignore")
                     try:
                         version_data = _json.loads(raw)
-                        version = version_data.get("version", "—")
+                            version = version_data.get("version", "—")
                         code_ver = version.replace(".json", "") if isinstance(version, str) else "—"
                     except Exception:
                         code_ver = "—"
                     # Store back to backend for future reads
                     try:
                         _rq.post(f"{backend_url}/reports/{case_id}/code-version", json={"code_version": code_ver}, timeout=5)
-                    except Exception:
-                            pass
+                            except Exception:
+                                pass
                     return code_ver
                     return "—"
         except Exception:
@@ -1382,17 +1382,17 @@ def main() -> None:
                 "ai_label": selected_label or None,
                 "section": section,
                 "subsection": subsection,
-                                                            "username": st.session_state.get("username") or "anonymous",
-                                                            "severity": form_severity,
-                                                            "comment": form_text.strip(),
+                            "username": st.session_state.get("username") or "anonymous",
+                            "severity": form_severity,
+                            "comment": form_text.strip(),
             }
             _rq.post(f"{backend}/comments", json=payload, timeout=8)
             _get_case_comments.clear()
             st.success("Added.")
         except Exception:
             st.warning("Failed to add comment.")
-            else:
-                                    st.warning("Please enter a comment.")
+                        else:
+                                                st.warning("Please enter a comment.")
 
         st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
         st.markdown("#### Recorded comments")

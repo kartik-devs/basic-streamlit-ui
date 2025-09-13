@@ -44,6 +44,7 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     
+    
     inject_base_styles()
     show_header(
         title="Login",
