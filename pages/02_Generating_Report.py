@@ -15,7 +15,7 @@ def _get_backend_base() -> str:
     return (
         (params.get("api", [None])[0] if isinstance(params.get("api"), list) else params.get("api"))
         or os.getenv("BACKEND_BASE")
-        or "http://localhost:8000"
+        or "http://100.24.25.37"
     ).rstrip("/")
 
 # Check if case exists in S3 via backend
