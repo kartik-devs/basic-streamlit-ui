@@ -1,0 +1,41 @@
+services:
+  # Backend API Service
+  - type: web
+    name: ocr-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_DEFAULT_REGION
+        value: us-east-1
+      - key: S3_BUCKET_NAME
+        value: finallcpreports
+      - key: N8N_BASE_URL
+        value: http://localhost:5678
+      - key: N8N_API_KEY
+        sync: false
+      - key: N8N_MAIN_WORKFLOW_ID
+        sync: false
+
+  # Frontend Streamlit Service
+  - type: web
+    name: ocr-frontend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run main.py --server.port $PORT --server.headless true --server.address 0.0.0.0
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: BACKEND_BASE
+        fromService:
+          type: web
+          name: ocr-backend
+          property: host
