@@ -9,5 +9,5 @@ python-docx==1.1.0
 streamlit-authenticator==0.3.3
 PyYAML==6.0.1
 bcrypt==4.0.1
-pydantic==2.4.2
+pydantic==2.3.0
 rich==13.7.0
