@@ -503,21 +503,21 @@ def main() -> None:
             r = _rq.get(url, headers=headers, timeout=10)
             if r.ok:
                 data = r.json() or {}
-                        content = data.get("content")
+                content = data.get("content")
                 encoding = (data.get("encoding") or "").lower()
                 if content and encoding == "base64":
                     raw = _b64.b64decode(content).decode("utf-8", "ignore")
                     try:
                         version_data = _json.loads(raw)
-                            version = version_data.get("version", "—")
+                        version = version_data.get("version", "—")
                         code_ver = version.replace(".json", "") if isinstance(version, str) else "—"
                     except Exception:
                         code_ver = "—"
                     # Store back to backend for future reads
                     try:
                         _rq.post(f"{backend_url}/reports/{case_id}/code-version", json={"code_version": code_ver}, timeout=5)
-                            except Exception:
-                                pass
+                    except Exception:
+                            pass
                     return code_ver
                     return "—"
         except Exception:
