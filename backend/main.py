@@ -150,7 +150,7 @@ def _startup_init_db() -> None:
         pass
 
 # Import n8n integration
-from n8n_integration import report_generator, n8n_manager, get_last_execution_id, store_execution_id
+from .n8n_integration import report_generator, n8n_manager, get_last_execution_id, store_execution_id
 
 @app.get("/health")
 def health() -> Dict[str, Any]:
