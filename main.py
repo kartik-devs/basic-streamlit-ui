@@ -36,7 +36,6 @@ def build_authenticator():
     )
     return authenticator
 
-
 def main() -> None:
     st.set_page_config(
         page_title="Login - CaseTracker Pro",
@@ -45,7 +44,6 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     
-
     inject_base_styles()
     show_header(
         title="Login",
@@ -65,11 +63,13 @@ def main() -> None:
         with tabs[0]:
             st.subheader("Sign in")
             try:
-                authenticator.login()
+                # Fixed login call - remove the old parameters
+                authenticator.login(location="main")
             except Exception as e:
                 st.error(f"Login error: {e}")
 
         with tabs[1]:
+            # Your registration code remains the same
             st.subheader("Create an account")
             with st.form("register_form"):
                 col1, col2 = st.columns(2)
@@ -101,8 +101,7 @@ def main() -> None:
                         else:
                             st.success("Account created. You can now sign in.")
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
+    # Check authentication status
     if st.session_state.get("authentication_status"):
         st.success(f"Welcome {st.session_state.get('name', '')}!")
 
@@ -115,7 +114,7 @@ def main() -> None:
                     st.experimental_set_query_params(page="case")
         with c2:
             try:
-                authenticator.logout("Log out")
+                authenticator.logout("Log out", location="main")
             except Exception as e:
                 st.error(f"Logout error: {e}")
 
