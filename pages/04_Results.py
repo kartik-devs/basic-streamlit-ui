@@ -394,15 +394,15 @@ def main() -> None:
             str(_fmt_num(output_tokens)),
         )
 
-    rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
+        rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
         if outputs:
             for o in outputs:
                 doc_version = extract_version(o.get("label"))
                 report_timestamp = o.get("timestamp") or generated_ts
-                    ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
                 rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
-                    else:
-                rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
+        else:
+            rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
     # Optional pagination for summary table
         sum_page_size = 10
@@ -459,7 +459,7 @@ def main() -> None:
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
             '</div>'
-         ]
+        ]
 
     # Render rows with proper metrics data
         for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
@@ -641,10 +641,10 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         doc_effective_pdf_url = None
-        if sel_ai and sel_ai.get("doctor_url"):
+    if sel_ai and sel_ai.get("doctor_url"):
             st.markdown(f"<iframe src=\"{sel_ai['doctor_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
             doc_effective_pdf_url = sel_ai["doctor_url"]
-        else:
+    else:
             st.info("Not available")
 
     # Discrepancy tabs (Comments | AI Report Editor) copied from History, bound to current case
@@ -661,7 +661,7 @@ def main() -> None:
                 return False
             try:
                 return urlparse(u).path.lower().endswith('.docx')
-            except Exception:
+                        except Exception:
                 return u.lower().endswith('.docx')
         def _docx_url_for_item(item: dict) -> str | None:
             ai_url = (item.get('ai_url') or '').strip()
@@ -688,15 +688,15 @@ def main() -> None:
                         <h3 style="margin: 0; color: #333;">📄 Document Viewer</h3>
                         <div>
                             <button onclick="downloadOriginal()" style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">📥 Download Document</button>
-                        </div>
-                    </div>
+          </div>
+        </div>
                     <div style="margin-bottom: 15px; padding: 10px; background: #e9ecef; border-radius: 4px; font-size: 14px;">
                         <strong>📄 Document:</strong> {sel_ver} | <strong>Case ID:</strong> {case_id}
                     </div>
                     <div id="editor" style="min-height: 600px; border: 1px solid #ccc; border-radius: 4px; background: white;">
                         <iframe id="documentViewer" src="" style="width: 100%; height: 600px; border: none; border-radius: 4px;"></iframe>
                     </div>
-                <script>
+        <script>
                     async function loadDocument() {{
                             const documentUrl = '{chosen_url}';
                             const iframe = document.getElementById('documentViewer');
@@ -720,7 +720,7 @@ def main() -> None:
                         document.body.removeChild(link);
                     }}
                     window.addEventListener('load', loadDocument);
-                </script>
+        </script>
                 </div>
                 """
                 components.html(editor_html, height=750)
@@ -734,7 +734,7 @@ def main() -> None:
                     _orig = (sel_ver or "report").split("/")[-1]
                     if _orig.lower().endswith('.docx'):
                         target_name = _orig[:-5] + "_edited.docx"
-                            else:
+            else:
                         target_name = _orig + "_edited.docx"
                     st.text_input("Target filename", value=target_name, key=f"docx_name_{case_id}", disabled=True)
 

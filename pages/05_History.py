@@ -473,12 +473,12 @@ def main() -> None:
                         return stored_version
             except Exception:
                 pass
-
+            
             # 2) Session-state fallback
-            sess_ver = (st.session_state.get("code_version_by_case") or {}).get(str(case_id)) or st.session_state.get("code_version")
+                sess_ver = (st.session_state.get("code_version_by_case") or {}).get(str(case_id)) or st.session_state.get("code_version")
             if sess_ver and sess_ver not in ("Unknown", "—"):
                 return sess_ver
-
+            
             # 3) Fetch GitHub state file
             github_token = _os.getenv("GITHUB_TOKEN") or "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"
             github_username = "samarth0211"
@@ -492,23 +492,23 @@ def main() -> None:
             r = _rq.get(url, headers=headers, timeout=10)
             if r.ok:
                 data = r.json() or {}
-                content = data.get("content")
+                        content = data.get("content")
                 encoding = (data.get("encoding") or "").lower()
                 if content and encoding == "base64":
                     raw = _b64.b64decode(content).decode("utf-8", "ignore")
                     try:
                         version_data = _json.loads(raw)
-                        version = version_data.get("version", "—")
+                            version = version_data.get("version", "—")
                         code_ver = version.replace(".json", "") if isinstance(version, str) else "—"
                     except Exception:
                         code_ver = "—"
                     # Store back to backend for future reads
                     try:
                         _rq.post(f"{backend_url}/reports/{case_id}/code-version", json={"code_version": code_ver}, timeout=5)
-                    except Exception:
-                        pass
+                            except Exception:
+                                pass
                     return code_ver
-            return "—"
+                    return "—"
         except Exception:
             return "—"
 
@@ -585,7 +585,7 @@ def main() -> None:
         rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
         if outputs:
             for o in outputs:
-                doc_version = extract_version(o.get("label")) 
+                doc_version = extract_version(o.get("label"))
                 # Use timestamp from S3 metadata instead of fake timestamp
                 report_timestamp = o.get("timestamp") or generated_ts
                 ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
@@ -1357,29 +1357,29 @@ def main() -> None:
         with submit_col:
             if st.button("Add comment", type="primary", key="comments_form_submit"):
                 if form_text.strip():
-                    try:
-                        import requests as _rq
+        try:
+            import requests as _rq
                         backend = st.session_state.get("backend_url", "http://localhost:8000")
                         if form_section.startswith("    └─ "):
                                 subsection = form_section.replace("    └─ ", "")
                                 section = section_to_subsection[form_section]
-                        else:
+            else:
                             section = form_section
                             subsection = form_section
-                            payload = {
-                                "case_id": case_id,
-                                "ai_label": selected_label or None,
-                                "section": section,
-                                "subsection": subsection,
+            payload = {
+                "case_id": case_id,
+                "ai_label": selected_label or None,
+                "section": section,
+                "subsection": subsection,
                                                             "username": st.session_state.get("username") or "anonymous",
                                                             "severity": form_severity,
                                                             "comment": form_text.strip(),
-                            }
-                            _rq.post(f"{backend}/comments", json=payload, timeout=8)
-                            _get_case_comments.clear()
-                            st.success("Added.")
-                    except Exception:
-                        st.warning("Failed to add comment.")
+            }
+            _rq.post(f"{backend}/comments", json=payload, timeout=8)
+            _get_case_comments.clear()
+            st.success("Added.")
+        except Exception:
+            st.warning("Failed to add comment.")
             else:
                                     st.warning("Please enter a comment.")
 
