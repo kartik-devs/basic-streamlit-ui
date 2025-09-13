@@ -456,61 +456,63 @@ def main() -> None:
         return f"{backend}/proxy/download?url={_q(raw_url, safe='')}&filename={_q(fname, safe='')}"
 
     # Code version fetching - backend, then GitHub state file by default
-    @st.cache_data(ttl=300)
-    def _fetch_code_version_for_case(case_id: str) -> str:
+   # Code version fetching - backend, then GitHub state file by default
+@st.cache_data(ttl=300)
+def _fetch_code_version_for_case(case_id: str) -> str:
+    try:
+        import requests as _rq
+        import json as _json, base64 as _b64, os as _os
+        backend_url = _get_backend_base()
+        
+        # 1) Try stored version from backend
         try:
-            import requests as _rq
-            import json as _json, base64 as _b64, os as _os
-            backend_url = _get_backend_base()
-            
-            # 1) Try stored version from backend
-            try:
-                backend_r = _rq.get(f"{backend_url}/reports/{case_id}/code-version", timeout=5)
-                if backend_r.ok:
-                    backend_data = backend_r.json() or {}
-                    stored_version = backend_data.get("code_version")
-                    if stored_version and stored_version not in ("Unknown", "—"):
-                        return stored_version
-            except Exception:
-                pass
-            
-            # 2) Session-state fallback
-                sess_ver = (st.session_state.get("code_version_by_case") or {}).get(str(case_id)) or st.session_state.get("code_version")
-            if sess_ver and sess_ver not in ("Unknown", "—"):
-                return sess_ver
-            
-            # 3) Fetch GitHub state file
-            github_token = _os.getenv("GITHUB_TOKEN") or "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"
-            github_username = "samarth0211"
-            repo_name = "n8n-workflows-backup"
-            branch = "main"
-            file_path = "state/QTgwEEZYYfbRhhPu.version"
-            url = f"https://api.github.com/repos/{github_username}/{repo_name}/contents/{file_path}?ref={branch}"
-            headers = {"Accept": "application/vnd.github.v3+json"}
-            if github_token:
-                headers["Authorization"] = f"token {github_token}"
-            r = _rq.get(url, headers=headers, timeout=10)
-            if r.ok:
-                data = r.json() or {}
-                content = data.get("content")
-                encoding = (data.get("encoding") or "").lower()
-                if content and encoding == "base64":
-                    raw = _b64.b64decode(content).decode("utf-8", "ignore")
-                    try:
-                        version_data = _json.loads(raw)
-                        version = version_data.get("version", "—")
-                        code_ver = version.replace(".json", "") if isinstance(version, str) else "—"
-                    except Exception:
-                        code_ver = "—"
-                    # Store back to backend for future reads
-                    try:
-                        _rq.post(f"{backend_url}/reports/{case_id}/code-version", json={"code_version": code_ver}, timeout=5)
-                            except Exception:
-                                pass
-                    return code_ver
-                    return "—"
+            backend_r = _rq.get(f"{backend_url}/reports/{case_id}/code-version", timeout=5)
+            if backend_r.ok:
+                backend_data = backend_r.json() or {}
+                stored_version = backend_data.get("code_version")
+                if stored_version and stored_version not in ("Unknown", "—"):
+                    return stored_version
         except Exception:
-            return "—"
+            pass
+        
+        # 2) Session-state fallback
+        sess_ver = (st.session_state.get("code_version_by_case") or {}).get(str(case_id)) or st.session_state.get("code_version")
+        if sess_ver and sess_ver not in ("Unknown", "—"):
+            return sess_ver
+        
+        # 3) Fetch GitHub state file
+        github_token = _os.getenv("GITHUB_TOKEN") or "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"
+        github_username = "samarth0211"
+        repo_name = "n8n-workflows-backup"
+        branch = "main"
+        file_path = "state/QTgwEEZYYfbRhhPu.version"
+        url = f"https://api.github.com/repos/{github_username}/{repo_name}/contents/{file_path}?ref={branch}"
+        headers = {"Accept": "application/vnd.github.v3+json"}
+        if github_token:
+            headers["Authorization"] = f"token {github_token}"
+        r = _rq.get(url, headers=headers, timeout=10)
+        if r.ok:
+            data = r.json() or {}
+            content = data.get("content")
+            encoding = (data.get("encoding") or "").lower()
+            if content and encoding == "base64":
+                raw = _b64.b64decode(content).decode("utf-8", "ignore")
+                try:
+                    version_data = _json.loads(raw)
+                    version = version_data.get("version", "—")
+                    code_ver = version.replace(".json", "") if isinstance(version, str) else "—"
+                except Exception:
+                    code_ver = "—"
+                # Store back to backend for future reads
+                try:
+                    _rq.post(f"{backend_url}/reports/{case_id}/code-version", json={"code_version": code_ver}, timeout=5)
+                except Exception:
+                    pass
+                return code_ver
+        return "—"
+    except Exception:
+        return "—"
+
 
     # Build table data
     try:
