@@ -1321,156 +1321,152 @@ def _fetch_code_version_for_case(case_id: str) -> str:
         ],
         "10. Overview of Medical Expert": [],
     }
-
-    # Comment input UI is rendered inside the Comments tab below.
-
-    # Comment input UI is rendered inside the Comments tab below.
-
-with tabs[0]:
-    st.caption("Record mismatches between Ground Truth and AI by section and subsection.")
-    # --- Add comment form (inside Comments tab only; always visible) ---
-    st.markdown("#### Add comment")
-    section_options = list(toc_sections.keys())
-    cfrm1, cfrm2 = st.columns([3, 1])
-    with cfrm1:
-        hierarchical_options: list[str] = []
-        section_to_subsection: dict[str, str] = {}
-        for section in section_options:
-            subsections = toc_sections.get(section, [])
-            if subsections:
-                hierarchical_options.append(section)
-                section_to_subsection[section] = section
-                for sub in subsections:
-                    indented = f"    └─ {sub}"
-                    hierarchical_options.append(indented)
-                    section_to_subsection[indented] = section
-            else:
-                hierarchical_options.append(section)
-                section_to_subsection[section] = section
-        form_section = st.selectbox(
-            "Section/Subsection",
-            options=hierarchical_options,
-            index=0,
-            key="comments_form_section",
-        )
-    with cfrm2:
-        form_severity = st.selectbox("Severity", options=["Low", "Medium", "High"], index=1, key="comments_form_severity")
-
-    form_text = st.text_area("Describe the discrepancy", key="comments_form_text")
-    submit_col, _ = st.columns([0.25, 0.75])
-    with submit_col:
-        if st.button("Add comment", type="primary", key="comments_form_submit"):
-            if form_text.strip():
-                try:
-                    import requests as _rq
-                    backend = st.session_state.get("backend_url", "http://localhost:8000")
-                    if form_section.startswith("    └─ "):
-                        subsection = form_section.replace("    └─ ", "")
-                        section = section_to_subsection[form_section]
-                    else:
-                        section = form_section
-                        subsection = form_section
-                    payload = {
-                        "case_id": case_id,
-                        "ai_label": selected_label or None,
-                        "section": section,
-                        "subsection": subsection,
-                        "username": st.session_state.get("username") or "anonymous",
-                        "severity": form_severity,
-                        "comment": form_text.strip(),
-                    }
-                    _rq.post(f"{backend}/comments", json=payload, timeout=8)
-                    _get_case_comments.clear()
-                    st.success("Added.")
-                except Exception:
-                    st.warning("Failed to add comment.")
-            else:
-                st.warning("Please enter a comment.")
-
-    st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
-    st.markdown("#### Recorded comments")
-
-# List comments (cached)
-notes = _get_case_comments(backend, case_id, selected_label)
-# Render notes table only when there are comments; add pagination (10 per page)
-page_size = 10
-total = len(notes)
-if total > 0:
-    total_pages = max(1, (total + page_size - 1) // page_size)
-    # Track current page in session (per-case)
-    pg_key = f"hist_notes_page_{case_id}"
-    cur_page = int(st.session_state.get(pg_key, 1))
-    # Controls
-    cprev, cinfo, cnext = st.columns([1, 2, 1])
-    with cprev:
-        if st.button("← Prev", disabled=(cur_page <= 1)):
-            cur_page = max(1, cur_page - 1)
-    with cinfo:
-        st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {cur_page} of {total_pages}</div>", unsafe_allow_html=True)
-    with cnext:
-        if st.button("Next →", disabled=(cur_page >= total_pages)):
-            cur_page = min(total_pages, cur_page + 1)
-    st.session_state[pg_key] = cur_page
-
-    # Slice items for current page
-    start_idx = (cur_page - 1) * page_size
-    end_idx = min(total, start_idx + page_size)
-    page_items = notes[start_idx:end_idx]
-else:
-    page_items = []
-
-if page_items:
-    st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
-    st.markdown("**Recorded comments**")
-    # Header row
-    h1, h2, h3, h4, h5, h6 = st.columns([2.0, 0.7, 0.6, 1.8, 2.8, 1.2])
-    h1.markdown("**Section/Subsection**")
-    h2.markdown("**User**")
-    h3.markdown("**Severity**")
-    h4.markdown("**When**")
-    h5.markdown("**Comment**")
-    h6.markdown("**Actions**")
-
-    # Rows with inline action buttons in the last column
-    for n in page_items:
-        nid = n.get("id")
-        is_resolved = bool(n.get("resolved"))
-        section = n.get('section') or '—'
-        subsection = n.get("subsection") or (toc_sections.get(n.get("section") or "", [])[:1] or [n.get("section")])[0]
-        combined = f"{section} / {subsection}" if subsection and subsection != '—' else section
-        when = (n.get("created_at") or "").replace("T", " ").replace("Z", " UTC")
-        usernm = n.get("username") or "anonymous"
-        sev = n.get("severity") or "—"
-
-        c1, c2, c3, c4, c5, c6 = st.columns([2.0, 0.7, 0.6, 1.8, 2.8, 1.2])
-        c1.markdown(combined)
-        c2.markdown(usernm)
-        c3.markdown(sev)
-        c4.markdown(when or '—')
-        c5.markdown((n.get('comment') or '').strip() or '—')
-        with c6:
-            act1, act2 = st.columns([0.6, 0.4])
-            with act1:
-                label = ("✓ Resolve" if not is_resolved else "✗ Unresolve")
-                if st.button(label, key=f"row_resolve_{nid}") and nid:
+    with tabs[0]:
+        st.caption("Record mismatches between Ground Truth and AI by section and subsection.")
+        # --- Add comment form (inside Comments tab only; always visible) ---
+        st.markdown("#### Add comment")
+        section_options = list(toc_sections.keys())
+        cfrm1, cfrm2 = st.columns([3, 1])
+        with cfrm1:
+            hierarchical_options: list[str] = []
+            section_to_subsection: dict[str, str] = {}
+            for section in section_options:
+                subsections = toc_sections.get(section, [])
+                if subsections:
+                    hierarchical_options.append(section)
+                    section_to_subsection[section] = section
+                    for sub in subsections:
+                        indented = f"    └─ {sub}"
+                        hierarchical_options.append(indented)
+                        section_to_subsection[indented] = section
+                else:
+                    hierarchical_options.append(section)
+                    section_to_subsection[section] = section
+            form_section = st.selectbox(
+                "Section/Subsection",
+                options=hierarchical_options,
+                index=0,
+                key="comments_form_section",
+            )
+        with cfrm2:
+            form_severity = st.selectbox("Severity", options=["Low", "Medium", "High"], index=1, key="comments_form_severity")
+    
+        form_text = st.text_area("Describe the discrepancy", key="comments_form_text")
+        submit_col, _ = st.columns([0.25, 0.75])
+        with submit_col:
+            if st.button("Add comment", type="primary", key="comments_form_submit"):
+                if form_text.strip():
                     try:
                         import requests as _rq
-                        _rq.patch(f"{backend}/comments/resolve", json={"id": int(nid), "case_id": case_id, "resolved": (not is_resolved)}, timeout=8, headers={"ngrok-skip-browser-warning": "true"})
+                        backend = st.session_state.get("backend_url", "http://localhost:8000")
+                        if form_section.startswith("    └─ "):
+                            subsection = form_section.replace("    └─ ", "")
+                            section = section_to_subsection[form_section]
+                        else:
+                            section = form_section
+                            subsection = form_section
+                        payload = {
+                            "case_id": case_id,
+                            "ai_label": selected_label or None,
+                            "section": section,
+                            "subsection": subsection,
+                            "username": st.session_state.get("username") or "anonymous",
+                            "severity": form_severity,
+                            "comment": form_text.strip(),
+                        }
+                        _rq.post(f"{backend}/comments", json=payload, timeout=8)
                         _get_case_comments.clear()
+                        st.success("Added.")
                     except Exception:
-                        pass
-                    st.rerun()
-            with act2:
-                if st.button("🗑️", key=f"row_delete_{nid}") and nid:
-                    try:
-                        import requests as _rq
-                        _rq.delete(f"{backend}/comments", json={"case_id": case_id, "ai_label": selected_label, "ids": [int(nid)]}, timeout=8, headers={"ngrok-skip-browser-warning": "true"})
-                        _get_case_comments.clear()
-                    except Exception:
-                        pass
-                    st.rerun()
-elif total == 0:
-    st.info("No comments yet.")
-
-if __name__ == "__main__":
-    main()
+                        st.warning("Failed to add comment.")
+                else:
+                    st.warning("Please enter a comment.")
+    
+        st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+        st.markdown("#### Recorded comments")
+    
+        # List comments (cached)
+        notes = _get_case_comments(backend, case_id, selected_label)
+        # Render notes table only when there are comments; add pagination (10 per page)
+        page_size = 10
+        total = len(notes)
+        if total > 0:
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            # Track current page in session (per-case)
+            pg_key = f"hist_notes_page_{case_id}"
+            cur_page = int(st.session_state.get(pg_key, 1))
+            # Controls
+            cprev, cinfo, cnext = st.columns([1, 2, 1])
+            with cprev:
+                if st.button("← Prev", disabled=(cur_page <= 1)):
+                    cur_page = max(1, cur_page - 1)
+            with cinfo:
+                st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {cur_page} of {total_pages}</div>", unsafe_allow_html=True)
+            with cnext:
+                if st.button("Next →", disabled=(cur_page >= total_pages)):
+                    cur_page = min(total_pages, cur_page + 1)
+            st.session_state[pg_key] = cur_page
+    
+            # Slice items for current page
+            start_idx = (cur_page - 1) * page_size
+            end_idx = min(total, start_idx + page_size)
+            page_items = notes[start_idx:end_idx]
+        else:
+            page_items = []
+    
+        if page_items:
+            st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
+            st.markdown("**Recorded comments**")
+            # Header row
+            h1, h2, h3, h4, h5, h6 = st.columns([2.0, 0.7, 0.6, 1.8, 2.8, 1.2])
+            h1.markdown("**Section/Subsection**")
+            h2.markdown("**User**")
+            h3.markdown("**Severity**")
+            h4.markdown("**When**")
+            h5.markdown("**Comment**")
+            h6.markdown("**Actions**")
+    
+            # Rows with inline action buttons in the last column
+            for n in page_items:
+                nid = n.get("id")
+                is_resolved = bool(n.get("resolved"))
+                section = n.get('section') or '—'
+                subsection = n.get("subsection") or (toc_sections.get(n.get("section") or "", [])[:1] or [n.get("section")])[0]
+                combined = f"{section} / {subsection}" if subsection and subsection != '—' else section
+                when = (n.get("created_at") or "").replace("T", " ").replace("Z", " UTC")
+                usernm = n.get("username") or "anonymous"
+                sev = n.get("severity") or "—"
+    
+                c1, c2, c3, c4, c5, c6 = st.columns([2.0, 0.7, 0.6, 1.8, 2.8, 1.2])
+                c1.markdown(combined)
+                c2.markdown(usernm)
+                c3.markdown(sev)
+                c4.markdown(when or '—')
+                c5.markdown((n.get('comment') or '').strip() or '—')
+                with c6:
+                    act1, act2 = st.columns([0.6, 0.4])
+                    with act1:
+                        label = ("✓ Resolve" if not is_resolved else "✗ Unresolve")
+                        if st.button(label, key=f"row_resolve_{nid}") and nid:
+                            try:
+                                import requests as _rq
+                                _rq.patch(f"{backend}/comments/resolve", json={"id": int(nid), "case_id": case_id, "resolved": (not is_resolved)}, timeout=8, headers={"ngrok-skip-browser-warning": "true"})
+                                _get_case_comments.clear()
+                            except Exception:
+                                pass
+                            st.rerun()
+                    with act2:
+                        if st.button("🗑️", key=f"row_delete_{nid}") and nid:
+                            try:
+                                import requests as _rq
+                                _rq.delete(f"{backend}/comments", json={"case_id": case_id, "ai_label": selected_label, "ids": [int(nid)]}, timeout=8, headers={"ngrok-skip-browser-warning": "true"})
+                                _get_case_comments.clear()
+                            except Exception:
+                                pass
+                            st.rerun()
+        elif total == 0:
+            st.info("No comments yet.")
+    
+    if __name__ == "__main__":
+        main()
+    
