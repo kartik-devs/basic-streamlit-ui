@@ -282,11 +282,11 @@ def _trigger_workflow(case_id: str) -> None:
         
         if metrics and has_artifacts and has_end and response_complete:
             st.session_state.setdefault("webhook_metrics_by_case", {})[str(case_id)] = metrics
-            st.session_state["generation_progress"] = 100
-            st.session_state["generation_step"] = 4
-            st.session_state["generation_complete"] = True
-            st.session_state["generation_in_progress"] = False
-            st.session_state["generation_end"] = datetime.now()
+        st.session_state["generation_progress"] = 100
+        st.session_state["generation_step"] = 4
+        st.session_state["generation_complete"] = True
+        st.session_state["generation_in_progress"] = False
+        st.session_state["generation_end"] = datetime.now()
             
             # Calculate processing time
             try:
@@ -296,10 +296,10 @@ def _trigger_workflow(case_id: str) -> None:
                 if beg and end:
                     st.session_state["processing_seconds"] = int((end - beg).total_seconds())
                 else:
-                    st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
+            st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
             except Exception:
                 st.session_state["processing_seconds"] = int((st.session_state["generation_end"] - st.session_state["generation_start"]).total_seconds())
-                
+    
     except Exception:
         pass
 
@@ -341,7 +341,7 @@ def main() -> None:
         st.session_state["processing_seconds"] = 0
     if "last_completed_case_id" not in st.session_state:
         st.session_state["last_completed_case_id"] = None
-
+ 
     # Single-source trigger: URL start=1 OR nav_to_generating flag
     triggered = url_start or st.session_state.pop("nav_to_generating", False)
     
@@ -394,7 +394,7 @@ def main() -> None:
                 qp["case_id"] = case_id
         except Exception:
             pass
-    
+ 
     # Check if no case has been selected yet
     if case_id == "0000":
         st.markdown("## Generating Report")
@@ -586,7 +586,7 @@ def main() -> None:
         # Auto-refresh every 5 seconds for real-time updates
         if st.session_state.get("generation_in_progress", False):
             time.sleep(5)
-            st.rerun()
+                st.rerun()
         
         # Check for timeout (2+ hours without completion)
         elapsed_time = (datetime.now() - start_time).total_seconds()
@@ -599,22 +599,22 @@ def main() -> None:
         current_progress = st.session_state.get("generation_progress", 0)
         if current_progress == 0 or current_progress < 5:  # No real progress yet
             # Linear progression over 2 hours (7200 seconds) as fallback
-            if elapsed_time < 7200:  # Within 2 hours
-                linear_progress = min(5 + (elapsed_time / 7200) * 90, 95)
-                st.session_state["generation_progress"] = int(linear_progress)
-                
-                # Update step status based on progress
-                progress = st.session_state["generation_progress"]
-                if progress < 20:
-                    st.session_state["generation_step"] = 0
-                elif progress < 40:
-                    st.session_state["generation_step"] = 1
-                elif progress < 60:
-                    st.session_state["generation_step"] = 2
-                elif progress < 80:
-                    st.session_state["generation_step"] = 3
-                else:
-                    st.session_state["generation_step"] = 4
+        if elapsed_time < 7200:  # Within 2 hours
+            linear_progress = min(5 + (elapsed_time / 7200) * 90, 95)
+            st.session_state["generation_progress"] = int(linear_progress)
+            
+            # Update step status based on progress
+            progress = st.session_state["generation_progress"]
+            if progress < 20:
+                st.session_state["generation_step"] = 0
+            elif progress < 40:
+                st.session_state["generation_step"] = 1
+            elif progress < 60:
+                st.session_state["generation_step"] = 2
+            elif progress < 80:
+                st.session_state["generation_step"] = 3
+            else:
+                st.session_state["generation_step"] = 4
         else:
             # Real-time progress is available, use it
             # Step status is already updated by _update_progress_from_backend
@@ -761,6 +761,6 @@ def main() -> None:
                         unsafe_allow_html=True,
                     )
                 st.stop()
-
+ 
 if __name__ == "__main__":
-    main()
+main()
