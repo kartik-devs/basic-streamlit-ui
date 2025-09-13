@@ -3,14 +3,118 @@ import time
 import random
 import os
 import requests
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta
 from app.ui import inject_base_styles, show_header, top_nav, hero_section, feature_grid, footer_section, theme_provider
 from streamlit_extras.switch_page_button import switch_page
 
 
 def ensure_authenticated() -> bool:
     # Authentication removed - always allow access
-        return True
+    return True
+
+
+def _get_backend_base() -> str:
+    """Get backend base URL from environment or query params."""
+    params = st.query_params if hasattr(st, "query_params") else {}
+    return (
+        (params.get("api", [None])[0] if isinstance(params.get("api"), list) else params.get("api"))
+        or os.getenv("BACKEND_BASE")
+        or "http://localhost:8000"
+    ).rstrip("/")
+
+
+def _ping_backend(backend_url: str) -> bool:
+    """Ping the backend to keep it alive."""
+    try:
+        response = requests.get(f"{backend_url}/health", timeout=5)
+        return response.ok
+    except Exception:
+        return False
+
+
+def _start_backend_pinger(backend_url: str):
+    """Start background thread to ping backend every 5-7 minutes."""
+    def pinger():
+        while True:
+            try:
+                # Random interval between 5-7 minutes (300-420 seconds)
+                interval = random.randint(300, 420)
+                time.sleep(interval)
+                
+                # Ping the backend
+                success = _ping_backend(backend_url)
+                if success:
+                    print(f"✅ Backend ping successful at {datetime.now()}")
+                else:
+                    print(f"❌ Backend ping failed at {datetime.now()}")
+                    
+            except Exception as e:
+                print(f"❌ Pinger error: {e}")
+                time.sleep(60)  # Wait 1 minute before retrying
+    
+    # Start the pinger thread
+    thread = threading.Thread(target=pinger, daemon=True)
+    thread.start()
+    return thread
+
+
+def _validate_case_id_exists(case_id: str) -> dict:
+    """Check if case ID exists in S3 database using the same approach as History page."""
+    try:
+        backend = _get_backend_base()
+        
+        # Use the same endpoint as History page - /s3/cases
+        response = requests.get(f"{backend}/s3/cases", timeout=10)
+        if response.ok:
+            data = response.json() or {}
+            available_cases = data.get("cases", []) or []
+            
+            # Check if case ID exists in the list
+            exists = case_id in available_cases
+            
+            if exists:
+                return {
+                    "exists": True,
+                    "message": f"Case ID {case_id} found in database",
+                    "error": None,
+                    "available_cases": available_cases
+                }
+            else:
+                return {
+                    "exists": False,
+                    "message": f"Case ID {case_id} not found in database",
+                    "error": None,
+                    "available_cases": available_cases
+                }
+        else:
+            return {
+                "exists": False,
+                "message": f"Backend error: {response.status_code}",
+                "error": f"HTTP {response.status_code}",
+                "available_cases": []
+            }
+    except requests.exceptions.ConnectionError:
+        return {
+            "exists": False,
+            "message": "Cannot connect to backend. Please ensure backend is running.",
+            "error": "Connection refused",
+            "available_cases": []
+        }
+    except requests.exceptions.Timeout:
+        return {
+            "exists": False,
+            "message": "Backend request timed out. Please try again.",
+            "error": "Timeout",
+            "available_cases": []
+        }
+    except Exception as e:
+        return {
+            "exists": False,
+            "message": f"Validation error: {str(e)}",
+            "error": str(e),
+            "available_cases": []
+        }
 
 
 def main() -> None:
@@ -18,6 +122,24 @@ def main() -> None:
     theme_provider()
     inject_base_styles()
     top_nav()
+    
+    # Initialize backend pinger to keep backend alive
+    backend_url = _get_backend_base()
+    if not st.session_state.get("pinger_started", False):
+        try:
+            _start_backend_pinger(backend_url)
+            st.session_state["pinger_started"] = True
+            st.session_state["pinger_start_time"] = datetime.now()
+        except Exception as e:
+            st.warning(f"⚠️ Could not start backend pinger: {e}")
+    
+    # Show pinger status
+    if st.session_state.get("pinger_started", False):
+        start_time = st.session_state.get("pinger_start_time")
+        if start_time:
+            uptime = datetime.now() - start_time
+            st.caption(f"🔄 Backend pinger active (uptime: {uptime.total_seconds()//60:.0f}m)")
+    
     hero_section(
         title="Generate Case Report",
         description=(
@@ -136,18 +258,82 @@ def main() -> None:
         if case_id:
             if not case_id.isdigit():
                 st.error("⚠️ Case ID must contain only digits (0-9)")
+                st.session_state["case_id_exists"] = False
             elif len(case_id) != 4:
                 st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
+                st.session_state["case_id_exists"] = False
             else:
-                st.success("✅ Valid Case ID format")
+                # Check if case ID exists in S3 database
+                with st.spinner("🔍 Checking if case exists in database..."):
+                    validation_result = _validate_case_id_exists(case_id)
+                    
+                if validation_result["exists"]:
+                    st.success(f"✅ Case ID {case_id} found in database")
+                    # Store validation result for button logic
+                    st.session_state["case_id_exists"] = True
+                else:
+                    st.error(f"❌ Case ID {case_id} not found in database")
+                    # Store validation result for button logic
+                    st.session_state["case_id_exists"] = False
+                    
+                    # Show available case IDs from validation result
+                    available_cases = validation_result.get("available_cases", [])
+                    if available_cases:
+                        st.info("💡 Try one of these available case IDs:")
+                        st.code(" ".join(available_cases[:10]))  # Show first 10
+                        st.info(f"Found {len(available_cases)} available case IDs")
+                    else:
+                        st.info("No cases found in database")
+                    
+                    # Add a button to refresh available cases
+                    if st.button("🔄 Refresh Available Cases", key="refresh_cases"):
+                        st.rerun()
         
         # Username display removed - no authentication required
         
-        generate = st.button("Generate Report", type="primary", use_container_width=True)
+        # Show available case IDs section
+        with st.expander("📋 Available Case IDs", expanded=False):
+            try:
+                backend = _get_backend_base()
+                response = requests.get(f"{backend}/s3/cases", timeout=5)
+                if response.ok:
+                    data = response.json()
+                    available_cases = data.get("cases", [])
+                    if available_cases:
+                        st.info(f"Found {len(available_cases)} case IDs in database:")
+                        # Display in a nice grid with copy functionality
+                        cols = st.columns(5)
+                        for i, case_id in enumerate(available_cases[:20]):  # Show first 20
+                            with cols[i % 5]:
+                                if st.button(case_id, key=f"select_case_{case_id}"):
+                                    # Show the case ID for manual copying
+                                    st.success(f"Selected: {case_id} - Please copy and paste this into the Case ID field above")
+                        if len(available_cases) > 20:
+                            st.info(f"... and {len(available_cases) - 20} more case IDs")
+                    else:
+                        st.info("No case IDs found in database")
+                else:
+                    st.error(f"Backend error: {response.status_code}")
+            except Exception as e:
+                st.error(f"Could not fetch available cases: {str(e)}")
+        
+        # Check if case ID is valid and exists before enabling button
+        case_id_valid = case_id and case_id.isdigit() and len(case_id) == 4
+        case_id_exists = st.session_state.get("case_id_exists", False)
+        
+        generate = st.button(
+            "Generate Report", 
+            type="primary", 
+            use_container_width=True,
+            disabled=not (case_id_valid and case_id_exists)
+        )
+        
         if generate:
             cid = case_id.strip()
             if not cid or not cid.isdigit() or len(cid) != 4:
                 st.error("Case ID must be exactly 4 digits (0-9).")
+            elif not case_id_exists:
+                st.error("Case ID does not exist in database. Please enter a valid case ID.")
             else:
                 st.success(f"Starting report generation for Case ID: {cid}")
                 st.session_state["last_case_id"] = cid

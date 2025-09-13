@@ -4,6 +4,10 @@ from app.ui import inject_base_styles, theme_provider, top_nav
 import os
 import streamlit.components.v1 as components
 from urllib.parse import quote
+import requests
+import threading
+import time
+import random
 
 
 def _get_backend_base() -> str:
@@ -35,6 +39,41 @@ def _extract_patient_from_strings(case_id: str, *, gt_key: str | None = None, ai
 def ensure_authenticated() -> bool:
     # Authentication removed - always allow access
     return True
+
+
+def _ping_backend(backend_url: str) -> bool:
+    """Ping the backend to keep it alive."""
+    try:
+        response = requests.get(f"{backend_url}/health", timeout=5)
+        return response.ok
+    except Exception:
+        return False
+
+
+def _start_backend_pinger(backend_url: str):
+    """Start background thread to ping backend every 5-7 minutes."""
+    def pinger():
+        while True:
+            try:
+                # Random interval between 5-7 minutes (300-420 seconds)
+                interval = random.randint(300, 420)
+                time.sleep(interval)
+                
+                # Ping the backend
+                success = _ping_backend(backend_url)
+                if success:
+                    print(f"✅ Backend ping successful at {datetime.now()}")
+                else:
+                    print(f"❌ Backend ping failed at {datetime.now()}")
+                    
+            except Exception as e:
+                print(f"❌ Pinger error: {e}")
+                time.sleep(60)  # Wait 1 minute before retrying
+    
+    # Start the pinger thread
+    thread = threading.Thread(target=pinger, daemon=True)
+    thread.start()
+    return thread
 
 
 def _check_generation_status(case_id: str) -> dict:
@@ -141,9 +180,17 @@ def main() -> None:
     inject_base_styles()
     top_nav(active="Results")
     
-    # Authentication removed - no login required
-
+    # Initialize backend pinger to keep backend alive
     backend = _get_backend_base()
+    if not st.session_state.get("pinger_started", False):
+        try:
+            _start_backend_pinger(backend)
+            st.session_state["pinger_started"] = True
+            st.session_state["pinger_start_time"] = datetime.now()
+        except Exception as e:
+            st.warning(f"⚠️ Could not start backend pinger: {e}")
+    
+    # Authentication removed - no login required
     case_id = (
         st.session_state.get("last_case_id")
         or st.session_state.get("current_case_id")

@@ -4,11 +4,50 @@ import streamlit.components.v1 as components
 from urllib.parse import quote
 from app.ui import inject_base_styles, theme_provider, top_nav
 import time
+import requests
+import threading
+import random
+from datetime import datetime
 
 
 def ensure_authenticated() -> bool:
     # Authentication removed - always allow access
     return True
+
+
+def _ping_backend(backend_url: str) -> bool:
+    """Ping the backend to keep it alive."""
+    try:
+        response = requests.get(f"{backend_url}/health", timeout=5)
+        return response.ok
+    except Exception:
+        return False
+
+
+def _start_backend_pinger(backend_url: str):
+    """Start background thread to ping backend every 5-7 minutes."""
+    def pinger():
+        while True:
+            try:
+                # Random interval between 5-7 minutes (300-420 seconds)
+                interval = random.randint(300, 420)
+                time.sleep(interval)
+                
+                # Ping the backend
+                success = _ping_backend(backend_url)
+                if success:
+                    print(f"✅ Backend ping successful at {datetime.now()}")
+                else:
+                    print(f"❌ Backend ping failed at {datetime.now()}")
+                    
+            except Exception as e:
+                print(f"❌ Pinger error: {e}")
+                time.sleep(60)  # Wait 1 minute before retrying
+    
+    # Start the pinger thread
+    thread = threading.Thread(target=pinger, daemon=True)
+    thread.start()
+    return thread
 
 
 def _get_backend_base() -> str:
@@ -101,6 +140,23 @@ def _case_to_patient_map(backend: str, cases: list[str]) -> dict[str, str]:
 
 
 @st.cache_data(show_spinner=False, ttl=180)  # Cache for 3 minutes
+def _check_backend_connection(backend: str) -> dict:
+    """Check if backend is accessible."""
+    try:
+        import requests
+        r = requests.get(f"{backend}/health", timeout=5)
+        if r.ok:
+            return {"connected": True, "error": None}
+        else:
+            return {"connected": False, "error": f"HTTP {r.status_code}"}
+    except requests.exceptions.ConnectionError:
+        return {"connected": False, "error": "Connection refused"}
+    except requests.exceptions.Timeout:
+        return {"connected": False, "error": "Connection timeout"}
+    except Exception as e:
+        return {"connected": False, "error": str(e)}
+
+
 def _get_all_cases(backend: str) -> list[str]:
     """Fetch all case IDs from S3 with caching."""
     try:
@@ -235,6 +291,17 @@ def main() -> None:
     st.set_page_config(page_title="History (All Cases)", page_icon="🗂️", layout="wide")
     theme_provider()
     inject_base_styles()
+    
+    # Initialize backend pinger to keep backend alive
+    backend = _get_backend_base()
+    if not st.session_state.get("pinger_started", False):
+        try:
+            _start_backend_pinger(backend)
+            st.session_state["pinger_started"] = True
+            st.session_state["pinger_start_time"] = datetime.now()
+        except Exception as e:
+            st.warning(f"⚠️ Could not start backend pinger: {e}")
+    
     # Page-scoped compact buttons and responsive table
     st.markdown(
         """
@@ -272,6 +339,14 @@ def main() -> None:
 
     st.markdown("## History: Browse All Cases")
     st.caption("Browse all cases directly from S3 regardless of saved history.")
+
+    # Check backend connection first
+    backend_status = _check_backend_connection(backend)
+    if not backend_status["connected"]:
+        st.error(f"❌ Backend connection failed: {backend_status['error']}")
+        st.info(f"Backend URL: `{backend}`")
+        st.info("Please ensure the backend is running and accessible.")
+        return
 
     # Fetch all case ids from S3 (cached)
     cases = _get_all_cases(backend)

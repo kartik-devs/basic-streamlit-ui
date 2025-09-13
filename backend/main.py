@@ -771,6 +771,37 @@ def api_s3_versions(case_id: str) -> Dict[str, Any]:
 def api_s3_cases() -> Dict[str, Any]:
     return {"cases": s3_list_cases()}
 
+@app.get("/s3/{case_id}/validate")
+def api_s3_validate_case(case_id: str) -> Dict[str, Any]:
+    """
+    Validate if a case ID exists in S3 database.
+    """
+    try:
+        # Check if case ID exists in S3
+        cases = s3_list_cases()
+        exists = case_id in cases
+        
+        if exists:
+            return {
+                "exists": True,
+                "message": f"Case ID {case_id} found in database",
+                "case_id": case_id
+            }
+        else:
+            return {
+                "exists": False,
+                "message": f"Case ID {case_id} not found in database",
+                "case_id": case_id,
+                "available_cases": cases[:10]  # Show first 10 available cases
+            }
+    except Exception as e:
+        return {
+            "exists": False,
+            "message": f"Error validating case ID: {str(e)}",
+            "case_id": case_id,
+            "error": str(e)
+        }
+
 @app.get("/s3/{case_id}/outputs")
 def api_s3_outputs(case_id: str) -> Dict[str, Any]:
     """
