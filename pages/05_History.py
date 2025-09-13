@@ -14,7 +14,7 @@ def ensure_authenticated() -> bool:
         return True
     elif auth_status is False:
         st.error("❌ Invalid username or password. Please login again.")
-    st.stop()
+        st.stop()
     else:  # auth_status is None
         st.warning("🔐 Please login to access this page.")
         
