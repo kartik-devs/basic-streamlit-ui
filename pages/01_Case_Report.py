@@ -106,7 +106,7 @@ def main() -> None:
     BACKEND_BASE = (
         params.get("api", [None])[0]
         or os.getenv("BACKEND_BASE")
-        or "http://100.24.25.37"
+        or "https://basic-streamlit-ui-production.up.railway.app"
     ).rstrip("/")
 
     # Create centered form with same width as info box below
