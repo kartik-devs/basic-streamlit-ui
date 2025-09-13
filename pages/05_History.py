@@ -7,10 +7,21 @@ import time
 
 
 def ensure_authenticated() -> bool:
-    if st.session_state.get("authentication_status") is True:
+    # Check if user is authenticated
+    auth_status = st.session_state.get("authentication_status")
+    
+    if auth_status is True:
         return True
-    st.warning("Please login to access this page.")
-    st.stop()
+    elif auth_status is False:
+        st.error("❌ Invalid username or password. Please login again.")
+        st.stop()
+    else:  # auth_status is None
+        st.warning("🔐 Please login to access this page.")
+        
+        # Add login button to redirect
+        if st.button("Go to Login Page", type="primary"):
+            st.switch_page("main.py")
+        st.stop()
 
 
 def _get_backend_base() -> str:

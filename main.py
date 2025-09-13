@@ -63,10 +63,25 @@ def main() -> None:
         with tabs[0]:
             st.subheader("Sign in")
             try:
-                # Fixed login call - remove the old parameters
-                authenticator.login(location="main")
+                # Updated syntax for newer versions
+                name, authentication_status, username = authenticator.login()
+                
+                # Store in session state
+                if authentication_status:
+                    st.session_state["authentication_status"] = True
+                    st.session_state["name"] = name
+                    st.session_state["username"] = username
+                elif authentication_status is False:
+                    st.session_state["authentication_status"] = False
+                    
             except Exception as e:
                 st.error(f"Login error: {e}")
+                # Debug information
+                st.write("Debug info:", {
+                    "auth_status": st.session_state.get("authentication_status"),
+                    "name": st.session_state.get("name"),
+                    "username": st.session_state.get("username")
+                })
 
         with tabs[1]:
             # Your registration code remains the same
@@ -114,7 +129,11 @@ def main() -> None:
                     st.experimental_set_query_params(page="case")
         with c2:
             try:
-                authenticator.logout("Log out", location="main")
+                authenticator.logout("Log out")
+                # Clear session state on logout
+                st.session_state["authentication_status"] = False
+                st.session_state["name"] = None
+                st.session_state["username"] = None
             except Exception as e:
                 st.error(f"Logout error: {e}")
 

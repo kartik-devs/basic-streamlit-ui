@@ -1,110 +1,35 @@
 credentials:
   usernames:
-    Kartik Rana:
+    kartik_rana:
       email: kartik711111@gmail.com
-      name: 'Kartik '
-      password: $2b$12$r5bOoQYcdt5Mq00EywUdse2wlT3tjjlwox7LDMzThE8Qeb53NP.OS
+      name: "Kartik Rana"
+      password: "$2b$12$PpIYN7hAlwOsbSBfY2zeleAGjqbeK1FtJMycsa6/f4SWOBuDNOhIu"
     admin:
       email: admin@casetracker.com
-      name: Admin User
-      password: $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iQ2i
+      name: "Admin User"
+      password: "$2b$12$85pBEf0RvZZPXCRlHkj4/OMbIw6atVuszUMtvDgAerIpORyjWjiee"
     jane_smith:
       email: jane@casetracker.com
-      name: Jane Smith
-      password: $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iQ2i
+      name: "Jane Smith"
+      password: "$2b$12$1d2v59cWdZb/L3EKgKzsDeBKdjsyRBOoKZ8BHHlndtrIq5AIPb0ky"
     john_doe:
       email: john@casetracker.com
-      name: John Doe
-      password: $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iQ2i
-    Samarth:
-      email: Samarth@samarth.com
-      name: Samarth Datakernels
-      password: $2b$12$cCCAUf8gPSwKdI7VlgSZT.q.5zxfLTQUSfe31RQTlOzv7gzXktwZS
-    kartik123:
-      email: kartik@kartik.com
-      name: kartik123
-      password: $2b$12$e55NiDGLmLwP1r4vR3hkMOVmwrt.IHKKe/4GIzc5A0XB/sY4vM366
-    kartik1233:
-      email: kartik@kartik.com
-      name: kartik1234
-      password: $2b$12$.AvEsElh.eNyHfC/bHBH9eqykHWoN9rcZhaDYGLUx6Yv2WhTsNM3W
-    kartikkaka:
-      email: kartik@kartik.com
-      name: akfkasldkfaj
-      password: $2b$12$lveXirWG8z53P9MO6AsD9ODMrc/nNhcNv4aYuPLaspG4P27BM1KBm
-    Kartik@123.com:
-      email: Kartik@123.com
-      name: Kartik Rana
-      password: $2b$12$otGCcN7XxlFzYe9pwOz3BOP0SOCh9inci2DZps.i4uCFCbe5g6H0.
-    abc@gmail.com:
-      email: abc@gmail.com
-      name: acbd
-      password: $2b$12$nRN41LtlewZTS4uRyUITP.5R0/CUQ82.orIFb581K/kG7nEt4YGmy
-    Navpreet:
-      email: Navpreet@gmail.com
-      name: Navpreet Singh
-      password: $2b$12$7G0tejANQ5JKgJL41ISBHeG4.k0o/80vtREelI62FeI2gZSyVc8gm
-    Kartik1:
-      email: kartik1@gmail.com
-      name: Kartik123
-      password: $2b$12$ICwsh4Bb7vizireuvL31peAb82rASaOK.2XjaRsRhSz2iIYCFWSvC
-    New user:
-      email: newuser@gmail.com
-      name: Ner user
-      password: $2b$12$1I6qbSqRKh.wV56NLEHSW.UQG5aMQHOd8OqTXNV8YyDNhnZ1mhkV6
-    Samarth01:
-      email: smarth@gmail.com
-      name: Samarth
-      password: $2b$12$dXiMTp9UP6/oFpfVw6eZbelHugr/Iiu00GqS6ddrPp0O42Md6MziO
-    Vijay:
-      email: vijay@gmail.com
-      name: Vijay
-      password: $2b$12$JTO5bMSzds8QRc1et128SeBh.pKrwfH98YWRZttOqOi1OoLFU2s2i
-    Samarth2:
-      email: Samarth@gmail.com
-      name: Samarth
-      password: $2b$12$lCDtKmQqcgoeXP7bS2ZcSu/zOZ1mKJgKV/9fCK7HJP/VvCCg5ofKC
-    samarth5:
-      email: sam@gmail.com
-      name: samarth
-      password: $2b$12$VqI2aytOvAV3WZvbr0Ta3eyGVltxMOxKt88HoTevm8SPCYg25LvUW
-    samarth02:
-      email: sam@gmail.com
-      name: samarth
-      password: $2b$12$PxQztLbx8PxPz0xQVFc6ge6ntVoKqkKjtE/IOF2WF.Art1gDchPf.
-    Samarth02:
-      email: sam@gmail.com
-      name: Samarth
-      password: $2b$12$lT3eZEclBraMs3nyeHNrTer8CRyT3dhS/StYH573mPcFBXLDlSeOa
-    Samarth099:
-      email: sam@gmail.com
-      name: samarth
-      password: $2b$12$2EvvM6V7K9CsqO6grsl9/ONo6isTools7Uoj3ZEFFveJV7yYUn.9a
-    Piyush:
-      email: piyushgupta891@gmail.com
-      name: Piyush Gupta
-      password: $2b$12$Yw/OT.zk38lcpbeFDsGHxOkz19pr13wrRYqtpLtUdEuWrX9LrzJW6
-    jansi:
-      email: jansigoswamiwork@gmail.com
-      name: jansi goswami
-      password: $2b$12$rx1.uQy/1SEafzV6F4mPX.DAXmIHE8rqkEzVcX/9rui/XGg1QImye
-    jansig:
-      email: jansigoswamiwork@gmail.com
-      name: jansi goswami
-      password: $2b$12$H5L6adguR1DDK2Wlh7ELruE9j0df.VRCFw/..0pubRti7529sF0i.
-    raj317:
-      email: rsbhk1232@gmail.com
-      name: Raj Bhardwaj
-      password: $2b$12$1tsvJpSv2SCwpG.ws2LmB.HMPz7zXMXIEFT5Jp6510jiPZnKjLJZW
-    Fghodadra:
-      email: fenilg@gmail.com
-      name: Fenil Ghodadra
-      password: $2b$12$062u7/wvcwencbQuZ0lwAOy/JPLttCRLG6LoGTciAZ.xXnG7DryAi
-    NavpreetS:
-      email: navpreet4@gmail.com
-      name: Navpreet Singh
-      password: $2b$12$Gf1OAxPqqsnu/Cazkp7SWu1zfUKOabu2nSD7glcQDFb1PHKCLeXRa
+      name: "John Doe"
+      password: "$2b$12$SlEGaL8SOI9gYwqB.3kvAuI9GRn.NJ5Efr2CvN2SPEhOW3waVmgRK"
+    testuser:
+      email: test@example.com
+      name: "Test User"
+      password: "$2b$12$0QTml/klVaIpkpVrE/xy9.Ur9tVc/HFAbTX7WqM/J0OpbklhS0Tza"
+
 cookie:
+  name: "casetracker_auth"
+  key: "casetracker_signature_key_2024_secure_random_string"
   expiry_days: 30
-  key: some_random_key_for_casetracker
-  name: casetracker_auth
+
+preauthorized:
+  emails:
+    - "kartik711111@gmail.com"
+    - "admin@casetracker.com"
+    - "jane@casetracker.com"
+    - "john@casetracker.com"
+    - "test@example.com"

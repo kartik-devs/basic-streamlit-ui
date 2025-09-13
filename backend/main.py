@@ -7,10 +7,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
+import secrets
  
 # Load environment from .env if present
 try:
@@ -31,6 +33,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Simple session storage (use Redis in production)
+active_sessions = {}
+security = HTTPBasic()
+
 # Fallback DB connector (ensures availability for comment/history endpoints)
 def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect("reports.db")
@@ -38,6 +44,103 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 # Ensure database schema is initialized on startup
+# Authentication endpoints
+@app.post("/auth/login")
+def login(credentials: dict):
+    """Handle login from Streamlit frontend"""
+    username = credentials.get("username", "").strip()
+    password = credentials.get("password", "").strip()
+    
+    # Basic validation - implement your actual auth logic here
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password required")
+    
+    # For now, accept any non-empty credentials (implement real auth here)
+    if len(username) >= 3 and len(password) >= 3:
+        # Create session
+        session_id = secrets.token_urlsafe(32)
+        active_sessions[session_id] = {
+            "username": username,
+            "authenticated": True,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        # Ensure user exists in database
+        conn = get_conn()
+        try:
+            user_id = _ensure_user(conn, username, None, None, None)
+            conn.commit()
+        finally:
+            conn.close()
+        
+        return {
+            "authentication_status": True,
+            "username": username,
+            "name": username,
+            "session_id": session_id
+        }
+    
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+@app.post("/auth/logout")
+def logout(request: dict):
+    """Handle logout"""
+    session_id = request.get("session_id")
+    if session_id and session_id in active_sessions:
+        del active_sessions[session_id]
+    return {"authentication_status": False}
+
+@app.get("/auth/verify")
+def verify_session(session_id: str = None):
+    """Verify if session is still valid"""
+    if not session_id or session_id not in active_sessions:
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
+    
+    session = active_sessions[session_id]
+    return {
+        "authentication_status": True,
+        "username": session["username"],
+        "name": session["username"]
+    }
+
+@app.get("/auth/status")
+def auth_status():
+    """Simple endpoint to check if auth system is working"""
+    return {
+        "auth_enabled": True,
+        "active_sessions": len(active_sessions),
+        "backend_url": os.getenv("BACKEND_BASE", "http://localhost:8000")
+    }
+
+@app.get("/debug/status")
+def debug_status():
+    """Debug endpoint to check system status"""
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+        
+        # Check tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [row[0] for row in cursor.fetchall()]
+        
+        # Check user count
+        cursor.execute("SELECT COUNT(*) FROM users")
+        user_count = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return {
+            "database": "connected",
+            "tables": tables,
+            "user_count": user_count,
+            "s3_bucket": S3_BUCKET,
+            "aws_region": AWS_REGION,
+            "active_sessions": len(active_sessions) if 'active_sessions' in globals() else 0,
+            "backend_url": os.getenv("BACKEND_BASE", "http://localhost:8000")
+        }
+    except Exception as e:
+        return {"error": str(e), "status": "failed"}
+
 @app.on_event("startup")
 def _startup_init_db() -> None:
     try:
