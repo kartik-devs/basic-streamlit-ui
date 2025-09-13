@@ -36,6 +36,10 @@ def _ping_backend(backend_url: str) -> bool:
 def _start_backend_pinger(backend_url: str):
     """Start background thread to ping backend every 5-7 minutes."""
     def pinger():
+        ping_count = 0
+        consecutive_failures = 0
+        max_failures = 5
+        
         while True:
             try:
                 # Random interval between 5-7 minutes (300-420 seconds)
@@ -44,17 +48,37 @@ def _start_backend_pinger(backend_url: str):
                 
                 # Ping the backend
                 success = _ping_backend(backend_url)
+                ping_count += 1
+                
                 if success:
-                    print(f"✅ Backend ping successful at {datetime.now()}")
+                    consecutive_failures = 0  # Reset failure counter
+                    print(f"✅ Backend ping #{ping_count} successful at {datetime.now()}")
                 else:
-                    print(f"❌ Backend ping failed at {datetime.now()}")
+                    consecutive_failures += 1
+                    print(f"❌ Backend ping #{ping_count} failed at {datetime.now()} (failure #{consecutive_failures})")
                     
+                    # If too many consecutive failures, increase retry interval
+                    if consecutive_failures >= max_failures:
+                        print(f"⚠️ {consecutive_failures} consecutive failures. Increasing retry interval.")
+                        time.sleep(300)  # Wait 5 minutes before next attempt
+                        consecutive_failures = 0  # Reset after extended wait
+                    
+            except KeyboardInterrupt:
+                print("🛑 Pinger stopped by user")
+                break
             except Exception as e:
-                print(f"❌ Pinger error: {e}")
+                consecutive_failures += 1
+                print(f"❌ Pinger error #{consecutive_failures}: {e}")
                 time.sleep(60)  # Wait 1 minute before retrying
+                
+                # Prevent infinite error loops
+                if consecutive_failures >= max_failures:
+                    print(f"⚠️ Too many errors ({consecutive_failures}). Pausing pinger for 10 minutes.")
+                    time.sleep(600)  # Wait 10 minutes
+                    consecutive_failures = 0
     
     # Start the pinger thread
-    thread = threading.Thread(target=pinger, daemon=True)
+    thread = threading.Thread(target=pinger, daemon=True, name="BackendPinger")
     thread.start()
     return thread
 
