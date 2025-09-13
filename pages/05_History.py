@@ -1467,6 +1467,123 @@ def _fetch_code_version_for_case(case_id: str) -> str:
         elif total == 0:
             st.info("No comments yet.")
     
-    if __name__ == "__main__":
-        main()
+    # Table of Contents sections for comments
+    toc_sections = {
+        "1. Overview": ["1.1 Executive Summary", "1.2 Life Care Planning and Life Care Plans", "1.3 Biography of Medical Expert", "1.4 Framework: A Life Care Plan for Missing"],
+        "2. Summary of Records": ["2.1 Summary of Medical Records Sources", "2.2 Chronological Synopsis of Medical Records", "2.3 Diagnostics", "2.4 Procedure Performed", "2.5 Interview Recent History"],
+        "3. History of Present Injury/Illness": ["3.1 Subjective History", "3.2 Current Symptoms", "3.3 Physical Symptoms", "3.4 Functional Symptoms", "3.5 Review of Systems"],
+        "4. Past Medical History": ["4.1 Past Surgical History", "4.2 Injections", "4.3 Family History", "4.4 Allergies", "4.5 Drug and Other Allergies", "4.6 Medications", "4.7 Assistive Device"],
+        "5. Social History": ["5.1 Education History", "5.2 Professional/Work History", "5.3 Habits", "5.4 Tobacco use", "5.5 Alcohol use", "5.6 Illicit drugs", "5.7 Avocational Activities", "5.8 Residential Situation", "5.9 Transportation", "5.10 Household Responsibilities"],
+        "6. Central Opinions": ["6.1 Diagnostic Conditions", "6.2 Consequent Circumstances", "6.3 Disabilities", "6.4 Probable Duration of Care", "6.5 Average Residual Years", "6.6 Life Expectancy", "6.7 Adjustments to Life Expectancy", "6.8 Probable Duration of Care"],
+        "7. Future Medical Requirements": ["7.1 Physician Services", "7.2 Routine Diagnostics", "7.3 Medications", "7.4 Laboratory Studies", "7.5 Rehabilitation Services", "7.6 Equipment & Supplies", "7.7 Environmental Modifications & Essential Services", "7.8 Acute Care Services"],
+        "8. Cost/Vendor Survey Methods, Definitions, and Discussion": ["8.1 Survey Methodology", "8.2 Definitions and Discussion", "8.3 Definition & Discussion of Quantitative Methods", "8.4 Nominal Value", "8.5 Accounting Methods", "8.6 Variables", "8.7 Independent Variables", "8.8 Dependent Variables", "8.9 Unit Costs", "8.10 Counts & Conventions", "8.11 Probable Duration of Care", "8.12 Probable Duration of Care Metrics"],
+        "9. Summary Cost Projection Tables": [
+            "Table 1: Routine Medical Evaluation",
+            "Table 2: Therapeutic Evaluation",
+            "Table 3: Therapeutic Modalities",
+            "Table 4: Diagnostic Testing",
+            "Table 5: Equipment and Aids",
+            "Table 6: Pharmacology",
+            "Table 7: Future Aggressive Care/Surgical Intervention",
+            "Table 8: Home Care/Home Services",
+            "Table 9: Labs",
+        ],
+        "10. Overview of Medical Expert": [],
+    }
+    
+    with tabs[0]:
+        st.caption("Record mismatches between Ground Truth and AI by section and subsection.")
+        # --- Add comment form (inside Comments tab only; always visible) ---
+        st.markdown("#### Add comment")
+        section_options = list(toc_sections.keys())
+        cfrm1, cfrm2 = st.columns([3, 1])
+        with cfrm1:
+            hierarchical_options: list[str] = []
+            section_to_subsection: dict[str, str] = {}
+            for section in section_options:
+                subsections = toc_sections.get(section, [])
+                if subsections:
+                    hierarchical_options.append(section)
+                    section_to_subsection[section] = section
+                    for sub in subsections:
+                        indented = f"    └─ {sub}"
+                        hierarchical_options.append(indented)
+                        section_to_subsection[indented] = section
+                else:
+                    hierarchical_options.append(section)
+                    section_to_subsection[section] = section
+            form_section = st.selectbox(
+                "Section/Subsection",
+                options=hierarchical_options,
+                index=0,
+                key="comments_form_section",
+            )
+        with cfrm2:
+            form_severity = st.selectbox("Severity", options=["Low", "Medium", "High"], index=1, key="comments_form_severity")
+    
+        form_text = st.text_area("Describe the discrepancy", key="comments_form_text")
+        submit_col, _ = st.columns([0.25, 0.75])
+        with submit_col:
+            if st.button("Add comment", type="primary", key="comments_form_submit"):
+                if form_text.strip():
+                    try:
+                        import requests as _rq
+                        backend = st.session_state.get("backend_url", "http://localhost:8000")
+                        if form_section.startswith("    └─ "):
+                            subsection = form_section.replace("    └─ ", "")
+                            section = section_to_subsection[form_section]
+                        else:
+                            section = form_section
+                            subsection = form_section
+                        payload = {
+                            "case_id": case_id,
+                            "ai_label": selected_label,
+                            "section": section,
+                            "subsection": subsection,
+                            "severity": form_severity,
+                            "text": form_text.strip(),
+                        }
+                        _rq.post(f"{backend}/comments", json=payload, timeout=8)
+                        st.success("Comment added!")
+                        _get_case_comments.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to add comment: {e}")
+                else:
+                    st.error("Please enter a comment.")
+        
+        # --- Display existing comments ---
+        st.markdown("#### Existing comments")
+        comments = _get_case_comments(backend, case_id, selected_label)
+        total = len(comments)
+        if total > 0:
+            for i, comment in enumerate(comments):
+                with st.expander(f"Comment {i+1} - {comment.get('section', 'Unknown')} - {comment.get('severity', 'Unknown')} - {comment.get('created_at', 'Unknown date')}"):
+                    st.write(f"**Section:** {comment.get('section', 'Unknown')}")
+                    if comment.get('subsection') and comment.get('subsection') != comment.get('section'):
+                        st.write(f"**Subsection:** {comment.get('subsection', 'Unknown')}")
+                    st.write(f"**Severity:** {comment.get('severity', 'Unknown')}")
+                    st.write(f"**Text:** {comment.get('text', 'No text')}")
+                    st.write(f"**Created:** {comment.get('created_at', 'Unknown date')}")
+                    
+                    # Delete button
+                    if st.button(f"Delete Comment {i+1}", key=f"delete_comment_{i}"):
+                        try:
+                            nid = comment.get('id')
+                            if nid:
+                                try:
+                                    import requests as _rq
+                                    _rq.delete(f"{backend}/comments", json={"case_id": case_id, "ai_label": selected_label, "ids": [int(nid)]}, timeout=8, headers={"ngrok-skip-browser-warning": "true"})
+                                    _get_case_comments.clear()
+                                except Exception:
+                                    pass
+                                st.rerun()
+                        except Exception:
+                            pass
+        elif total == 0:
+            st.info("No comments yet.")
+
+
+if __name__ == "__main__":
+    main()
     
