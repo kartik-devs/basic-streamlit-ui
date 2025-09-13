@@ -1,128 +1,115 @@
 import streamlit as st
-import yaml
-from pathlib import Path
-from typing import Tuple
-
-import streamlit_authenticator as stauth
 from streamlit_extras.switch_page_button import switch_page
 
 # Local modules
 from app.ui import inject_base_styles, show_header
-from app.auth import register_user, load_config, user_exists, is_allowed_email
-import re
-
-
-def load_auth_config() -> Tuple[dict, str, str]:
-    config_path = Path("config.yaml")
-    if not config_path.exists():
-        st.error("Missing config.yaml for authentication.")
-        st.stop()
-
-    with config_path.open("r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-
-    cookie_name = "casetracker_auth"
-    cookie_key = "casetracker_signature"
-    return config, cookie_name, cookie_key
-
-
-def build_authenticator():
-    config, cookie_name, cookie_key = load_auth_config()
-    authenticator = stauth.Authenticate(
-        config["credentials"],
-        cookie_name,
-        cookie_key,
-        cookie_expiry_days=1,
-    )
-    return authenticator
-
 
 def main() -> None:
     st.set_page_config(
-        page_title="Login - CaseTracker Pro",
-        page_icon="🔐",
-        layout="centered",
-        initial_sidebar_state="collapsed",
+        page_title="CaseTracker Pro",
+        page_icon="📋",
+        layout="wide",
+        initial_sidebar_state="expanded",
     )
     
-
     inject_base_styles()
     show_header(
-        title="Login",
-        subtitle=(
-            "Enter your credentials to continue. After login you'll be taken "
-            "to the Case Report page to submit a Case ID."
-        ),
-        icon="🔐",
+        title="CaseTracker Pro",
+        subtitle="Medical Report Generation System",
+        icon="📋",
     )
 
-    authenticator = build_authenticator()
+    # Welcome message
+    st.markdown("""
+    <div style="text-align: center; margin: 2rem 0;">
+        <h2 style="color: #3b82f6; margin-bottom: 1rem;">Welcome to CaseTracker Pro</h2>
+        <p style="color: #6b7280; font-size: 1.1rem; margin-bottom: 2rem;">
+            Generate comprehensive medical reports with AI-powered analysis.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Login/Register Tabs
-    with st.container():
-        tabs = st.tabs(["Sign In", "Register"])
+    # Navigation buttons
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("📋 Case Report", type="primary", use_container_width=True):
+            try:
+                from streamlit_extras.switch_page_button import switch_page
+                for name in ["01_Case_Report", "Case Report", "01 Case Report", "Case_Report"]:
+                    try:
+                        switch_page(name)
+                        return
+                    except Exception:
+                        continue
+            except Exception:
+                st.info("Please use the sidebar to navigate to Case Report.")
+    
+    with col2:
+        if st.button("📊 Results", use_container_width=True):
+            try:
+                from streamlit_extras.switch_page_button import switch_page
+                for name in ["04_Results", "Results", "04 Results", "Results Page"]:
+                    try:
+                        switch_page(name)
+                        return
+                    except Exception:
+                        continue
+            except Exception:
+                st.info("Please use the sidebar to navigate to Results.")
+    
+    with col3:
+        if st.button("📚 History", use_container_width=True):
+            try:
+                from streamlit_extras.switch_page_button import switch_page
+                for name in ["05_History", "History", "05 History", "History Page"]:
+                    try:
+                        switch_page(name)
+                        return
+                    except Exception:
+                        continue
+            except Exception:
+                st.info("Please use the sidebar to navigate to History.")
+    
+    with col4:
+        if st.button("ℹ️ About", use_container_width=True):
+            st.info("CaseTracker Pro - Medical Report Generation System")
 
-        with tabs[0]:
-            st.subheader("Sign in")
-            authenticator.login("Login", "main")
+    # Features section
+    st.markdown("""
+    <div style="margin-top: 3rem;">
+        <h3 style="color: #3b82f6; margin-bottom: 1.5rem;">Features</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+            <div style="background: rgba(59, 130, 246, 0.1); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2);">
+                <h4 style="color: #3b82f6; margin-bottom: 0.5rem;">📋 Case Report Generation</h4>
+                <p style="color: #6b7280; margin: 0;">Submit case IDs and generate comprehensive medical reports with AI analysis.</p>
+            </div>
+            <div style="background: rgba(16, 185, 129, 0.1); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.2);">
+                <h4 style="color: #10b981; margin-bottom: 0.5rem;">📊 Real-time Results</h4>
+                <p style="color: #6b7280; margin: 0;">View detailed results, metrics, and download generated reports.</p>
+            </div>
+            <div style="background: rgba(245, 158, 11, 0.1); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.2);">
+                <h4 style="color: #f59e0b; margin-bottom: 0.5rem;">📚 History Tracking</h4>
+                <p style="color: #6b7280; margin: 0;">Access your complete report generation history and track progress.</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        with tabs[1]:
-            st.subheader("Create an account")
-            with st.form("register_form"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    reg_username = st.text_input("Username")
-                    reg_name = st.text_input("Full name")
-                with col2:
-                    reg_email = st.text_input("Email")
-                    reg_password = st.text_input("Password", type="password")
-                    reg_password2 = st.text_input("Confirm password", type="password")
-
-                submitted = st.form_submit_button("Register", type="primary")
-                if submitted:
-                    email_input = (reg_email or "").strip()
-                    email_ok = is_allowed_email(email_input)
-                    if not reg_username or not reg_name or not reg_email or not reg_password:
-                        st.error("Please fill all fields.")
-                    elif not email_ok:
-                        st.error("Please use a supported email provider (e.g., gmail.com, outlook.com).")
-                    elif reg_password != reg_password2:
-                        st.error("Passwords do not match.")
-                    elif user_exists(load_config(), reg_username):
-                        st.error("Username already exists.")
-                    else:
-                        try:
-                            register_user(reg_username, reg_name, email_input, reg_password)
-                        except ValueError:
-                            st.error("Email domain not allowed or invalid format.")
-                        else:
-                            st.success("Account created. You can now sign in.")
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    if st.session_state.get("authentication_status") is True:
-        st.success(f"Welcome {st.session_state.get('name', '')}!")
-
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            if st.button("Go to Case Report", type="primary"):
-                try:
-                    switch_page("Case_Report")
-                except Exception:
-                    st.experimental_set_query_params(page="case")
-        with c2:
-            authenticator.logout("Log out", "main")
-
-    elif st.session_state.get("authentication_status") is False:
-        st.error("Invalid username or password.")
-    else:
-        st.info("Please enter your credentials to continue.")
-
+    # Quick start guide
+    st.markdown("""
+    <div style="margin-top: 3rem;">
+        <h3 style="color: #3b82f6; margin-bottom: 1.5rem;">Quick Start</h3>
+        <div style="background: rgba(255, 255, 255, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <ol style="color: #6b7280; line-height: 1.8;">
+                <li>Click <strong>"Case Report"</strong> to start generating a new report</li>
+                <li>Enter a 4-digit Case ID when prompted</li>
+                <li>Wait for the AI analysis to complete (typically 2 hours)</li>
+                <li>View results and download the generated report</li>
+            </ol>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
-
-
-
-
-      

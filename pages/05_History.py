@@ -7,10 +7,8 @@ import time
 
 
 def ensure_authenticated() -> bool:
-    if st.session_state.get("authentication_status") is True:
-        return True
-    st.warning("Please login to access this page.")
-    st.stop()
+    # Authentication removed - always allow access
+    return True
 
 
 def _get_backend_base() -> str:
@@ -259,7 +257,7 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
-    ensure_authenticated()
+    # Authentication removed - no login required
 
     # Nav bar
     top_nav(active="History")
