@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: ocr-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: BACKEND_BASE
+        value: https://ocr-backend.onrender.com
+      - key: N8N_BASE_URL
+        value: http://3.81.112.43:5678
+      - key: N8N_API_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0NGQxZTI1Ny0wZDQ1LTRiNmItOTZkYi1lODAzZmQ3NGM5YmYiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzU2ODg0MjQ0fQ.0mQp1PDl1DHPtezu44pSWGXGUuM6ama9s9c4lw1hNnQ
+      - key: N8N_MAIN_WORKFLOW_ID
+        value: QTgwEEZYYfbRhhPu
+      - key: N8N_TRIGGER_WEBHOOK_URL
+        value: http://3.81.112.43:5678/webhook/1c5dde6b-ad1d-4b91-bb9c-130492d15d15
+      - key: AWS_ACCESS_KEY_ID
+        fromDatabase:
+          name: aws-credentials
+          key: AWS_ACCESS_KEY_ID
+      - key: AWS_SECRET_ACCESS_KEY
+        fromDatabase:
+          name: aws-credentials
+          key: AWS_SECRET_ACCESS_KEY
+      - key: AWS_DEFAULT_REGION
+        value: us-east-1
+
+  - type: web
+    name: ocr-frontend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run main.py --server.address 0.0.0.0 --server.port $PORT
+    envVars:
+      - key: BACKEND_BASE
+        value: https://ocr-backend.onrender.com
+      - key: N8N_BASE_URL
+        value: http://3.81.112.43:5678
+      - key: N8N_API_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0NGQxZTI1Ny0wZDQ1LTRiNmItOTZkYi1lODAzZmQ3NGM5YmYiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzU2ODg0MjQ0fQ.0mQp1PDl1DHPtezu44pSWGXGUuM6ama9s9c4lw1hNnQ
+      - key: N8N_MAIN_WORKFLOW_ID
+        value: QTgwEEZYYfbRhhPu
+      - key: N8N_TRIGGER_WEBHOOK_URL
+        value: http://3.81.112.43:5678/webhook/1c5dde6b-ad1d-4b91-bb9c-130492d15d15
+
+databases:
+  - name: aws-credentials
+    plan: free
