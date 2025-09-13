@@ -498,7 +498,7 @@ def main() -> None:
                     raw = _b64.b64decode(content).decode("utf-8", "ignore")
                     try:
                         version_data = _json.loads(raw)
-                            version = version_data.get("version", "—")
+                        version = version_data.get("version", "—")
                         code_ver = version.replace(".json", "") if isinstance(version, str) else "—"
                     except Exception:
                         code_ver = "—"
