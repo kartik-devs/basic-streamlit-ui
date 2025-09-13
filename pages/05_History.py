@@ -18,7 +18,7 @@ def _get_backend_base() -> str:
     return (
         (params.get("api", [None])[0] if isinstance(params.get("api"), list) else params.get("api"))
         or os.getenv("BACKEND_BASE")
-        or "http://100.24.25.37"
+        or "https://56a0cfcdc2fb.ngrok-free.app"
     ).rstrip("/")
 
 
@@ -1359,7 +1359,7 @@ def main() -> None:
                 if form_text.strip():
         try:
             import requests as _rq
-                        backend = st.session_state.get("backend_url", "http://100.24.25.37")
+                        backend = st.session_state.get("backend_url", "https://56a0cfcdc2fb.ngrok-free.app")
                         if form_section.startswith("    └─ "):
                                 subsection = form_section.replace("    └─ ", "")
                                 section = section_to_subsection[form_section]
