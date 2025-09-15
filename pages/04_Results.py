@@ -881,6 +881,49 @@ def main() -> None:
         except Exception:
             return u
 
+    def _render_pdf_viewer(unique_key: str, url: str | None, height_px: int, link_color: str = "#93c5fd") -> None:
+        if not url:
+            st.info("Not available")
+            return
+        import uuid
+        nonce = f"pv_{unique_key}_{uuid.uuid4().hex[:8]}"
+        base = _proxy_pdf(_viewer_url(url)) or url
+        gdv = f"https://docs.google.com/viewer?url={quote(base, safe='')}&embedded=true"
+        html = f"""
+        <div id="wrap_{nonce}" style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {height_px}px;">
+          <iframe id="{nonce}" src="about:blank" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
+        </div>
+        <div style="margin-top:.4rem;display:flex;gap:.5rem;">
+          <a id="lnk_{nonce}" href="{base}" target="_blank" style="color:{link_color};text-decoration:none;font-size:.9rem;">Open original PDF ↗</a>
+        </div>
+        <script>
+        (function(){{
+          const iframe = document.getElementById('{nonce}');
+          const link = document.getElementById('lnk_{nonce}');
+          const base = '{base}';
+          const gdvBase = '{gdv}';
+          let tries = 0;
+          function withTs(u){{
+             const sep = u.indexOf('?')>=0 ? '&' : '?';
+             return u + sep + '_t=' + Date.now();
+          }}
+          const candidates = [gdvBase, base, withTs(gdvBase), withTs(base)];
+          function tryNext(){{
+            if (tries >= candidates.length) return;
+            const url = candidates[tries++];
+            let settled = false;
+            const onload = () => {{ settled = true; }};
+            iframe.removeEventListener('load', onload);
+            iframe.addEventListener('load', onload, {{once:true}});
+            iframe.src = url;
+            setTimeout(()=>{{ if(!settled) tryNext(); }}, 1800);
+          }}
+          tryNext();
+        }})();
+        </script>
+        """
+        components.html(html, height=height_px + 32)
+
     # Build rows
     def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
         ocr_start = o.get("ocr_start_time", "—")
@@ -1089,16 +1132,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_effective_pdf_url:
-            _gt_url = _proxy_pdf(_viewer_url(gt_effective_pdf_url))
-            _gdv = f"https://docs.google.com/viewer?url={quote(_gt_url or gt_effective_pdf_url, safe='')}&embedded=true"
-            st.markdown(f"""
-            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <iframe src="{_gdv}" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
-            </div>
-            <div style="margin-top:.4rem;display:flex;gap:.5rem;">
-                <a href="{_gt_url}" target="_blank" style="color:#93c5fd;text-decoration:none;font-size:.9rem;">Open original PDF ↗</a>
-            </div>
-            """, unsafe_allow_html=True)
+            _render_pdf_viewer(f"gt_{case_id}", gt_effective_pdf_url, iframe_h, link_color="#93c5fd")
         elif gt_generic:
                 st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
         else:
@@ -1143,17 +1177,8 @@ def main() -> None:
             st.info("No PDF AI outputs available for this case.")
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
-            _ai_url = _proxy_pdf(_viewer_url(sel_ai['ai_url']))
-            _gdv = f"https://docs.google.com/viewer?url={quote(_ai_url or sel_ai['ai_url'], safe='')}&embedded=true"
-            st.markdown(f"""
-            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <iframe src="{_gdv}" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
-            </div>
-            <div style="margin-top:.4rem;display:flex;gap:.5rem;">
-                <a href="{_ai_url}" target="_blank" style="color:#c4b5fd;text-decoration:none;font-size:.9rem;">Open original PDF ↗</a>
-            </div>
-            """, unsafe_allow_html=True)
-            ai_effective_pdf_url = _ai_url
+            _render_pdf_viewer(f"ai_{case_id}", sel_ai['ai_url'], iframe_h, link_color="#c4b5fd")
+            ai_effective_pdf_url = sel_ai["ai_url"]
         else:
             st.info("Not available")
 
@@ -1172,17 +1197,8 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            _dr_url = _proxy_pdf(_viewer_url(sel_ai['doctor_url']))
-            _gdv = f"https://docs.google.com/viewer?url={quote(_dr_url or sel_ai['doctor_url'], safe='')}&embedded=true"
-            st.markdown(f"""
-            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <iframe src="{_gdv}" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
-            </div>
-            <div style="margin-top:.4rem;display:flex;gap:.5rem;">
-                <a href="{_dr_url}" target="_blank" style="color:#86efac;text-decoration:none;font-size:.9rem;">Open original PDF ↗</a>
-            </div>
-            """, unsafe_allow_html=True)
-            doc_effective_pdf_url = _dr_url
+            _render_pdf_viewer(f"dr_{case_id}", sel_ai['doctor_url'], iframe_h, link_color="#86efac")
+            doc_effective_pdf_url = sel_ai["doctor_url"]
         else:
             st.info("Not available")
 
