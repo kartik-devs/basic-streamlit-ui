@@ -1133,22 +1133,55 @@ def main() -> None:
     col1, col2, col3 = st.columns(3)
     with col1:
         if gt_effective_pdf_url:
-            # Inline embed + links
+            # pdf.js canvas render (same approach as sync scroll)
             from urllib.parse import quote as _q
-            open_url = f"{backend}/s3/stream?key={_q(gt_effective_pdf_key, safe='')}" if gt_effective_pdf_key else gt_effective_pdf_url
-            dl_url = f"{open_url}&download=1" if isinstance(open_url, str) and open_url.startswith(backend) else gt_effective_pdf_url
-            st.markdown(
-                f"""
-                <div style=\"border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; height: {iframe_h}px;\"> 
-                  <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
-                </div>
-                <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
-                  <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
-                  <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            base_url = f"{backend}/s3/stream?key={_q(gt_effective_pdf_key, safe='')}" if gt_effective_pdf_key else f"{backend}/proxy/pdf?url={_q(gt_effective_pdf_url, safe='')}"
+            dl_url = f"{base_url}&download=1" if base_url.startswith(backend) else gt_effective_pdf_url
+            container_id = f"gt_canvas_{case_id}"
+            html = f"""
+            <div id=\"{container_id}\" style=\"height:{iframe_h}px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:6px;background:white;\"></div>
+            <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
+              <a href=\"{base_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
+              <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
+            </div>
+            <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
+            <script>
+            const pdfjsLib = window['pdfjs-dist/build/pdf'];
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            (async () => {{
+              const url = '{base_url}';
+              const container = document.getElementById('{container_id}');
+              container.innerHTML = '';
+              try {{
+                const res = await fetch(url, {{ method: 'GET', headers: {{ 'Accept': 'application/pdf' }} }});
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const buf = await res.arrayBuffer();
+                const loadingTask = pdfjsLib.getDocument({{ data: buf }});
+                const pdf = await loadingTask.promise;
+                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {{
+                  const page = await pdf.getPage(pageNum);
+                  const viewport = page.getViewport({{ scale: 1.2 }});
+                  const canvas = document.createElement('canvas');
+                  const context = canvas.getContext('2d');
+                  canvas.style.display = 'block';
+                  canvas.style.width = '100%';
+                  const scale = container.clientWidth / viewport.width;
+                  const scaledViewport = page.getViewport({{ scale }});
+                  canvas.width = Math.floor(scaledViewport.width);
+                  canvas.height = Math.floor(scaledViewport.height);
+                  container.appendChild(canvas);
+                  await page.render({{ canvasContext: context, viewport: scaledViewport }}).promise;
+                }}
+              }} catch (e) {{
+                const div = document.createElement('div');
+                div.textContent = 'Failed to render PDF.';
+                div.style.opacity = '0.8';
+                container.appendChild(div);
+              }}
+            }})();
+            </script>
+            """
+            components.html(html, height=iframe_h + 54)
         elif gt_generic:
                 st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
         else:
@@ -1191,18 +1224,51 @@ def main() -> None:
             open_url = f"{backend}/s3/stream?key={_q(ai_key, safe='')}" if ai_key else (f"{backend}/proxy/pdf?url={_q(ai_url, safe='')}" if ai_url else None)
             dl_url = f"{open_url}&download=1" if isinstance(open_url, str) and open_url.startswith(backend) else ai_url
             if open_url:
-                st.markdown(
-                    f"""
-                    <div style=\"border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; height: {iframe_h}px;\"> 
-                      <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
-                    </div>
-                    <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
-                      <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
-                      <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                container_id = f"ai_canvas_{case_id}"
+                html = f"""
+                <div id=\"{container_id}\" style=\"height:{iframe_h}px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:6px;background:white;\"></div>
+                <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
+                  <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
+                  <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
+                </div>
+                <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
+                <script>
+                const pdfjsLib = window['pdfjs-dist/build/pdf'];
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                (async () => {{
+                  const url = '{open_url}';
+                  const container = document.getElementById('{container_id}');
+                  container.innerHTML = '';
+                  try {{
+                    const res = await fetch(url, {{ method: 'GET', headers: {{ 'Accept': 'application/pdf' }} }});
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const buf = await res.arrayBuffer();
+                    const loadingTask = pdfjsLib.getDocument({{ data: buf }});
+                    const pdf = await loadingTask.promise;
+                    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {{
+                      const page = await pdf.getPage(pageNum);
+                      const viewport = page.getViewport({{ scale: 1.2 }});
+                      const canvas = document.createElement('canvas');
+                      const context = canvas.getContext('2d');
+                      canvas.style.display = 'block';
+                      canvas.style.width = '100%';
+                      const scale = container.clientWidth / viewport.width;
+                      const scaledViewport = page.getViewport({{ scale }});
+                      canvas.width = Math.floor(scaledViewport.width);
+                      canvas.height = Math.floor(scaledViewport.height);
+                      container.appendChild(canvas);
+                      await page.render({{ canvasContext: context, viewport: scaledViewport }}).promise;
+                    }}
+                  }} catch (e) {{
+                    const div = document.createElement('div');
+                    div.textContent = 'Failed to render PDF.';
+                    div.style.opacity = '0.8';
+                    container.appendChild(div);
+                  }}
+                }})();
+                </script>
+                """
+                components.html(html, height=iframe_h + 54)
             ai_effective_pdf_url = ai_url
         else:
             st.info("Not available")
@@ -1217,18 +1283,51 @@ def main() -> None:
             open_url = f"{backend}/s3/stream?key={_q(dr_key, safe='')}" if dr_key else (f"{backend}/proxy/pdf?url={_q(dr_url, safe='')}" if dr_url else None)
             dl_url = f"{open_url}&download=1" if isinstance(open_url, str) and open_url.startswith(backend) else dr_url
             if open_url:
-                st.markdown(
-                    f"""
-                    <div style=\"border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; height: {iframe_h}px;\"> 
-                      <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
-                    </div>
-                    <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
-                      <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
-                      <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                container_id = f"dr_canvas_{case_id}"
+                html = f"""
+                <div id=\"{container_id}\" style=\"height:{iframe_h}px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:6px;background:white;\"></div>
+                <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
+                  <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
+                  <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
+                </div>
+                <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
+                <script>
+                const pdfjsLib = window['pdfjs-dist/build/pdf'];
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                (async () => {{
+                  const url = '{open_url}';
+                  const container = document.getElementById('{container_id}');
+                  container.innerHTML = '';
+                  try {{
+                    const res = await fetch(url, {{ method: 'GET', headers: {{ 'Accept': 'application/pdf' }} }});
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const buf = await res.arrayBuffer();
+                    const loadingTask = pdfjsLib.getDocument({{ data: buf }});
+                    const pdf = await loadingTask.promise;
+                    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {{
+                      const page = await pdf.getPage(pageNum);
+                      const viewport = page.getViewport({{ scale: 1.2 }});
+                      const canvas = document.createElement('canvas');
+                      const context = canvas.getContext('2d');
+                      canvas.style.display = 'block';
+                      canvas.style.width = '100%';
+                      const scale = container.clientWidth / viewport.width;
+                      const scaledViewport = page.getViewport({{ scale }});
+                      canvas.width = Math.floor(scaledViewport.width);
+                      canvas.height = Math.floor(scaledViewport.height);
+                      container.appendChild(canvas);
+                      await page.render({{ canvasContext: context, viewport: scaledViewport }}).promise;
+                    }}
+                  }} catch (e) {{
+                    const div = document.createElement('div');
+                    div.textContent = 'Failed to render PDF.';
+                    div.style.opacity = '0.8';
+                    container.appendChild(div);
+                  }}
+                }})();
+                </script>
+                """
+                components.html(html, height=iframe_h + 54)
             doc_effective_pdf_url = dr_url
         else:
             st.info("Not available")
