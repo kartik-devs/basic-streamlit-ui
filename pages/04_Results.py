@@ -252,6 +252,27 @@ def main() -> None:
         except Exception:
             assets = {}
 
+    # Optionally show only canonical workflow reports which can have metrics JSON
+    st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
+    only_canonical = st.checkbox(
+        "Show only canonical workflow reports (with metrics)",
+        value=False,
+        key=f"hist_only_canon_{case_id}",
+    )
+    if outputs and only_canonical:
+        try:
+            import re as _re
+            def _base_name(it: dict) -> str:
+                return (it.get("label") or (it.get("ai_key") or "").split("/")[-1] or "").strip()
+            canon_re = _re.compile(rf"^(\d{{12}})-{case_id}-CompleteAIGeneratedReport\.(pdf|docx)$", _re.IGNORECASE)
+            filtered = [o for o in outputs if canon_re.match(_base_name(o) or "")]
+            if filtered:
+                outputs = filtered
+            else:
+                st.info("No canonical reports found. Showing all outputs.")
+        except Exception:
+            pass
+
     # Display case ID prominently
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
     st.markdown(f"<h1 style='text-align: center; color: #1f77b4; margin-bottom: 1rem; font-size: 2.5rem; font-weight: bold;'>CASE ID: {case_id}</h1>", unsafe_allow_html=True)
@@ -361,6 +382,19 @@ def main() -> None:
         except Exception:
             pass
         return None
+
+    # Comments API helper (from History page)
+    @st.cache_data(show_spinner=False, ttl=60)
+    def _get_case_comments(backend: str, case_id: str, ai_label: str = None) -> list[dict]:
+        try:
+            import requests as _rq
+            params = {"ai_label": ai_label} if ai_label else None
+            r = _rq.get(f"{backend}/comments/{case_id}", params=params, timeout=8)
+            if r.ok:
+                return r.json() or []
+        except Exception:
+            pass
+        return []
 
     # Probe metrics by scanning output file names for 12-digit timestamps and warming the cache
     def _probe_metrics_from_outputs(backend: str, case_id: str, outputs: list[dict]) -> None:
