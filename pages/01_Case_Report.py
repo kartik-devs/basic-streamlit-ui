@@ -271,7 +271,7 @@ def main() -> None:
         # Auto-refresh every 2 seconds for real-time updates
         if st.session_state.get("generation_in_progress", False):
             time.sleep(2)
-                st.rerun()
+            st.rerun()
         
         # Old generation info removed - using progress bar above
         
@@ -287,16 +287,16 @@ def main() -> None:
 
     # Show input form only when not generating and not completed
     if not st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
-    # Create centered form with same width as info box below
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
+        # Create centered form with same width as info box below
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
         st.caption("Case ID (4 digits)")
             # Separate session key from local variable to avoid accidental reuse
             case_id_input = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
             case_id = (case_id_input or "").strip()
         
-        # Real-time validation feedback
-        if case_id:
+            # Real-time validation feedback
+            if case_id:
             if not case_id.isdigit():
                 st.error("⚠️ Case ID must contain only digits (0-9)")
                     st.session_state["case_id_exists"] = False
