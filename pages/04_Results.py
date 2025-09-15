@@ -475,6 +475,9 @@ def main() -> None:
     
     # Initialize backend pinger to keep backend alive
     backend = _get_backend_base()
+    # Honor navigation intent set from Case Report fallback
+    if st.session_state.pop("_goto_results_intent", False):
+        pass
     if not st.session_state.get("pinger_started", False):
         try:
             _start_backend_pinger(backend)
