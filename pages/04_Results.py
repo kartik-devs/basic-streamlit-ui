@@ -8,15 +8,7 @@ import requests
 import threading
 import time
 import random
-try:
-from app.ui import inject_base_styles, theme_provider, top_nav
-except Exception:
-    def inject_base_styles() -> None:
-        return None
-    def theme_provider() -> None:
-        return None
-    def top_nav(active: str = "Results") -> None:
-        return None
+
 
 def _get_backend_base() -> str:
     params = st.query_params if hasattr(st, "query_params") else {}
