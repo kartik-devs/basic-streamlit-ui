@@ -506,6 +506,7 @@ def main() -> None:
     theme_provider()
     inject_base_styles()
     top_nav(active="Results")
+    st.caption("Results build: r9")
     
     # Initialize backend pinger to keep backend alive
     backend = _get_backend_base()
