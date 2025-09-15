@@ -811,12 +811,12 @@ def main() -> None:
     _probe_metrics_from_outputs(backend, case_id, outputs)
 
     # Build rows
-        def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
-            ocr_start = o.get("ocr_start_time", "—")
-            ocr_end = o.get("ocr_end_time", "—")
-            total_tokens = o.get("total_tokens_used", "—")
-            input_tokens = o.get("total_input_tokens", "—")
-            output_tokens = o.get("total_output_tokens", "—")
+    def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
+        ocr_start = o.get("ocr_start_time", "—")
+        ocr_end = o.get("ocr_end_time", "—")
+        total_tokens = o.get("total_tokens_used", "—")
+        input_tokens = o.get("total_input_tokens", "—")
+        output_tokens = o.get("total_output_tokens", "—")
 
         def _fmt_num(v):
             try:
