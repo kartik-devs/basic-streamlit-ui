@@ -1128,22 +1128,10 @@ def main() -> None:
     # Render the complete table
     st.markdown("".join(table_html), unsafe_allow_html=True)
 
-    # Viewers (GT | AI | Doctor)
-    iframe_h = 480
+    # Viewers (GT | AI | Doctor) - plain inline PDFs in one row
+    iframe_h = 600
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown(
-            """
-            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
-              <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.35);color:#93c5fd;font-size:.8rem;font-weight:700;letter-spacing:.02em;">GROUND TRUTH</span>
-              <span style='font-weight:700;'>Ground Truth</span>
-            </div>
-            <div style='opacity:.75;margin:.25rem 0 .5rem;'>Original document preview</div>
-            <div style='opacity:.65;margin-top:-6px;'>• Converted to PDF from DOCX</div>
-            <div style='opacity:.65;margin-top:-2px;margin-bottom:.35rem;'>• Falls back to DOCX download if needed</div>
-            """,
-            unsafe_allow_html=True,
-        )
         if gt_effective_pdf_url:
             # Inline embed + links
             from urllib.parse import quote as _q
@@ -1151,10 +1139,10 @@ def main() -> None:
             dl_url = f"{open_url}&download=1" if isinstance(open_url, str) and open_url.startswith(backend) else gt_effective_pdf_url
             st.markdown(
                 f"""
-                <div style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;\"> 
+                <div style=\"border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; height: {iframe_h}px;\"> 
                   <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
                 </div>
-                <div style=\"margin-top:.4rem;display:flex;gap:.75rem;\"> 
+                <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
                   <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
                   <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
                 </div>
@@ -1167,15 +1155,6 @@ def main() -> None:
             st.info("Not available")
 
     with col2:
-        st.markdown(
-            """
-            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
-              <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(139,92,246,0.15);border:1px solid rgba(139,92,246,0.35);color:#c4b5fd;font-size:.8rem;font-weight:700;letter-spacing:.02em;">AI</span>
-              <span style='font-weight:700;'>AI Generated</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
         # Prefer PDF AI outputs (strictly PDFs only in dropdown)
         from urllib.parse import urlparse
         def _is_pdf(u: str | None) -> bool:
@@ -1213,10 +1192,10 @@ def main() -> None:
             if open_url:
                 st.markdown(
                     f"""
-                    <div style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;\"> 
+                    <div style=\"border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; height: {iframe_h}px;\"> 
                       <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
                     </div>
-                    <div style=\"margin-top:.4rem;display:flex;gap:.75rem;\"> 
+                    <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
                       <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
                       <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
                     </div>
@@ -1228,18 +1207,6 @@ def main() -> None:
             st.info("Not available")
 
     with col3:
-        st.markdown(
-            """
-            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
-              <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);color:#86efac;font-size:.8rem;font-weight:700;letter-spacing:.02em;">DR</span>
-              <span style='font-weight:700;'>Doctor as LLM</span>
-            </div>
-            <div style='opacity:.75;margin:.25rem 0 .5rem;'>Paired doctor-as-LLM report</div>
-            <div style='opacity:.65;margin-top:-6px;margin-bottom:.35rem;'>• This report can be changed by</div>
-            <div style='opacity:.65;margin-top:-6px;margin-bottom:.35rem;'>  changing the AI genreated report</div>
-            """,
-            unsafe_allow_html=True,
-        )
         doc_effective_pdf_url = None
         if sel_ai and (sel_ai.get("doctor_url") or sel_ai.get("doctor_key")):
             from urllib.parse import quote as _q
@@ -1250,10 +1217,10 @@ def main() -> None:
             if open_url:
                 st.markdown(
                     f"""
-                    <div style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;\"> 
+                    <div style=\"border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; height: {iframe_h}px;\"> 
                       <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
                     </div>
-                    <div style=\"margin-top:.4rem;display:flex;gap:.75rem;\"> 
+                    <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
                       <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
                       <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
                     </div>
