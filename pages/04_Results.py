@@ -1,6 +1,14 @@
 import streamlit as st
 from datetime import datetime
-from app.ui import inject_base_styles, theme_provider, top_nav
+try:
+    from app.ui import inject_base_styles, theme_provider, top_nav
+except Exception:
+    def inject_base_styles() -> None:
+        return None
+    def theme_provider() -> None:
+        return None
+    def top_nav(active: str = "Results") -> None:
+        return None
 import os
 import streamlit.components.v1 as components
 from urllib.parse import quote
