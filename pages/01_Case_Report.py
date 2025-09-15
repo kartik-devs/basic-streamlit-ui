@@ -290,15 +290,15 @@ def main() -> None:
         # Create centered form with same width as info box below
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-        st.caption("Case ID (4 digits)")
+            st.caption("Case ID (4 digits)")
             # Separate session key from local variable to avoid accidental reuse
             case_id_input = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
             case_id = (case_id_input or "").strip()
         
             # Real-time validation feedback
             if case_id:
-            if not case_id.isdigit():
-                st.error("⚠️ Case ID must contain only digits (0-9)")
+                if not case_id.isdigit():
+                    st.error("⚠️ Case ID must contain only digits (0-9)")
                     st.session_state["case_id_exists"] = False
             elif len(case_id) != 4:
                 st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
@@ -323,7 +323,7 @@ def main() -> None:
                             st.info("💡 Try one of these available case IDs:")
                             st.code(" ".join(available_cases[:10]))  # Show first 10
                             st.info(f"Found {len(available_cases)} available case IDs")
-            else:
+                        else:
                             st.info("No cases found in database")
                         
                         # Add a button to refresh available cases
@@ -353,7 +353,7 @@ def main() -> None:
                             st.info(f"... and {len(available_cases) - 20} more case IDs")
                     else:
                         st.info("No case IDs found in database")
-        else:
+                else:
                     st.error(f"Backend error: {response.status_code}")
             except Exception as e:
                 st.error(f"Could not fetch available cases: {str(e)}")
