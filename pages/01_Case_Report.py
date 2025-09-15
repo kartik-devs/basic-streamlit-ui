@@ -287,21 +287,21 @@ def main() -> None:
 
     # Show input form only when not generating and not completed
     if not st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
-    # Create centered form with same width as info box below
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.caption("Case ID (4 digits)")
+        # Create centered form with same width as info box below
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.caption("Case ID (4 digits)")
             # Separate session key from local variable to avoid accidental reuse
             case_id_input = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
             case_id = (case_id_input or "").strip()
-        
-        # Real-time validation feedback
-        if case_id:
-            if not case_id.isdigit():
-                st.error("⚠️ Case ID must contain only digits (0-9)")
+
+            # Real-time validation feedback
+            if case_id:
+                if not case_id.isdigit():
+                    st.error("⚠️ Case ID must contain only digits (0-9)")
                     st.session_state["case_id_exists"] = False
-            elif len(case_id) != 4:
-                st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
+                elif len(case_id) != 4:
+                    st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
                     st.session_state["case_id_exists"] = False
                 else:
                     # Check if case ID exists in S3 database
@@ -315,112 +315,110 @@ def main() -> None:
                         st.error(f"❌ Case ID {case_id} not found in database")
                         # Store validation result for button logic
                         st.session_state["case_id_exists"] = False
-                        
                         # Show available case IDs from validation result
                         available_cases = validation_result.get("available_cases", [])
                         if available_cases:
                             st.info("💡 Try one of these available case IDs:")
                             st.code(" ".join(available_cases[:10]))  # Show first 10
                             st.info(f"Found {len(available_cases)} available case IDs")
-            else:
+                        else:
                             st.info("No cases found in database")
-                        
                         # Add a button to refresh available cases
                         if st.button("🔄 Refresh Available Cases", key="refresh_cases"):
                             st.rerun()
-        
-        # Username display removed - no authentication required
-        
-        # Show available case IDs section
-        with st.expander("📋 Available Case IDs", expanded=False):
-            try:
-                backend = _get_backend_base()
-                response = requests.get(f"{backend}/s3/cases", timeout=5)
-                if response.ok:
-                    data = response.json()
-                    available_cases = data.get("cases", [])
-                    if available_cases:
-                        st.info(f"Found {len(available_cases)} case IDs in database:")
-                        # Display in a nice grid with copy functionality
-                        cols = st.columns(5)
-                        for i, case_opt in enumerate(available_cases[:20]):  # Show first 20
-                            with cols[i % 5]:
-                                if st.button(case_opt, key=f"select_case_{case_opt}"):
-                                    # Show the case ID for manual copying
-                                    st.success(f"Selected: {case_opt} - Please copy and paste this into the Case ID field above")
-                        if len(available_cases) > 20:
-                            st.info(f"... and {len(available_cases) - 20} more case IDs")
-                    else:
-                        st.info("No case IDs found in database")
-        else:
-                    st.error(f"Backend error: {response.status_code}")
-            except Exception as e:
-                st.error(f"Could not fetch available cases: {str(e)}")
-        
-        # Check if case ID is valid and exists before enabling button
-        case_id_valid = case_id and case_id.isdigit() and len(case_id) == 4
-        case_id_exists = st.session_state.get("case_id_exists", False)
-        
-        generate = st.button(
-            "Generate Report", 
-            type="primary", 
-            use_container_width=True,
-            disabled=not (case_id_valid and case_id_exists)
-        )
-        
-        if generate:
-            cid = case_id.strip()
-            if not cid or not cid.isdigit() or len(cid) != 4:
-                st.error("Case ID must be exactly 4 digits (0-9).")
-            elif not case_id_exists:
-                st.error("Case ID does not exist in database. Please enter a valid case ID.")
-            else:
-                st.success(f"Starting report generation for Case ID: {cid}")
-                st.session_state["last_case_id"] = cid
-                st.session_state["generation_start"] = datetime.now()
-                st.session_state["generation_in_progress"] = True
-                st.session_state["generation_progress"] = 1  # Start at 1% immediately
-                st.session_state["generation_step"] = 0
-                st.session_state["generation_complete"] = False
-                
-                # Store case ID for S3 fetching in results page
-                st.session_state["current_case_id"] = cid
-                
-                # Trigger n8n workflow (long-running, 2-hour process) with dynamic case_id
+
+            # Username display removed - no authentication required
+
+            # Show available case IDs section
+            with st.expander("📋 Available Case IDs", expanded=False):
                 try:
-                    n8n_response = requests.post(
-                        f"{BACKEND_BASE}/n8n/start",
-                        params={"case_id": cid, "username": "demo"},
-                        timeout=30  # Give it 30 seconds to start the workflow
-                    )
-                    if n8n_response.ok:
-                        st.success("🚀 n8n workflow trigger accepted. Processing will continue in the background (~2 hours).")
+                    backend = _get_backend_base()
+                    response = requests.get(f"{backend}/s3/cases", timeout=5)
+                    if response.ok:
+                        data = response.json()
+                        available_cases = data.get("cases", [])
+                        if available_cases:
+                            st.info(f"Found {len(available_cases)} case IDs in database:")
+                            # Display in a nice grid with copy functionality
+                            cols = st.columns(5)
+                            for i, case_opt in enumerate(available_cases[:20]):  # Show first 20
+                                with cols[i % 5]:
+                                    if st.button(case_opt, key=f"select_case_{case_opt}"):
+                                        # Show the case ID for manual copying
+                                        st.success(f"Selected: {case_opt} - Please copy and paste this into the Case ID field above")
+                            if len(available_cases) > 20:
+                                st.info(f"... and {len(available_cases) - 20} more case IDs")
+                        else:
+                            st.info("No case IDs found in database")
                     else:
-                        # Even if execution id capture failed, proceed; backend will keep trying
-                        try:
-                            j = n8n_response.json()
-                            msg = j.get("error") or n8n_response.text
-                        except Exception:
-                            msg = n8n_response.text
-                        st.info(f"⚠️ Trigger acknowledged without execution id: {msg}")
-                except requests.exceptions.Timeout:
-                    st.success("🚀 n8n workflow triggered successfully! (Request timed out as expected - workflow is running in background)")
+                        st.error(f"Backend error: {response.status_code}")
                 except Exception as e:
-                    st.error(f"❌ Error triggering n8n workflow: {str(e)}")
-                
-                # Create backend cycle for legacy support
-                try:
-                    r = requests.post(
-                        f"{BACKEND_BASE}/cycles",
-                        json={"case_id": cid, "status": "processing"},
-                        timeout=8,
-                    )
-                    if r.ok:
-                        st.session_state["current_cycle_id"] = r.json().get("id")
-                except Exception:
-                    pass
-                
-                st.rerun()
+                    st.error(f"Could not fetch available cases: {str(e)}")
+
+            # Check if case ID is valid and exists before enabling button
+            case_id_valid = case_id and case_id.isdigit() and len(case_id) == 4
+            case_id_exists = st.session_state.get("case_id_exists", False)
+
+            generate = st.button(
+                "Generate Report",
+                type="primary",
+                use_container_width=True,
+                disabled=not (case_id_valid and case_id_exists),
+            )
+
+            if generate:
+                cid = case_id.strip()
+                if not cid or not cid.isdigit() or len(cid) != 4:
+                    st.error("Case ID must be exactly 4 digits (0-9).")
+                elif not case_id_exists:
+                    st.error("Case ID does not exist in database. Please enter a valid case ID.")
+                else:
+                    st.success(f"Starting report generation for Case ID: {cid}")
+                    st.session_state["last_case_id"] = cid
+                    st.session_state["generation_start"] = datetime.now()
+                    st.session_state["generation_in_progress"] = True
+                    st.session_state["generation_progress"] = 1  # Start at 1% immediately
+                    st.session_state["generation_step"] = 0
+                    st.session_state["generation_complete"] = False
+
+                    # Store case ID for S3 fetching in results page
+                    st.session_state["current_case_id"] = cid
+
+                    # Trigger n8n workflow (long-running, 2-hour process) with dynamic case_id
+                    try:
+                        n8n_response = requests.post(
+                            f"{BACKEND_BASE}/n8n/start",
+                            params={"case_id": cid, "username": "demo"},
+                            timeout=30,  # Give it 30 seconds to start the workflow
+                        )
+                        if n8n_response.ok:
+                            st.success("🚀 n8n workflow trigger accepted. Processing will continue in the background (~2 hours).")
+                        else:
+                            # Even if execution id capture failed, proceed; backend will keep trying
+                            try:
+                                j = n8n_response.json()
+                                msg = j.get("error") or n8n_response.text
+                            except Exception:
+                                msg = n8n_response.text
+                            st.info(f"⚠️ Trigger acknowledged without execution id: {msg}")
+                    except requests.exceptions.Timeout:
+                        st.success("🚀 n8n workflow triggered successfully! (Request timed out as expected - workflow is running in background)")
+                    except Exception as e:
+                        st.error(f"❌ Error triggering n8n workflow: {str(e)}")
+
+                    # Create backend cycle for legacy support
+                    try:
+                        r = requests.post(
+                            f"{BACKEND_BASE}/cycles",
+                            json={"case_id": cid, "status": "processing"},
+                            timeout=8,
+                        )
+                        if r.ok:
+                            st.session_state["current_cycle_id"] = r.json().get("id")
+                    except Exception:
+                        pass
+
+                    st.rerun()
 
     # Check if generation is in progress and show progress
     if st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
