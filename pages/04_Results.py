@@ -1030,138 +1030,130 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
     sum_end = min(sum_total, sum_start + sum_page_size)
     page_rows = rows[sum_start:sum_end]
 
-    # Table styling & render
-    st.markdown(
-        """
-        <style>
-        .table-container { overflow-x: auto; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; margin-top: 12px; }
-        .history-table { min-width: 3200px; display: grid; gap: 0; grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px; }
-        .history-table > div:nth-child(4) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
-        .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
-        .history-table > div:nth-child(15n) { border-right: none; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    # Table styling & render (defensive: don't let errors block rest of page)
+    try:
+        st.markdown(
+            """
+            <style>
+            .table-container { overflow-x: auto; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; margin-top: 12px; }
+            .history-table { min-width: 3200px; display: grid; gap: 0; grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px; }
+            .history-table > div:nth-child(4) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
+            .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
+            .history-table > div:nth-child(15n) { border-right: none; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    table_html = [
-        '<div class="table-container">',
-        '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
-        '</div>'
-    ]
+        table_html = [
+            '<div class="table-container">',
+            '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
+            '</div>'
+        ]
 
-    # Render rows with proper metrics data
-    for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
-        # Find source item in outputs to get label/ai_key for metrics lookup
-        src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('label') or '') == doc_ver or (it.get('ai_key') or '').endswith(doc_ver)), None)
-        
-        # Try to get metrics data
-        met = None
-        if src:
-            # Try direct version lookup first
-            versions = _infer_versions_from_label(case_id, src.get('label'), src.get('ai_key'))
-            for v in versions:
-                met = _get_metrics_for_version(backend, case_id, v)
-                if met:
-                    break
-        
-        # Format metrics data if available
-        if met:
-            def _fmt_time(t):
-                try:
-                    return str(t).split('T')[1].split('+')[0][:8]
-                except Exception:
-                    return t or '—'
-            ocr_start = _fmt_time(met.get('ocr_start_time') or '—')
-            ocr_end = _fmt_time(met.get('ocr_end_time') or '—')
-            def _fmt_num(n):
-                try:
-                    return f"{int(n):,}" if n is not None else '—'
-                except Exception:
-                    return str(n) if n is not None else '—'
-            total_tokens = _fmt_num(met.get('total_tokens_used'))
-            input_tokens = _fmt_num(met.get('total_input_tokens'))
-            output_tokens = _fmt_num(met.get('total_output_tokens'))
-            
-            # Section durations if provided by backend (extras dict)
-            from datetime import datetime as _dt
-            def _parse_iso(x):
-                try:
-                    return _dt.fromisoformat(str(x).replace('Z', '+00:00')) if x else None
-                except Exception:
-                    return None
-            def _fmt_dur(s, e):
-                if not s or not e:
-                    return '—'
-                try:
-                    secs = max(0.0, (e - s).total_seconds())
-                    m, s2 = divmod(int(round(secs)), 60)
-                    return f"{m:02d}:{s2:02d}"
-                except Exception:
-                    return '—'
-            extras = met.get('extras') or {}
-            _s2s = _parse_iso(extras.get('section2 start time'))
-            _s2e = _parse_iso(extras.get('section2 end time'))
-            _s3s = _parse_iso(extras.get('section3 start time'))
-            _s3e = _parse_iso(extras.get('section3 end time'))
-            _s4s = _parse_iso(extras.get('section4 start time'))
-            _s4e = _parse_iso(extras.get('section4 end time'))
-            _s9s = _parse_iso(extras.get('section9 start time'))
-            _s9e = _parse_iso(extras.get('section9 end time'))
-            sec2dur = _fmt_dur(_s2s, _s2e)
-            sec3dur = _fmt_dur(_s3s, _s3e)
-            sec4dur = _fmt_dur(_s4s, _s4e)
-            sec9dur = _fmt_dur(_s9s, _s9e)
-        else:
-            # Use fallback values from the row data
-            sec2dur = sec3dur = sec4dur = sec9dur = '—'
+        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
+            src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('label') or '') == doc_ver or (it.get('ai_key') or '').endswith(doc_ver)), None)
 
-        # Always build links and append a single row to the main table
-        gt_dl = dl_link(gt_url)
-        ai_dl = dl_link(ai_url)
-        doc_dl = dl_link(doc_url)
-        gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
-        ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
-        doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
+            met = None
+            if src:
+                versions = _infer_versions_from_label(case_id, src.get('label'), src.get('ai_key'))
+                for v in versions:
+                    met = _get_metrics_for_version(backend, case_id, v)
+                    if met:
+                        break
 
-        table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
+            if met:
+                def _fmt_time(t):
+                    try:
+                        return str(t).split('T')[1].split('+')[0][:8]
+                    except Exception:
+                        return t or '—'
+                ocr_start = _fmt_time(met.get('ocr_start_time') or '—')
+                ocr_end = _fmt_time(met.get('ocr_end_time') or '—')
+                def _fmt_num(n):
+                    try:
+                        return f"{int(n):,}" if n is not None else '—'
+                    except Exception:
+                        return str(n) if n is not None else '—'
+                total_tokens = _fmt_num(met.get('total_tokens_used'))
+                input_tokens = _fmt_num(met.get('total_input_tokens'))
+                output_tokens = _fmt_num(met.get('total_output_tokens'))
+
+                from datetime import datetime as _dt
+                def _parse_iso(x):
+                    try:
+                        return _dt.fromisoformat(str(x).replace('Z', '+00:00')) if x else None
+                    except Exception:
+                        return None
+                def _fmt_dur(s, e):
+                    if not s or not e:
+                        return '—'
+                    try:
+                        secs = max(0.0, (e - s).total_seconds())
+                        m, s2 = divmod(int(round(secs)), 60)
+                        return f"{m:02d}:{s2:02d}"
+                    except Exception:
+                        return '—'
+                extras = met.get('extras') or {}
+                _s2s = _parse_iso(extras.get('section2 start time'))
+                _s2e = _parse_iso(extras.get('section2 end time'))
+                _s3s = _parse_iso(extras.get('section3 start time'))
+                _s3e = _parse_iso(extras.get('section3 end time'))
+                _s4s = _parse_iso(extras.get('section4 start time'))
+                _s4e = _parse_iso(extras.get('section4 end time'))
+                _s9s = _parse_iso(extras.get('section9 start time'))
+                _s9e = _parse_iso(extras.get('section9 end time'))
+                sec2dur = _fmt_dur(_s2s, _s2e)
+                sec3dur = _fmt_dur(_s3s, _s3e)
+                sec4dur = _fmt_dur(_s4s, _s4e)
+                sec9dur = _fmt_dur(_s9s, _s9e)
+            else:
+                sec2dur = sec3dur = sec4dur = sec9dur = '—'
+
+            gt_dl = dl_link(gt_url)
+            ai_dl = dl_link(ai_url)
+            doc_dl = dl_link(doc_url)
+            gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
+            ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
+            doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
+
+            table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
+            table_html.append('</div>')
+
         table_html.append('</div>')
-
-    # Close the table container (always close after rows loop)
-    table_html.append('</div>')
-
-    # Render the complete table
-    st.markdown("".join(table_html), unsafe_allow_html=True)
+        st.markdown("".join(table_html), unsafe_allow_html=True)
+    except Exception as _tbl_err:
+        st.warning(f"Summary table unavailable: {_tbl_err}")
 
     # Viewers (GT | AI | Doctor) - plain inline PDFs in one row
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
