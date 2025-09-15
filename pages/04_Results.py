@@ -1148,23 +1148,21 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
     col1, col2, col3 = st.columns(3)
     with col1:
         if gt_effective_pdf_url:
-            # pdf.js canvas render (same approach as sync scroll)
+            # Always proxy and render via pdf.js; remove direct stream/object and download link
             from urllib.parse import quote as _q
-            base_url = f"{backend}/s3/stream?key={_q(gt_effective_pdf_key, safe='')}" if gt_effective_pdf_key else f"{backend}/proxy/pdf?url={_q(gt_effective_pdf_url, safe='')}"
-            dl_url = f"{base_url}&download=1" if base_url.startswith(backend) else gt_effective_pdf_url
+            proxy_url = f"{backend}/proxy/pdf?url={_q(gt_effective_pdf_url, safe='')}"
             container_id = f"gt_canvas_{case_id}"
             html = f"""
             <div id=\"{container_id}\" style=\"height:{iframe_h}px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:6px;background:white;\"></div>
             <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
-              <a href=\"{base_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
-              <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
+              <a href=\"{proxy_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
             </div>
             <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
             <script>
             const pdfjsLib = window['pdfjs-dist/build/pdf'];
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
             (async () => {{
-              const url = '{base_url}';
+              const url = '{proxy_url}';
               const container = document.getElementById('{container_id}');
               container.innerHTML = '';
               try {{
@@ -1193,12 +1191,10 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
                 div.style.opacity = '0.8';
                 container.appendChild(div);
               }}
-            }})();
+            })();
             </script>
             """
             components.html(html, height=iframe_h + 54)
-        elif gt_generic:
-                st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
         else:
             st.info("Not available")
 
@@ -1233,25 +1229,21 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
         ai_effective_pdf_url = None
         if sel_ai and (sel_ai.get("ai_url") or sel_ai.get("ai_key")):
             from urllib.parse import quote as _q
-            ai_key = sel_ai.get('ai_key')
             ai_url = sel_ai.get('ai_url')
-            # Prefer S3 stream; otherwise use backend proxy to avoid CORS
-            open_url = f"{backend}/s3/stream?key={_q(ai_key, safe='')}" if ai_key else (f"{backend}/proxy/pdf?url={_q(ai_url, safe='')}" if ai_url else None)
-            dl_url = f"{open_url}&download=1" if isinstance(open_url, str) and open_url.startswith(backend) else ai_url
-            if open_url:
+            proxy_url = f"{backend}/proxy/pdf?url={_q(ai_url, safe='')}" if ai_url else None
+            if proxy_url:
                 container_id = f"ai_canvas_{case_id}"
                 html = f"""
                 <div id=\"{container_id}\" style=\"height:{iframe_h}px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:6px;background:white;\"></div>
                 <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
-                  <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
-                  <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
+                  <a href=\"{proxy_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
                 </div>
                 <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
                 <script>
                 const pdfjsLib = window['pdfjs-dist/build/pdf'];
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
                 (async () => {{
-                  const url = '{open_url}';
+                  const url = '{proxy_url}';
                   const container = document.getElementById('{container_id}');
                   container.innerHTML = '';
                   try {{
@@ -1280,7 +1272,7 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
                     div.style.opacity = '0.8';
                     container.appendChild(div);
                   }}
-                }})();
+                })();
                 </script>
                 """
                 components.html(html, height=iframe_h + 54)
@@ -1292,25 +1284,21 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
         doc_effective_pdf_url = None
         if sel_ai and (sel_ai.get("doctor_url") or sel_ai.get("doctor_key")):
             from urllib.parse import quote as _q
-            dr_key = sel_ai.get('doctor_key')
             dr_url = sel_ai.get('doctor_url')
-            # Prefer S3 stream; otherwise use backend proxy
-            open_url = f"{backend}/s3/stream?key={_q(dr_key, safe='')}" if dr_key else (f"{backend}/proxy/pdf?url={_q(dr_url, safe='')}" if dr_url else None)
-            dl_url = f"{open_url}&download=1" if isinstance(open_url, str) and open_url.startswith(backend) else dr_url
-            if open_url:
+            proxy_url = f"{backend}/proxy/pdf?url={_q(dr_url, safe='')}" if dr_url else None
+            if proxy_url:
                 container_id = f"dr_canvas_{case_id}"
                 html = f"""
                 <div id=\"{container_id}\" style=\"height:{iframe_h}px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;padding:6px;background:white;\"></div>
                 <div style=\"margin-top:.4rem;display:flex;gap:.75rem;justify-content:center;\"> 
-                  <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
-                  <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
+                  <a href=\"{proxy_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
                 </div>
                 <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
                 <script>
                 const pdfjsLib = window['pdfjs-dist/build/pdf'];
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
                 (async () => {{
-                  const url = '{open_url}';
+                  const url = '{proxy_url}';
                   const container = document.getElementById('{container_id}');
                   container.innerHTML = '';
                   try {{
@@ -1339,7 +1327,7 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
                     div.style.opacity = '0.8';
                     container.appendChild(div);
                   }}
-                }})();
+                })();
                 </script>
                 """
                 components.html(html, height=iframe_h + 54)
