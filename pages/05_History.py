@@ -875,33 +875,12 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_pdf:
-            # Multi-layer PDF viewer with fallbacks for Chrome/Edge compatibility
-            st.markdown(f"""
-            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{backend}/s3/stream?key={quote((assets.get('ground_truth_key') or ''), safe='')}#toolbar=1&navpanes=1&scrollbar=1" 
-                        type="application/pdf" 
-                        width="100%" 
-                        height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(backend + '/s3/stream?key=' + (assets.get('ground_truth_key') or ''), safe='')}&embedded=true" 
-                            width="100%" 
-                            height="100%" 
-                            style="border:none;"
-                            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
-                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
-                            <p>PDF preview unavailable in your browser</p>
-                            <a href="{backend}/s3/stream?key={quote((assets.get('ground_truth_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
-                                📥 Open PDF in New Tab
-                            </a>
-                        </div>
-                    </iframe>
-                </object>
-            </div>
-            <div style="margin-top: 0.5rem; text-align: center;">
-                <a href="{backend}/s3/stream?key={quote((assets.get('ground_truth_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
-                    📥 Download PDF
-                </a>
-            </div>
-            """, unsafe_allow_html=True)
+            from urllib.parse import quote as _q
+            gt_key = assets.get('ground_truth_key')
+            open_url = f"{backend}/s3/stream?key={_q(gt_key, safe='')}" if gt_key else gt_pdf
+            dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else gt_pdf
+            st.markdown(f"<a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>", unsafe_allow_html=True)
+            st.markdown(f"<a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>", unsafe_allow_html=True)
             gt_effective_pdf_url = gt_pdf
         elif gt_generic:
             raw_key = assets.get("ground_truth_key") if isinstance(assets, dict) else None
@@ -913,32 +892,12 @@ def main() -> None:
                     url2 = d2.get("url")
                     fmt = d2.get("format")
                     if fmt == "pdf" and url2:
-                        st.markdown(f"""
-                        <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                            <object data="{backend}/s3/stream?key={quote((d2.get('key') or ''), safe='')}#toolbar=1&navpanes=1&scrollbar=1" 
-                                    type="application/pdf" 
-                                    width="100%" 
-                                    height="100%">
-                                <iframe src="https://docs.google.com/viewer?url={quote(backend + '/s3/stream?key=' + (d2.get('key') or ''), safe='')}&embedded=true" 
-                                        width="100%" 
-                                        height="100%" 
-                                        style="border:none;"
-                                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
-                                    <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
-                                        <p>PDF preview unavailable in your browser</p>
-                                        <a href="{backend}/s3/stream?key={quote((d2.get('key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
-                                            📥 Open PDF in New Tab
-                                        </a>
-                                    </div>
-                                </iframe>
-                            </object>
-                        </div>
-                        <div style="margin-top: 0.5rem; text-align: center;">
-                            <a href="{backend}/s3/stream?key={quote((d2.get('key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
-                                📥 Download PDF
-                            </a>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        from urllib.parse import quote as _q
+                        k = d2.get('key')
+                        open_url = f"{backend}/s3/stream?key={_q(k, safe='')}" if k else url2
+                        dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else url2
+                        st.markdown(f"<a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>", unsafe_allow_html=True)
+                        st.markdown(f"<a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>", unsafe_allow_html=True)
                         gt_effective_pdf_url = url2
                     else:
                         st.markdown(f"<a href=\"{url2 or gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
@@ -1010,33 +969,14 @@ def main() -> None:
             sel_ai = next((o for o in _pdf_outputs if (o.get("label") or (o.get("ai_key") or "").split("/")[-1]) == selected_label), None)
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
-            st.markdown(f"""
-            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{backend}/s3/stream?key={quote((sel_ai.get('ai_key') or ''), safe='')}#toolbar=1&navpanes=1&scrollbar=1" 
-                        type="application/pdf" 
-                        width="100%" 
-                        height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(backend + '/s3/stream?key=' + (sel_ai.get('ai_key') or ''), safe='')}&embedded=true" 
-                            width="100%" 
-                            height="100%" 
-                            style="border:none;"
-                            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
-                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
-                            <p>PDF preview unavailable in your browser</p>
-                            <a href="{backend}/s3/stream?key={quote((sel_ai.get('ai_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
-                                📥 Open PDF in New Tab
-                            </a>
-                        </div>
-                    </iframe>
-                </object>
-            </div>
-            <div style="margin-top: 0.5rem; text-align: center;">
-                <a href="{backend}/s3/stream?key={quote((sel_ai.get('ai_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
-                    📥 Download PDF
-                </a>
-            </div>
-            """, unsafe_allow_html=True)
-            ai_effective_pdf_url = sel_ai["ai_url"]
+            from urllib.parse import quote as _q
+            ak = sel_ai.get('ai_key')
+            aurl = sel_ai.get('ai_url')
+            open_url = f"{backend}/s3/stream?key={_q(ak, safe='')}" if ak else aurl
+            dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else aurl
+            st.markdown(f"<a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>", unsafe_allow_html=True)
+            st.markdown(f"<a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>", unsafe_allow_html=True)
+            ai_effective_pdf_url = aurl
         else:
             st.info("Not available")
 
@@ -1056,33 +996,14 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            st.markdown(f"""
-            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{backend}/s3/stream?key={quote((sel_ai.get('doctor_key') or ''), safe='')}#toolbar=1&navpanes=1&scrollbar=1" 
-                        type="application/pdf" 
-                        width="100%" 
-                        height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(backend + '/s3/stream?key=' + (sel_ai.get('doctor_key') or ''), safe='')}&embedded=true" 
-                            width="100%" 
-                            height="100%" 
-                            style="border:none;"
-                            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
-                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
-                            <p>PDF preview unavailable in your browser</p>
-                            <a href="{backend}/s3/stream?key={quote((sel_ai.get('doctor_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
-                                📥 Open PDF in New Tab
-                            </a>
-                        </div>
-                    </iframe>
-                </object>
-            </div>
-            <div style="margin-top: 0.5rem; text-align: center;">
-                <a href="{backend}/s3/stream?key={quote((sel_ai.get('doctor_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
-                    📥 Download PDF
-                </a>
-            </div>
-            """, unsafe_allow_html=True)
-            doc_effective_pdf_url = sel_ai["doctor_url"]
+            from urllib.parse import quote as _q
+            dk = sel_ai.get('doctor_key')
+            durl = sel_ai.get('doctor_url')
+            open_url = f"{backend}/s3/stream?key={_q(dk, safe='')}" if dk else durl
+            dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else durl
+            st.markdown(f"<a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>", unsafe_allow_html=True)
+            st.markdown(f"<a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>", unsafe_allow_html=True)
+            doc_effective_pdf_url = durl
         else:
             st.info("Not available")
 
