@@ -606,24 +606,24 @@ def main() -> None:
     """
     components.html(loading_spinner_html, height=140)
 
+    try:
+        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
+        outputs = (r.json() or {}).get("items", []) if r.ok else []
+        # Exclude legacy Edited subfolder entries from display
         try:
-            r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
-            outputs = (r.json() or {}).get("items", []) if r.ok else []
-            # Exclude legacy Edited subfolder entries from display
-            try:
-                outputs = [o for o in outputs if not (
-                    (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
-                    (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
-                )]
-            except Exception:
-                    pass
+            outputs = [o for o in outputs if not (
+                (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
+                (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
+            )]
         except Exception:
-            outputs = []
-        try:
-            r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
-            assets = r_assets.json() if r_assets.ok else {}
-        except Exception:
-            assets = {}
+            pass
+    except Exception:
+        outputs = []
+    try:
+        r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
+        assets = r_assets.json() if r_assets.ok else {}
+    except Exception:
+        assets = {}
 
     # Display case ID prominently and allow correction if mismatched
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
@@ -834,20 +834,20 @@ def main() -> None:
 
     rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
     if outputs:
-            for o in outputs:
-                doc_version = extract_version(o.get("label"))
-                report_timestamp = o.get("timestamp") or generated_ts
-                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
-                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
+        for o in outputs:
+            doc_version = extract_version(o.get("label"))
+            report_timestamp = o.get("timestamp") or generated_ts
+            ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+            rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
     else:
         rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
     # Optional pagination for summary table
-        sum_page_size = 10
-        sum_total = len(rows)
-        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
-        sum_pg_key = f"results_summary_page_{case_id}"
-        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+    sum_page_size = 10
+    sum_total = len(rows)
+    sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+    sum_pg_key = f"results_summary_page_{case_id}"
+    sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
     
     pc1, pc2, pc3 = st.columns([1, 2, 1])
     with pc1:
@@ -859,8 +859,8 @@ def main() -> None:
     if prev_clicked:
         sum_cur_page = max(1, sum_cur_page - 1)
     if next_clicked:
-                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
-        st.session_state[sum_pg_key] = sum_cur_page
+        sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+    st.session_state[sum_pg_key] = sum_cur_page
     with pc2:
         st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
 
@@ -883,8 +883,8 @@ def main() -> None:
     )
 
     table_html = [
-            '<div class="table-container">',
-            '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+        '<div class="table-container">',
+        '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
             '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
