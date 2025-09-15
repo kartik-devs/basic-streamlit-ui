@@ -1,5 +1,13 @@
 import streamlit as st
 from datetime import datetime, timezone
+
+import os
+import streamlit.components.v1 as components
+from urllib.parse import quote
+import requests
+import threading
+import time
+import random
 try:
 from app.ui import inject_base_styles, theme_provider, top_nav
 except Exception:
@@ -9,14 +17,6 @@ except Exception:
         return None
     def top_nav(active: str = "Results") -> None:
         return None
-import os
-import streamlit.components.v1 as components
-from urllib.parse import quote
-import requests
-import threading
-import time
-import random
-
 
 def _get_backend_base() -> str:
     params = st.query_params if hasattr(st, "query_params") else {}
@@ -676,17 +676,17 @@ def main() -> None:
 
     try:
         r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=10)
-            outputs = (r.json() or {}).get("items", []) if r.ok else []
-            # Exclude legacy Edited subfolder entries from display
-            try:
-                outputs = [o for o in outputs if not (
-                    (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
-                    (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
-                )]
-            except Exception:
-                    pass
+        outputs = (r.json() or {}).get("items", []) if r.ok else []
+        # Exclude legacy Edited subfolder entries from display
+        try:
+            outputs = [o for o in outputs if not (
+                (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
+                (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
+            )]
         except Exception:
-            outputs = []
+            pass
+    except Exception:
+        outputs = []
 
     # --- QUICK UNBLOCK: bypass loading screen if outputs already exist ---
     if outputs:
@@ -1043,12 +1043,12 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
         rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
     # Optional pagination for summary table
-        sum_page_size = 10
-        sum_total = len(rows)
-        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
-        sum_pg_key = f"results_summary_page_{case_id}"
-        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
-    
+    sum_page_size = 10
+    sum_total = len(rows)
+    sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+    sum_pg_key = f"results_summary_page_{case_id}"
+    sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+
     pc1, pc2, pc3 = st.columns([1, 2, 1])
     with pc1:
         prev_clicked = st.button("← Prev", key=f"res_sum_prev_{case_id}", disabled=(sum_cur_page <= 1))
@@ -1059,31 +1059,31 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
     if prev_clicked:
         sum_cur_page = max(1, sum_cur_page - 1)
     if next_clicked:
-                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
-        st.session_state[sum_pg_key] = sum_cur_page
+        sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+    st.session_state[sum_pg_key] = sum_cur_page
     with pc2:
         st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
 
-        sum_start = (sum_cur_page - 1) * sum_page_size
-        sum_end = min(sum_total, sum_start + sum_page_size)
-        page_rows = rows[sum_start:sum_end]
+    sum_start = (sum_cur_page - 1) * sum_page_size
+    sum_end = min(sum_total, sum_start + sum_page_size)
+    page_rows = rows[sum_start:sum_end]
 
     # Table styling & render (defensive: don't let errors block rest of page)
     try:
-    st.markdown(
-        """
-        <style>
-        .table-container { overflow-x: auto; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; margin-top: 12px; }
-        .history-table { min-width: 3200px; display: grid; gap: 0; grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px; }
-        .history-table > div:nth-child(4) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
-        .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
-        .history-table > div:nth-child(15n) { border-right: none; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            """
+            <style>
+            .table-container { overflow-x: auto; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; margin-top: 12px; }
+            .history-table { min-width: 3200px; display: grid; gap: 0; grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px; }
+            .history-table > div:nth-child(4) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
+            .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
+            .history-table > div:nth-child(15n) { border-right: none; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    table_html = [
+        table_html = [
             '<div class="table-container">',
             '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
             '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
@@ -1097,14 +1097,14 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
             '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
             '</div>'
         ]
 
-    for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
+        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
             src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('label') or '') == doc_ver or (it.get('ai_key') or '').endswith(doc_ver)), None)
 
             met = None
@@ -1188,8 +1188,8 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
             table_html.append('</div>')
 
-            table_html.append('</div>')
-            st.markdown("".join(table_html), unsafe_allow_html=True)
+        table_html.append('</div>')
+        st.markdown("".join(table_html), unsafe_allow_html=True)
     except Exception as _tbl_err:
         st.warning(f"Summary table unavailable: {_tbl_err}")
 
