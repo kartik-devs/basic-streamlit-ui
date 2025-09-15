@@ -300,14 +300,13 @@ def main() -> None:
                 if not case_id.isdigit():
                     st.error("⚠️ Case ID must contain only digits (0-9)")
                     st.session_state["case_id_exists"] = False
-            elif len(case_id) != 4:
-                st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
+                elif len(case_id) != 4:
+                    st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
                     st.session_state["case_id_exists"] = False
                 else:
                     # Check if case ID exists in S3 database
                     with st.spinner("🔍 Checking if case exists in database..."):
                         validation_result = _validate_case_id_exists(case_id)
-                        
                     if validation_result.get("exists"):
                         st.success(f"✅ Case ID {case_id} found in database")
                         # Store validation result for button logic
