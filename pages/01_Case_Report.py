@@ -291,7 +291,9 @@ def main() -> None:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.caption("Case ID (4 digits)")
-            case_id = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
+            # Separate session key from local variable to avoid accidental reuse
+            case_id_input = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
+            case_id = (case_id_input or "").strip()
             
             # Real-time validation feedback
             if case_id:
@@ -306,7 +308,7 @@ def main() -> None:
                     with st.spinner("🔍 Checking if case exists in database..."):
                         validation_result = _validate_case_id_exists(case_id)
                         
-                    if validation_result["exists"]:
+                    if validation_result.get("exists"):
                         st.success(f"✅ Case ID {case_id} found in database")
                         # Store validation result for button logic
                         st.session_state["case_id_exists"] = True
@@ -342,11 +344,11 @@ def main() -> None:
                         st.info(f"Found {len(available_cases)} case IDs in database:")
                         # Display in a nice grid with copy functionality
                         cols = st.columns(5)
-                        for i, case_id in enumerate(available_cases[:20]):  # Show first 20
+                        for i, case_opt in enumerate(available_cases[:20]):  # Show first 20
                             with cols[i % 5]:
-                                if st.button(case_id, key=f"select_case_{case_id}"):
+                                if st.button(case_opt, key=f"select_case_{case_opt}"):
                                     # Show the case ID for manual copying
-                                    st.success(f"Selected: {case_id} - Please copy and paste this into the Case ID field above")
+                                    st.success(f"Selected: {case_opt} - Please copy and paste this into the Case ID field above")
                         if len(available_cases) > 20:
                             st.info(f"... and {len(available_cases) - 20} more case IDs")
                     else:
