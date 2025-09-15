@@ -966,28 +966,28 @@ def main() -> None:
             sec2dur = sec3dur = sec4dur = sec9dur = '—'
         
         gt_dl = dl_link(gt_url)
-            ai_dl = dl_link(ai_url)
-            doc_dl = dl_link(doc_url)
-            gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
-            ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
-            doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
-        
+        ai_dl = dl_link(ai_url)
+        doc_dl = dl_link(doc_url)
+        gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
+        ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
+        doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
+
         table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
         table_html.append('</div>')
 
     # Close the table container (always close after rows loop)
