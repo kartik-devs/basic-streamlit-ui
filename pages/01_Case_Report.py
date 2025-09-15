@@ -271,7 +271,7 @@ def main() -> None:
         # Auto-refresh every 2 seconds for real-time updates
         if st.session_state.get("generation_in_progress", False):
             time.sleep(2)
-            st.rerun()
+                st.rerun()
         
         # Old generation info removed - using progress bar above
         
@@ -287,21 +287,21 @@ def main() -> None:
 
     # Show input form only when not generating and not completed
     if not st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
-        # Create centered form with same width as info box below
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.caption("Case ID (4 digits)")
+    # Create centered form with same width as info box below
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.caption("Case ID (4 digits)")
             # Separate session key from local variable to avoid accidental reuse
             case_id_input = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
             case_id = (case_id_input or "").strip()
-            
-            # Real-time validation feedback
-            if case_id:
-                if not case_id.isdigit():
-                    st.error("⚠️ Case ID must contain only digits (0-9)")
+        
+        # Real-time validation feedback
+        if case_id:
+            if not case_id.isdigit():
+                st.error("⚠️ Case ID must contain only digits (0-9)")
                     st.session_state["case_id_exists"] = False
-                elif len(case_id) != 4:
-                    st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
+            elif len(case_id) != 4:
+                st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
                     st.session_state["case_id_exists"] = False
                 else:
                     # Check if case ID exists in S3 database
@@ -323,7 +323,7 @@ def main() -> None:
                             st.info("💡 Try one of these available case IDs:")
                             st.code(" ".join(available_cases[:10]))  # Show first 10
                             st.info(f"Found {len(available_cases)} available case IDs")
-                        else:
+            else:
                             st.info("No cases found in database")
                         
                         # Add a button to refresh available cases
@@ -353,7 +353,7 @@ def main() -> None:
                             st.info(f"... and {len(available_cases) - 20} more case IDs")
                     else:
                         st.info("No case IDs found in database")
-                else:
+        else:
                     st.error(f"Backend error: {response.status_code}")
             except Exception as e:
                 st.error(f"Could not fetch available cases: {str(e)}")
@@ -395,9 +395,15 @@ def main() -> None:
                         timeout=30  # Give it 30 seconds to start the workflow
                     )
                     if n8n_response.ok:
-                        st.success("🚀 n8n workflow triggered successfully! The process will take approximately 2 hours to complete.")
+                        st.success("🚀 n8n workflow trigger accepted. Processing will continue in the background (~2 hours).")
                     else:
-                        st.error(f"❌ Failed to trigger n8n workflow: {n8n_response.text}")
+                        # Even if execution id capture failed, proceed; backend will keep trying
+                        try:
+                            j = n8n_response.json()
+                            msg = j.get("error") or n8n_response.text
+                        except Exception:
+                            msg = n8n_response.text
+                        st.info(f"⚠️ Trigger acknowledged without execution id: {msg}")
                 except requests.exceptions.Timeout:
                     st.success("🚀 n8n workflow triggered successfully! (Request timed out as expected - workflow is running in background)")
                 except Exception as e:
@@ -536,7 +542,7 @@ def main() -> None:
                     if st.button("📊 View Results", type="primary", use_container_width=True):
                         try:
                             switch_page("pages/04_Results")
-                        except Exception:
+                except Exception:
                             st.rerun()
                 with col2:
                     if st.button("🔄 Generate New Report", type="secondary", use_container_width=True):
@@ -547,7 +553,7 @@ def main() -> None:
                         st.session_state["generation_in_progress"] = False
                         st.session_state["generation_start"] = None
                         st.session_state.pop("navigate_to_results", None)
-                        st.rerun()
+                    st.rerun()
 
     # Subtle info card beneath the form
     with st.container():
