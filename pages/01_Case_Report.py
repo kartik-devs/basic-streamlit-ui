@@ -191,17 +191,17 @@ def main() -> None:
         # Calculate progress based on elapsed time
         current_progress = st.session_state.get("generation_progress", 0)
         
-        # Always calculate linear progression as fallback (unless we have real progress > 95%)
-        if current_progress < 95:  # Use linear progression unless we have real progress
+        # Always calculate linear progression as fallback (unless we have real progress at 100%)
+        if current_progress < 100:  # Use linear progression unless we have real progress
             # Debug mode: Complete instantly, otherwise linear progression over 2 hours
             if st.session_state.get("debug_mode", False):
                 # Debug mode: Complete in 5 seconds instead of 2 hours
-                debug_progress = min(5 + (elapsed_time / 5) * 90, 95)
+                debug_progress = min(5 + (elapsed_time / 5) * 94, 99)
                 st.session_state["generation_progress"] = int(debug_progress)
             else:
                 # Normal mode: Linear progression over 2 hours (7200 seconds)
                 if elapsed_time < 7200:  # Within 2 hours
-                    linear_progress = min(5 + (elapsed_time / 7200) * 90, 95)
+                    linear_progress = min(5 + (elapsed_time / 7200) * 94, 99)
                     st.session_state["generation_progress"] = int(linear_progress)
             
             # Update step status based on progress
@@ -216,6 +216,15 @@ def main() -> None:
                 st.session_state["generation_step"] = 3  # Generating report (50-80%)
             else:
                 st.session_state["generation_step"] = 4  # Finalizing & quality check (80-100%)
+
+        # If we've hit or exceeded the auto-complete threshold, force completion
+        auto_complete_seconds = int(os.getenv("AUTO_COMPLETE_SECONDS", "10"))
+        if elapsed_time >= max(1, auto_complete_seconds):
+            st.session_state["generation_progress"] = 100
+            st.session_state["generation_step"] = 4
+            st.session_state["generation_complete"] = True
+            st.session_state["generation_in_progress"] = False
+            st.session_state["navigate_to_results"] = True
         
         # Calculate elapsed time in minutes
         elapsed_minutes = int(elapsed_time // 60)
@@ -495,12 +504,20 @@ def main() -> None:
             st.session_state["generation_complete"] = True
             st.session_state["generation_in_progress"] = False
             st.success("🎉 Report generation completed!")
+            st.session_state["navigate_to_results"] = True
             st.rerun()
         
         # Show completion message and navigation
         if st.session_state.get("generation_complete"):
             st.success("✅ Report generation completed successfully!")
             
+            # Auto-navigate to Results when completed (no backend callback yet)
+            if st.session_state.get("navigate_to_results"):
+                try:
+                    switch_page("pages/04_Results")
+                except Exception:
+                    st.rerun()
+
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("📊 View Results", type="primary", use_container_width=True):
