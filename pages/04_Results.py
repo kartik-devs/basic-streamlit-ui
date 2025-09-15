@@ -605,25 +605,25 @@ def main() -> None:
     </html>
     """
     components.html(loading_spinner_html, height=140)
-    
+
+    try:
+        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
+        outputs = (r.json() or {}).get("items", []) if r.ok else []
+        # Exclude legacy Edited subfolder entries from display
         try:
-            r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
-            outputs = (r.json() or {}).get("items", []) if r.ok else []
-            # Exclude legacy Edited subfolder entries from display
-            try:
-                outputs = [o for o in outputs if not (
-                    (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
-                    (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
-                )]
-            except Exception:
-                    pass
+            outputs = [o for o in outputs if not (
+                (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
+                (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
+            )]
         except Exception:
-            outputs = []
-        try:
-            r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
-            assets = r_assets.json() if r_assets.ok else {}
-        except Exception:
-            assets = {}
+            pass
+    except Exception:
+        outputs = []
+    try:
+        r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
+        assets = r_assets.json() if r_assets.ok else {}
+    except Exception:
+        assets = {}
 
     # Display case ID prominently
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)

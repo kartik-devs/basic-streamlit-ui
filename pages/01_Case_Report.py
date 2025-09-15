@@ -285,43 +285,43 @@ def main() -> None:
         # Create centered form with same width as info box below
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-        st.caption("Case ID (4 digits)")
-        case_id = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
-        
-        # Real-time validation feedback
-        if case_id:
-            if not case_id.isdigit():
-                st.error("⚠️ Case ID must contain only digits (0-9)")
-                st.session_state["case_id_exists"] = False
-            elif len(case_id) != 4:
-                st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
-                st.session_state["case_id_exists"] = False
-            else:
-                # Check if case ID exists in S3 database
-                with st.spinner("🔍 Checking if case exists in database..."):
-                    validation_result = _validate_case_id_exists(case_id)
-                    
-                if validation_result["exists"]:
-                    st.success(f"✅ Case ID {case_id} found in database")
-                    # Store validation result for button logic
-                    st.session_state["case_id_exists"] = True
-                else:
-                    st.error(f"❌ Case ID {case_id} not found in database")
-                    # Store validation result for button logic
+            st.caption("Case ID (4 digits)")
+            case_id = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
+            
+            # Real-time validation feedback
+            if case_id:
+                if not case_id.isdigit():
+                    st.error("⚠️ Case ID must contain only digits (0-9)")
                     st.session_state["case_id_exists"] = False
-                    
-                    # Show available case IDs from validation result
-                    available_cases = validation_result.get("available_cases", [])
-                    if available_cases:
-                        st.info("💡 Try one of these available case IDs:")
-                        st.code(" ".join(available_cases[:10]))  # Show first 10
-                        st.info(f"Found {len(available_cases)} available case IDs")
+                elif len(case_id) != 4:
+                    st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
+                    st.session_state["case_id_exists"] = False
+                else:
+                    # Check if case ID exists in S3 database
+                    with st.spinner("🔍 Checking if case exists in database..."):
+                        validation_result = _validate_case_id_exists(case_id)
+                        
+                    if validation_result["exists"]:
+                        st.success(f"✅ Case ID {case_id} found in database")
+                        # Store validation result for button logic
+                        st.session_state["case_id_exists"] = True
                     else:
-                        st.info("No cases found in database")
-                    
-                    # Add a button to refresh available cases
-                    if st.button("🔄 Refresh Available Cases", key="refresh_cases"):
-                        st.rerun()
+                        st.error(f"❌ Case ID {case_id} not found in database")
+                        # Store validation result for button logic
+                        st.session_state["case_id_exists"] = False
+                        
+                        # Show available case IDs from validation result
+                        available_cases = validation_result.get("available_cases", [])
+                        if available_cases:
+                            st.info("💡 Try one of these available case IDs:")
+                            st.code(" ".join(available_cases[:10]))  # Show first 10
+                            st.info(f"Found {len(available_cases)} available case IDs")
+                        else:
+                            st.info("No cases found in database")
+                        
+                        # Add a button to refresh available cases
+                        if st.button("🔄 Refresh Available Cases", key="refresh_cases"):
+                            st.rerun()
         
         # Username display removed - no authentication required
         
