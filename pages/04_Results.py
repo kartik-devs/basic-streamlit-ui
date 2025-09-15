@@ -842,6 +842,7 @@ def main() -> None:
     gt_pdf = assets.get("ground_truth_pdf")
     gt_generic = assets.get("ground_truth")
     gt_effective_pdf_url = None
+    gt_effective_pdf_key = None
     if gt_pdf:
         gt_effective_pdf_url = gt_pdf
     elif gt_generic:
@@ -853,6 +854,7 @@ def main() -> None:
                 fmt = d2.get("format")
                 if fmt == "pdf" and url2:
                     gt_effective_pdf_url = url2
+                    gt_effective_pdf_key = d2.get("key")
                 else:
                     gt_effective_pdf_url = gt_generic
         except Exception:
@@ -872,7 +874,19 @@ def main() -> None:
         sep = '&' if ('?' in u) else '?'
         return f"{u}{sep}_ts={ts}"
 
-    def _proxy_pdf(u: str | None) -> str | None:
+    def _stream_pdf_from_key(key: str | None) -> str | None:
+        if not key:
+            return None
+        try:
+            from urllib.parse import quote as _q
+            return f"{backend}/s3/stream?key={_q(key, safe='')}"
+        except Exception:
+            return None
+
+    def _proxy_pdf(u: str | None, *, key: str | None = None) -> str | None:
+        s = _stream_pdf_from_key(key)
+        if s:
+            return s
         if not u:
             return None
         try:
@@ -882,13 +896,13 @@ def main() -> None:
         except Exception:
             return u
 
-    def _render_pdf_viewer(unique_key: str, url: str | None, height_px: int, link_color: str = "#93c5fd") -> None:
+    def _render_pdf_viewer(unique_key: str, url: str | None, height_px: int, link_color: str = "#93c5fd", *, key_hint: str | None = None) -> None:
         if not url:
             st.info("Not available")
             return
         import uuid
         nonce = f"pv_{unique_key}_{uuid.uuid4().hex[:8]}"
-        base = _proxy_pdf(_viewer_url(url)) or url
+        base = _proxy_pdf(_viewer_url(url), key=key_hint) or url
         gdv = f"https://docs.google.com/viewer?url={quote(base, safe='')}&embedded=true"
         html = f"""
         <div id="wrap_{nonce}" style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {height_px}px;">
@@ -1133,7 +1147,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_effective_pdf_url:
-            _render_pdf_viewer(f"gt_{case_id}", gt_effective_pdf_url, iframe_h, link_color="#93c5fd")
+            _render_pdf_viewer(f"gt_{case_id}", gt_effective_pdf_url, iframe_h, link_color="#93c5fd", key_hint=gt_effective_pdf_key)
         elif gt_generic:
                 st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
         else:
@@ -1177,9 +1191,9 @@ def main() -> None:
             sel_ai = None
             st.info("No PDF AI outputs available for this case.")
         ai_effective_pdf_url = None
-        if sel_ai and sel_ai.get("ai_url"):
-            _render_pdf_viewer(f"ai_{case_id}", sel_ai['ai_url'], iframe_h, link_color="#c4b5fd")
-            ai_effective_pdf_url = sel_ai["ai_url"]
+        if sel_ai and (sel_ai.get("ai_url") or sel_ai.get("ai_key")):
+            _render_pdf_viewer(f"ai_{case_id}", sel_ai.get('ai_url'), iframe_h, link_color="#c4b5fd", key_hint=sel_ai.get('ai_key'))
+            ai_effective_pdf_url = sel_ai.get("ai_url")
         else:
             st.info("Not available")
 
@@ -1197,9 +1211,9 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         doc_effective_pdf_url = None
-        if sel_ai and sel_ai.get("doctor_url"):
-            _render_pdf_viewer(f"dr_{case_id}", sel_ai['doctor_url'], iframe_h, link_color="#86efac")
-            doc_effective_pdf_url = sel_ai["doctor_url"]
+        if sel_ai and (sel_ai.get("doctor_url") or sel_ai.get("doctor_key")):
+            _render_pdf_viewer(f"dr_{case_id}", sel_ai.get('doctor_url'), iframe_h, link_color="#86efac", key_hint=sel_ai.get('doctor_key'))
+            doc_effective_pdf_url = sel_ai.get("doctor_url")
         else:
             st.info("Not available")
 

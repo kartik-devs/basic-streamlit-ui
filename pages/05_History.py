@@ -878,18 +878,18 @@ def main() -> None:
             # Multi-layer PDF viewer with fallbacks for Chrome/Edge compatibility
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{gt_pdf}#toolbar=1&navpanes=1&scrollbar=1" 
+                <object data="{backend}/s3/stream?key={quote((assets.get('ground_truth_key') or ''), safe='')}#toolbar=1&navpanes=1&scrollbar=1" 
                         type="application/pdf" 
                         width="100%" 
                         height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(gt_pdf, safe='')}&embedded=true" 
+                    <iframe src="https://docs.google.com/viewer?url={quote(backend + '/s3/stream?key=' + (assets.get('ground_truth_key') or ''), safe='')}&embedded=true" 
                             width="100%" 
                             height="100%" 
                             style="border:none;"
                             sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
                         <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
                             <p>PDF preview unavailable in your browser</p>
-                            <a href="{gt_pdf}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                            <a href="{backend}/s3/stream?key={quote((assets.get('ground_truth_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
                                 📥 Open PDF in New Tab
                             </a>
                         </div>
@@ -897,7 +897,7 @@ def main() -> None:
                 </object>
             </div>
             <div style="margin-top: 0.5rem; text-align: center;">
-                <a href="{gt_pdf}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                <a href="{backend}/s3/stream?key={quote((assets.get('ground_truth_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
                     📥 Download PDF
                 </a>
             </div>
@@ -915,18 +915,18 @@ def main() -> None:
                     if fmt == "pdf" and url2:
                         st.markdown(f"""
                         <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                            <object data="{url2}#toolbar=1&navpanes=1&scrollbar=1" 
+                            <object data="{backend}/s3/stream?key={quote((d2.get('key') or ''), safe='')}#toolbar=1&navpanes=1&scrollbar=1" 
                                     type="application/pdf" 
                                     width="100%" 
                                     height="100%">
-                                <iframe src="https://docs.google.com/viewer?url={quote(url2, safe='')}&embedded=true" 
+                                <iframe src="https://docs.google.com/viewer?url={quote(backend + '/s3/stream?key=' + (d2.get('key') or ''), safe='')}&embedded=true" 
                                         width="100%" 
                                         height="100%" 
                                         style="border:none;"
                                         sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
                                     <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
                                         <p>PDF preview unavailable in your browser</p>
-                                        <a href="{url2}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                                        <a href="{backend}/s3/stream?key={quote((d2.get('key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
                                             📥 Open PDF in New Tab
                                         </a>
                                     </div>
@@ -934,7 +934,7 @@ def main() -> None:
                             </object>
                         </div>
                         <div style="margin-top: 0.5rem; text-align: center;">
-                            <a href="{url2}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                            <a href="{backend}/s3/stream?key={quote((d2.get('key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
                                 📥 Download PDF
                             </a>
                         </div>
@@ -1012,18 +1012,18 @@ def main() -> None:
         if sel_ai and sel_ai.get("ai_url"):
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{sel_ai['ai_url']}#toolbar=1&navpanes=1&scrollbar=1" 
+                <object data="{backend}/s3/stream?key={quote((sel_ai.get('ai_key') or ''), safe='')}#toolbar=1&navpanes=1&scrollbar=1" 
                         type="application/pdf" 
                         width="100%" 
                         height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(sel_ai['ai_url'], safe='')}&embedded=true" 
+                    <iframe src="https://docs.google.com/viewer?url={quote(backend + '/s3/stream?key=' + (sel_ai.get('ai_key') or ''), safe='')}&embedded=true" 
                             width="100%" 
                             height="100%" 
                             style="border:none;"
                             sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
                         <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
                             <p>PDF preview unavailable in your browser</p>
-                            <a href="{sel_ai['ai_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                            <a href="{backend}/s3/stream?key={quote((sel_ai.get('ai_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
                                 📥 Open PDF in New Tab
                             </a>
                         </div>
@@ -1031,7 +1031,7 @@ def main() -> None:
                 </object>
             </div>
             <div style="margin-top: 0.5rem; text-align: center;">
-                <a href="{sel_ai['ai_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                <a href="{backend}/s3/stream?key={quote((sel_ai.get('ai_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
                     📥 Download PDF
                 </a>
             </div>
@@ -1058,18 +1058,18 @@ def main() -> None:
         if sel_ai and sel_ai.get("doctor_url"):
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{sel_ai['doctor_url']}#toolbar=1&navpanes=1&scrollbar=1" 
+                <object data="{backend}/s3/stream?key={quote((sel_ai.get('doctor_key') or ''), safe='')}#toolbar=1&navpanes=1&scrollbar=1" 
                         type="application/pdf" 
                         width="100%" 
                         height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(sel_ai['doctor_url'], safe='')}&embedded=true" 
+                    <iframe src="https://docs.google.com/viewer?url={quote(backend + '/s3/stream?key=' + (sel_ai.get('doctor_key') or ''), safe='')}&embedded=true" 
                             width="100%" 
                             height="100%" 
                             style="border:none;"
                             sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
                         <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
                             <p>PDF preview unavailable in your browser</p>
-                            <a href="{sel_ai['doctor_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                            <a href="{backend}/s3/stream?key={quote((sel_ai.get('doctor_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
                                 📥 Open PDF in New Tab
                             </a>
                         </div>
@@ -1077,7 +1077,7 @@ def main() -> None:
                 </object>
             </div>
             <div style="margin-top: 0.5rem; text-align: center;">
-                <a href="{sel_ai['doctor_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                <a href="{backend}/s3/stream?key={quote((sel_ai.get('doctor_key') or ''), safe='')}&download=1" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
                     📥 Download PDF
                 </a>
             </div>

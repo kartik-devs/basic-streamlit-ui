@@ -535,6 +535,39 @@ def proxy_pdf(url: str):
     except Exception:
         raise HTTPException(status_code=502, detail="Failed to fetch PDF")
 
+# --- Stream S3 object by key (avoids presign expiry) ---
+@app.get("/s3/stream")
+def s3_stream(key: str, download: int = 0):
+    """
+    Stream an S3 object by key with correct Content-Type and disposition.
+    Query params:
+      - key: S3 object key
+      - download: 1 to force download attachment; 0 to render inline
+    """
+    if not key:
+        raise HTTPException(status_code=400, detail="key required")
+    try:
+        import mimetypes
+        from urllib.parse import unquote as _unq
+        k = _unq(key)
+        client = s3_client()
+        obj = client.get_object(Bucket=S3_BUCKET, Key=k)
+        body = obj["Body"]
+        # Guess content type from key if not provided
+        ctype = obj.get("ContentType") or mimetypes.guess_type(k)[0] or "application/octet-stream"
+        filename = k.split("/")[-1] or "file.bin"
+        disp = ("attachment" if download else "inline") + f"; filename=\"{filename}\""
+        headers = {
+            "Content-Type": ctype,
+            "Content-Disposition": disp,
+            # Allow embedding in iframes
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "private, max-age=60",
+        }
+        return StreamingResponse(body, headers=headers, media_type=ctype)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to stream S3 object: {str(e)}")
+
 # Simple download proxy with filename hint
 @app.get("/proxy/download")
 def proxy_download(url: str, filename: Optional[str] = None):
@@ -664,7 +697,7 @@ def api_s3_ensure_pdf(key: Optional[str] = None, url: Optional[str] = None) -> D
         raise HTTPException(status_code=400, detail="could not derive key from url")
     lower = key.lower()
     if lower.endswith(".pdf"):
-        return {"url": s3_presign(key), "format": "pdf"}
+        return {"url": s3_presign(key), "format": "pdf", "key": key}
     if lower.endswith(".docx"):
         # Reuse helper from assets flow
         try:
@@ -687,11 +720,11 @@ def api_s3_ensure_pdf(key: Optional[str] = None, url: Optional[str] = None) -> D
         except Exception:
             pdf_key = None
         if pdf_key:
-            return {"url": s3_presign(pdf_key), "format": "pdf"}
+            return {"url": s3_presign(pdf_key), "format": "pdf", "key": pdf_key}
         # Fallback to docx download
-        return {"url": s3_presign(key), "format": "docx"}
+        return {"url": s3_presign(key), "format": "docx", "key": key}
     # Unknown extension, just presign
-    return {"url": s3_presign(key), "format": "other"}
+    return {"url": s3_presign(key), "format": "other", "key": key}
 
 # Simple file-based cache helpers (used by older pages)
 def _cache_path_for(case_id: str) -> Path:
