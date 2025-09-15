@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timezone
 try:
     from app.ui import inject_base_styles, theme_provider, top_nav
 except Exception:
@@ -794,7 +794,7 @@ def main() -> None:
 
     # Get code version
     code_version = _fetch_code_version_for_case(case_id)
-    generated_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    generated_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     # Metrics fetching function
     @st.cache_data(ttl=120)
