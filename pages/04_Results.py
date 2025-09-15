@@ -826,6 +826,17 @@ def main() -> None:
     # Warm metrics cache from outputs first (helps fill table below)
     _probe_metrics_from_outputs(backend, case_id, outputs)
 
+    # Helper to ensure fresh load (avoid blank initial render)
+    def _viewer_url(u: str | None) -> str | None:
+        if not u:
+            return None
+        try:
+            ts = str(int(time.time()))
+        except Exception:
+            ts = "1"
+        sep = '&' if ('?' in u) else '?'
+        return f"{u}{sep}_ts={ts}"
+
     # Build rows
     def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
         ocr_start = o.get("ocr_start_time", "—")
@@ -1034,13 +1045,14 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_effective_pdf_url:
+            _gt_url = _viewer_url(gt_effective_pdf_url)
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{gt_effective_pdf_url}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(gt_effective_pdf_url, safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                <object data="{_gt_url}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
+                    <iframe src="https://docs.google.com/viewer?url={quote(_gt_url, safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
                         <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
                             <p>PDF preview unavailable in your browser</p>
-                            <a href="{gt_effective_pdf_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
+                            <a href="{_gt_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
                         </div>
                     </iframe>
                 </object>
@@ -1090,19 +1102,20 @@ def main() -> None:
             st.info("No PDF AI outputs available for this case.")
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
+            _ai_url = _viewer_url(sel_ai['ai_url'])
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{sel_ai['ai_url']}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(sel_ai['ai_url'], safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                <object data="{_ai_url}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
+                    <iframe src="https://docs.google.com/viewer?url={quote(_ai_url, safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
                         <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
                             <p>PDF preview unavailable in your browser</p>
-                            <a href="{sel_ai['ai_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
+                            <a href="{_ai_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
                         </div>
                     </iframe>
                 </object>
             </div>
             """, unsafe_allow_html=True)
-            ai_effective_pdf_url = sel_ai["ai_url"]
+            ai_effective_pdf_url = _ai_url
         else:
             st.info("Not available")
 
@@ -1121,19 +1134,20 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
+            _dr_url = _viewer_url(sel_ai['doctor_url'])
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{sel_ai['doctor_url']}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(sel_ai['doctor_url'], safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                <object data="{_dr_url}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
+                    <iframe src="https://docs.google.com/viewer?url={quote(_dr_url, safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
                         <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
                             <p>PDF preview unavailable in your browser</p>
-                            <a href="{sel_ai['doctor_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
+                            <a href="{_dr_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
                         </div>
                     </iframe>
                 </object>
             </div>
             """, unsafe_allow_html=True)
-            doc_effective_pdf_url = sel_ai["doctor_url"]
+            doc_effective_pdf_url = _dr_url
         else:
             st.info("Not available")
 
