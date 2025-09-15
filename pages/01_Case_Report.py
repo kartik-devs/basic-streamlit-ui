@@ -217,14 +217,19 @@ def main() -> None:
             else:
                 st.session_state["generation_step"] = 4  # Finalizing & quality check (80-100%)
 
-        # If we've hit or exceeded the auto-complete threshold, force completion
-        auto_complete_seconds = int(os.getenv("AUTO_COMPLETE_SECONDS", "10"))
-        if elapsed_time >= max(1, auto_complete_seconds):
-            st.session_state["generation_progress"] = 100
-            st.session_state["generation_step"] = 4
-            st.session_state["generation_complete"] = True
-            st.session_state["generation_in_progress"] = False
-            st.session_state["navigate_to_results"] = True
+        # Optional auto-complete for demos (disabled by default). Set AUTO_COMPLETE_SECONDS to enable.
+        auto_complete_env = os.getenv("AUTO_COMPLETE_SECONDS")
+        if auto_complete_env:
+            try:
+                auto_complete_seconds = max(1, int(auto_complete_env))
+            except Exception:
+                auto_complete_seconds = None
+            if auto_complete_seconds and elapsed_time >= auto_complete_seconds:
+                st.session_state["generation_progress"] = 100
+                st.session_state["generation_step"] = 4
+                st.session_state["generation_complete"] = True
+                st.session_state["generation_in_progress"] = False
+                st.session_state["navigate_to_results"] = True
         
         # Calculate elapsed time in minutes
         elapsed_minutes = int(elapsed_time // 60)

@@ -2031,7 +2031,7 @@ def webhook_progress(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Endpoint for n8n to POST progress updates during workflow execution.
     Expected payload:
     {
-        "case_id": "9999",
+        "case_id": "<user_case_id>",
         "progress": 45,
         "step": 2,
         "message": "Processing OCR data...",
@@ -2071,7 +2071,7 @@ def webhook_finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Endpoint for n8n to POST final artifacts/metrics when the workflow completes.
     Expected payload (examples accepted):
     {
-        "case_id": "9999",
+        "case_id": "<user_case_id>",
         "pdf": {"signed_url": "...", "key": "..."},
         "docx": {"signed_url": "...", "key": "..."},
         "ocr_start_time": "...",

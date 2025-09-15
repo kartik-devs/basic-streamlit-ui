@@ -625,9 +625,13 @@ def main() -> None:
     except Exception:
         assets = {}
 
-    # Display case ID prominently
+    # Display case ID prominently and allow correction if mismatched
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
     st.markdown(f"<h1 style='text-align: center; color: #1f77b4; margin-bottom: 1rem; font-size: 2.5rem; font-weight: bold;'>CASE ID: {case_id}</h1>", unsafe_allow_html=True)
+    # If session has a different case id, show a small notice
+    _sess_cid = st.session_state.get("current_case_id")
+    if _sess_cid and _sess_cid != case_id:
+        st.info(f"Using case_id from URL: {case_id}. Session has {_sess_cid}.")
 
     # History-like summary table for this case
     st.markdown("### Report Summary")
