@@ -871,6 +871,16 @@ def main() -> None:
         sep = '&' if ('?' in u) else '?'
         return f"{u}{sep}_ts={ts}"
 
+    def _proxy_pdf(u: str | None) -> str | None:
+        if not u:
+            return None
+        try:
+            from urllib.parse import quote as _q
+            ts = str(int(time.time()))
+            return f"{backend}/proxy/download?url={_q(u, safe='')}&inline=1&_ts={ts}"
+        except Exception:
+            return u
+
     # Build rows
     def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
         ocr_start = o.get("ocr_start_time", "—")
@@ -1079,8 +1089,8 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_effective_pdf_url:
-            _gt_url = _viewer_url(gt_effective_pdf_url)
-            _gdv = f"https://docs.google.com/viewer?url={quote(_gt_url, safe='')}&embedded=true"
+            _gt_url = _proxy_pdf(_viewer_url(gt_effective_pdf_url))
+            _gdv = f"https://docs.google.com/viewer?url={quote(_gt_url or gt_effective_pdf_url, safe='')}&embedded=true"
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
                 <iframe src="{_gdv}" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
@@ -1133,8 +1143,8 @@ def main() -> None:
             st.info("No PDF AI outputs available for this case.")
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
-            _ai_url = _viewer_url(sel_ai['ai_url'])
-            _gdv = f"https://docs.google.com/viewer?url={quote(_ai_url, safe='')}&embedded=true"
+            _ai_url = _proxy_pdf(_viewer_url(sel_ai['ai_url']))
+            _gdv = f"https://docs.google.com/viewer?url={quote(_ai_url or sel_ai['ai_url'], safe='')}&embedded=true"
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
                 <iframe src="{_gdv}" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
@@ -1162,8 +1172,8 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            _dr_url = _viewer_url(sel_ai['doctor_url'])
-            _gdv = f"https://docs.google.com/viewer?url={quote(_dr_url, safe='')}&embedded=true"
+            _dr_url = _proxy_pdf(_viewer_url(sel_ai['doctor_url']))
+            _gdv = f"https://docs.google.com/viewer?url={quote(_dr_url or sel_ai['doctor_url'], safe='')}&embedded=true"
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
                 <iframe src="{_gdv}" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
