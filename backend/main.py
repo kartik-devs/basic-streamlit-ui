@@ -560,9 +560,13 @@ def s3_stream(key: str, download: int = 0):
         headers = {
             "Content-Type": ctype,
             "Content-Disposition": disp,
-            # Allow embedding in iframes
+            # Allow embedding in iframes across origins
             "X-Accel-Buffering": "no",
             "Cache-Control": "private, max-age=60",
+            "X-Frame-Options": "ALLOWALL",
+            "Content-Security-Policy": "frame-ancestors *",
+            "Access-Control-Allow-Origin": "*",
+            "Cross-Origin-Resource-Policy": "cross-origin",
         }
         return StreamingResponse(body, headers=headers, media_type=ctype)
     except Exception as e:

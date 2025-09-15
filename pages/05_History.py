@@ -879,8 +879,18 @@ def main() -> None:
             gt_key = assets.get('ground_truth_key')
             open_url = f"{backend}/s3/stream?key={_q(gt_key, safe='')}" if gt_key else gt_pdf
             dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else gt_pdf
-            st.markdown(f"<a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>", unsafe_allow_html=True)
-            st.markdown(f"<a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>", unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;\"> 
+                  <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
+                </div>
+                <div style=\"margin-top:.4rem;display:flex;gap:.75rem;\"> 
+                  <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
+                  <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             gt_effective_pdf_url = gt_pdf
         elif gt_generic:
             raw_key = assets.get("ground_truth_key") if isinstance(assets, dict) else None
@@ -896,8 +906,18 @@ def main() -> None:
                         k = d2.get('key')
                         open_url = f"{backend}/s3/stream?key={_q(k, safe='')}" if k else url2
                         dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else url2
-                        st.markdown(f"<a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>", unsafe_allow_html=True)
-                        st.markdown(f"<a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>", unsafe_allow_html=True)
+                        st.markdown(
+                            f"""
+                            <div style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;\"> 
+                              <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
+                            </div>
+                            <div style=\"margin-top:.4rem;display:flex;gap:.75rem;\"> 
+                              <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
+                              <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
                         gt_effective_pdf_url = url2
                     else:
                         st.markdown(f"<a href=\"{url2 or gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
@@ -974,8 +994,18 @@ def main() -> None:
             aurl = sel_ai.get('ai_url')
             open_url = f"{backend}/s3/stream?key={_q(ak, safe='')}" if ak else aurl
             dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else aurl
-            st.markdown(f"<a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>", unsafe_allow_html=True)
-            st.markdown(f"<a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>", unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;\"> 
+                  <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
+                </div>
+                <div style=\"margin-top:.4rem;display:flex;gap:.75rem;\"> 
+                  <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
+                  <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             ai_effective_pdf_url = aurl
         else:
             st.info("Not available")
@@ -1001,8 +1031,18 @@ def main() -> None:
             durl = sel_ai.get('doctor_url')
             open_url = f"{backend}/s3/stream?key={_q(dk, safe='')}" if dk else durl
             dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else durl
-            st.markdown(f"<a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>", unsafe_allow_html=True)
-            st.markdown(f"<a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>", unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;\"> 
+                  <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
+                </div>
+                <div style=\"margin-top:.4rem;display:flex;gap:.75rem;\"> 
+                  <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
+                  <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             doc_effective_pdf_url = durl
         else:
             st.info("Not available")
