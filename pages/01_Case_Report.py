@@ -225,7 +225,6 @@ def main() -> None:
             st.session_state["generation_step"] = 4
             st.session_state["generation_complete"] = True
             st.session_state["generation_in_progress"] = False
-            st.session_state["navigate_to_results"] = True
             st.rerun()
 
         # Optional auto-complete for demos (disabled by default). Set AUTO_COMPLETE_SECONDS to enable.
@@ -530,19 +529,13 @@ def main() -> None:
             st.session_state["generation_complete"] = True
             st.session_state["generation_in_progress"] = False
             st.success("🎉 Report generation completed!")
-            st.session_state["navigate_to_results"] = True
             st.rerun()
         
         # Show completion message and navigation
         if st.session_state.get("generation_complete"):
             st.success("✅ Report generation completed successfully!")
             
-            # Auto-navigate to Results when completed (no backend callback yet)
-            if st.session_state.get("navigate_to_results"):
-                try:
-                    switch_page("pages/04_Results")
-                except Exception:
-                    st.rerun()
+            # Stay on this page and offer actions instead of auto-navigation
 
             # Replace input form with actions at the bottom of the page
             st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)

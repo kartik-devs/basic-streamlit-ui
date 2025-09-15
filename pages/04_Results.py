@@ -484,14 +484,13 @@ def main() -> None:
             st.warning(f"⚠️ Could not start backend pinger: {e}")
     
     # Authentication removed - no login required
-    case_id = (
+    case_id_raw = (
         st.session_state.get("last_case_id")
         or st.session_state.get("current_case_id")
         or "0000"
     )
-    if case_id == "0000":
-        st.info("No active case. Go to Case Report and start a run.")
-        return
+    # Treat test case 0000 as alias of 9999 for Results
+    case_id = "9999" if str(case_id_raw) == "0000" else case_id_raw
 
     # Check generation status - show beautiful loading state if running, block access if not complete
     generation_status = _check_generation_status(case_id)
