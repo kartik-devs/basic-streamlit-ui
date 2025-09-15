@@ -606,24 +606,24 @@ def main() -> None:
     """
     components.html(loading_spinner_html, height=140)
 
-    try:
-        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
-        outputs = (r.json() or {}).get("items", []) if r.ok else []
-        # Exclude legacy Edited subfolder entries from display
         try:
-            outputs = [o for o in outputs if not (
-                (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
-                (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
-            )]
+            r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
+            outputs = (r.json() or {}).get("items", []) if r.ok else []
+            # Exclude legacy Edited subfolder entries from display
+            try:
+                outputs = [o for o in outputs if not (
+                    (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
+                    (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
+                )]
+            except Exception:
+                    pass
         except Exception:
-            pass
-    except Exception:
-        outputs = []
-    try:
-        r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
-        assets = r_assets.json() if r_assets.ok else {}
-    except Exception:
-        assets = {}
+            outputs = []
+        try:
+            r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
+            assets = r_assets.json() if r_assets.ok else {}
+        except Exception:
+            assets = {}
 
     # Display case ID prominently and allow correction if mismatched
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
@@ -811,12 +811,12 @@ def main() -> None:
     _probe_metrics_from_outputs(backend, case_id, outputs)
 
     # Build rows
-    def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
-        ocr_start = o.get("ocr_start_time", "—")
-        ocr_end = o.get("ocr_end_time", "—")
-        total_tokens = o.get("total_tokens_used", "—")
-        input_tokens = o.get("total_input_tokens", "—")
-        output_tokens = o.get("total_output_tokens", "—")
+        def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
+            ocr_start = o.get("ocr_start_time", "—")
+            ocr_end = o.get("ocr_end_time", "—")
+            total_tokens = o.get("total_tokens_used", "—")
+            input_tokens = o.get("total_input_tokens", "—")
+            output_tokens = o.get("total_output_tokens", "—")
 
         def _fmt_num(v):
             try:
@@ -834,20 +834,20 @@ def main() -> None:
 
     rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
     if outputs:
-        for o in outputs:
-            doc_version = extract_version(o.get("label"))
-            report_timestamp = o.get("timestamp") or generated_ts
-            ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
-            rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
+            for o in outputs:
+                doc_version = extract_version(o.get("label"))
+                report_timestamp = o.get("timestamp") or generated_ts
+                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
     else:
         rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
     # Optional pagination for summary table
-    sum_page_size = 10
-    sum_total = len(rows)
-    sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
-    sum_pg_key = f"results_summary_page_{case_id}"
-    sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+        sum_page_size = 10
+        sum_total = len(rows)
+        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+        sum_pg_key = f"results_summary_page_{case_id}"
+        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
     
     pc1, pc2, pc3 = st.columns([1, 2, 1])
     with pc1:
@@ -859,14 +859,14 @@ def main() -> None:
     if prev_clicked:
         sum_cur_page = max(1, sum_cur_page - 1)
     if next_clicked:
-        sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
-    st.session_state[sum_pg_key] = sum_cur_page
+                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+        st.session_state[sum_pg_key] = sum_cur_page
     with pc2:
         st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
 
-    sum_start = (sum_cur_page - 1) * sum_page_size
-    sum_end = min(sum_total, sum_start + sum_page_size)
-    page_rows = rows[sum_start:sum_end]
+        sum_start = (sum_cur_page - 1) * sum_page_size
+        sum_end = min(sum_total, sum_start + sum_page_size)
+        page_rows = rows[sum_start:sum_end]
 
     # Table styling & render
     st.markdown(
@@ -883,25 +883,25 @@ def main() -> None:
     )
 
     table_html = [
-        '<div class="table-container">',
-        '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
+            '<div class="table-container">',
+            '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
-        '</div>'
-    ]
+            '</div>'
+        ]
 
     # Render rows with proper metrics data
     for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
@@ -969,36 +969,36 @@ def main() -> None:
             # Use fallback values from the row data
             sec2dur = sec3dur = sec4dur = sec9dur = '—'
         
-        gt_dl = dl_link(gt_url)
-        ai_dl = dl_link(ai_url)
-        doc_dl = dl_link(doc_url)
-        gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
-        ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
-        doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
+            gt_dl = dl_link(gt_url)
+            ai_dl = dl_link(ai_url)
+            doc_dl = dl_link(doc_url)
+            gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
+            ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
+            doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
 
-        table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
-        table_html.append('</div>')
+            table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
+            table_html.append('</div>')
 
     # Close the table container (always close after rows loop)
-    table_html.append('</div>')
+            table_html.append('</div>')
     
     # Render the complete table
-    st.markdown("".join(table_html), unsafe_allow_html=True)
+            st.markdown("".join(table_html), unsafe_allow_html=True)
 
     # Viewers (GT | AI | Doctor)
     iframe_h = 480
