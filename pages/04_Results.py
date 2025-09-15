@@ -896,6 +896,21 @@ def main() -> None:
         except Exception:
             return u
 
+def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
+    if not s3_key:
+        return None
+    try:
+        import requests as _rq
+        r = _rq.get(f"{backend}/cache/presign", params={"key": s3_key}, timeout=6)
+        if r.ok:
+            data = r.json() or {}
+            url = data.get("url")
+            if isinstance(url, str):
+                return url
+    except Exception:
+        pass
+    return None
+
     def _render_pdf_viewer(unique_key: str, url: str | None, height_px: int, link_color: str = "#93c5fd", *, key_hint: str | None = None) -> None:
         # Prefer direct <object> embed via backend streaming when S3 key is known
         if key_hint:
