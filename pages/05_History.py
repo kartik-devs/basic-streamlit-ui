@@ -590,7 +590,11 @@ def main() -> None:
         with st.spinner("Loading report summary…"):
             from datetime import datetime
             code_version = _fetch_code_version_for_case(case_id)
-            generated_ts = datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            # Use UTC offset for compatibility - suppress deprecation warning
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                generated_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
         
         # Determine ground truth URL for table
         if gt_pdf:
@@ -868,15 +872,26 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_pdf:
-            # Use PDF.js viewer for better cross-browser compatibility
-            pdf_viewer_url = f"https://mozilla.github.io/pdf.js/web/viewer.html?file={gt_pdf}"
+            # Multi-layer PDF viewer with fallbacks for Chrome/Edge compatibility
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <iframe src="{pdf_viewer_url}" width="100%" height="100%" 
-                        style="border:none;" 
-                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads"
-                        loading="lazy">
-                </iframe>
+                <object data="{gt_pdf}#toolbar=1&navpanes=1&scrollbar=1" 
+                        type="application/pdf" 
+                        width="100%" 
+                        height="100%">
+                    <iframe src="https://docs.google.com/viewer?url={quote(gt_pdf, safe='')}&embedded=true" 
+                            width="100%" 
+                            height="100%" 
+                            style="border:none;"
+                            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
+                            <p>PDF preview unavailable in your browser</p>
+                            <a href="{gt_pdf}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                                📥 Open PDF in New Tab
+                            </a>
+                        </div>
+                    </iframe>
+                </object>
             </div>
             <div style="margin-top: 0.5rem; text-align: center;">
                 <a href="{gt_pdf}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
@@ -895,14 +910,25 @@ def main() -> None:
                     url2 = d2.get("url")
                     fmt = d2.get("format")
                     if fmt == "pdf" and url2:
-                        pdf_viewer_url = f"https://mozilla.github.io/pdf.js/web/viewer.html?file={url2}"
                         st.markdown(f"""
                         <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                            <iframe src="{pdf_viewer_url}" width="100%" height="100%" 
-                                    style="border:none;" 
-                                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads"
-                                    loading="lazy">
-                            </iframe>
+                            <object data="{url2}#toolbar=1&navpanes=1&scrollbar=1" 
+                                    type="application/pdf" 
+                                    width="100%" 
+                                    height="100%">
+                                <iframe src="https://docs.google.com/viewer?url={quote(url2, safe='')}&embedded=true" 
+                                        width="100%" 
+                                        height="100%" 
+                                        style="border:none;"
+                                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                                    <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
+                                        <p>PDF preview unavailable in your browser</p>
+                                        <a href="{url2}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                                            📥 Open PDF in New Tab
+                                        </a>
+                                    </div>
+                                </iframe>
+                            </object>
                         </div>
                         <div style="margin-top: 0.5rem; text-align: center;">
                             <a href="{url2}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
@@ -982,12 +1008,29 @@ def main() -> None:
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
             st.markdown(f"""
-            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
-                <iframe src="{sel_ai['ai_url']}" width="100%" height="{iframe_h}" 
-                        style="border:none;" 
-                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-                        loading="lazy">
-                </iframe>
+            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
+                <object data="{sel_ai['ai_url']}#toolbar=1&navpanes=1&scrollbar=1" 
+                        type="application/pdf" 
+                        width="100%" 
+                        height="100%">
+                    <iframe src="https://docs.google.com/viewer?url={quote(sel_ai['ai_url'], safe='')}&embedded=true" 
+                            width="100%" 
+                            height="100%" 
+                            style="border:none;"
+                            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
+                            <p>PDF preview unavailable in your browser</p>
+                            <a href="{sel_ai['ai_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                                📥 Open PDF in New Tab
+                            </a>
+                        </div>
+                    </iframe>
+                </object>
+            </div>
+            <div style="margin-top: 0.5rem; text-align: center;">
+                <a href="{sel_ai['ai_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                    📥 Download PDF
+                </a>
             </div>
             """, unsafe_allow_html=True)
             ai_effective_pdf_url = sel_ai["ai_url"]
@@ -1011,12 +1054,29 @@ def main() -> None:
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
             st.markdown(f"""
-            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
-                <iframe src="{sel_ai['doctor_url']}" width="100%" height="{iframe_h}" 
-                        style="border:none;" 
-                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-                        loading="lazy">
-                </iframe>
+            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
+                <object data="{sel_ai['doctor_url']}#toolbar=1&navpanes=1&scrollbar=1" 
+                        type="application/pdf" 
+                        width="100%" 
+                        height="100%">
+                    <iframe src="https://docs.google.com/viewer?url={quote(sel_ai['doctor_url'], safe='')}&embedded=true" 
+                            width="100%" 
+                            height="100%" 
+                            style="border:none;"
+                            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
+                            <p>PDF preview unavailable in your browser</p>
+                            <a href="{sel_ai['doctor_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                                📥 Open PDF in New Tab
+                            </a>
+                        </div>
+                    </iframe>
+                </object>
+            </div>
+            <div style="margin-top: 0.5rem; text-align: center;">
+                <a href="{sel_ai['doctor_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                    📥 Download PDF
+                </a>
             </div>
             """, unsafe_allow_html=True)
             doc_effective_pdf_url = sel_ai["doctor_url"]
@@ -1204,24 +1264,46 @@ def main() -> None:
                     else:
                         st.warning("Playwright renderer unavailable. Falling back to quick viewer.")
                         st.markdown(f"""
-                        <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
-                            <iframe src="https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}" 
-                                    width="100%" height="650" 
-                                    style="border:none;" 
-                                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-                                    loading="lazy">
-                            </iframe>
+                        <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: 650px;">
+                            <object data="https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}" 
+                                    type="application/pdf" 
+                                    width="100%" 
+                                    height="100%">
+                                <iframe src="https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}" 
+                                        width="100%" 
+                                        height="100%" 
+                                        style="border:none;"
+                                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                                    <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
+                                        <p>Document preview unavailable in your browser</p>
+                                        <a href="{chosen_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                                            📥 Open Document in New Tab
+                                        </a>
+                                    </div>
+                                </iframe>
+                            </object>
                         </div>
                         """, unsafe_allow_html=True)
                 except Exception:
                     st.markdown(f"""
-                    <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
-                        <iframe src="https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}" 
-                                width="100%" height="650" 
-                                style="border:none;" 
-                                sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-                                loading="lazy">
-                        </iframe>
+                    <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: 650px;">
+                        <object data="https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}" 
+                                type="application/pdf" 
+                                width="100%" 
+                                height="100%">
+                            <iframe src="https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}" 
+                                    width="100%" 
+                                    height="100%" 
+                                    style="border:none;"
+                                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                                <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
+                                    <p>Document preview unavailable in your browser</p>
+                                    <a href="{chosen_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                                        📥 Open Document in New Tab
+                                    </a>
+                                </div>
+                            </iframe>
+                        </object>
                     </div>
                     """, unsafe_allow_html=True)
                 
