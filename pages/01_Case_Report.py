@@ -271,7 +271,7 @@ def main() -> None:
         # Auto-refresh every 2 seconds for real-time updates
         if st.session_state.get("generation_in_progress", False):
             time.sleep(2)
-                st.rerun()
+            st.rerun()
         
         # Old generation info removed - using progress bar above
         
