@@ -180,6 +180,8 @@ def main() -> None:
         st.markdown("## Case Report Generation")
         # Show progress bar instead of old card
         case_id = st.session_state.get("current_case_id", "Unknown")
+        # Test shortcut: dummy case '0000' completes in 60 seconds
+        target_seconds = 60 if str(case_id) == "0000" else 7200
         
         # Calculate elapsed time
         start_time = st.session_state.get("generation_start")
@@ -200,8 +202,8 @@ def main() -> None:
                 st.session_state["generation_progress"] = int(debug_progress)
             else:
                 # Normal mode: Linear progression over 2 hours (7200 seconds)
-                if elapsed_time < 7200:  # Within 2 hours
-                    linear_progress = min(5 + (elapsed_time / 7200) * 95, 100)
+                if elapsed_time < target_seconds:  # Within target window
+                    linear_progress = min(5 + (elapsed_time / target_seconds) * 95, 100)
                     st.session_state["generation_progress"] = int(linear_progress)
             
             # Update step status based on progress
@@ -217,8 +219,8 @@ def main() -> None:
             else:
                 st.session_state["generation_step"] = 4  # Finalizing & quality check (80-100%)
 
-        # Force-complete after 2 hours to avoid being stuck at ~98–99%
-        if elapsed_time >= 7200 and st.session_state.get("generation_in_progress"):
+        # Force-complete after target window to avoid being stuck at ~98–99%
+        if elapsed_time >= target_seconds and st.session_state.get("generation_in_progress"):
             st.session_state["generation_progress"] = 100
             st.session_state["generation_step"] = 4
             st.session_state["generation_complete"] = True
