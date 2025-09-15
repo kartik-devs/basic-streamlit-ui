@@ -280,9 +280,11 @@ def main() -> None:
         or "http://localhost:8000"
     ).rstrip("/")
 
-    # Create centered form with same width as info box below
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
+    # Show input form only when not generating and not completed
+    if not st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
+        # Create centered form with same width as info box below
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
         st.caption("Case ID (4 digits)")
         case_id = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
         
@@ -518,26 +520,27 @@ def main() -> None:
                 except Exception:
                     st.rerun()
 
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("📊 View Results", type="primary", use_container_width=True):
-                    if st.session_state.get("generation_complete") and st.session_state.get("generation_progress", 0) >= 100:
+            # Replace input form with actions at the bottom of the page
+            st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+            actions = st.container()
+            with actions:
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("📊 View Results", type="primary", use_container_width=True):
                         try:
                             switch_page("pages/04_Results")
                         except Exception:
                             st.rerun()
-                    else:
-                        st.error("Report generation must be 100% complete to view results.")
-            
-            with col2:
-                if st.button("🔄 Generate New Report", type="secondary", use_container_width=True):
-                    # Reset all generation state
-                    st.session_state["generation_progress"] = 0
-                    st.session_state["generation_step"] = 0
-                    st.session_state["generation_complete"] = False
-                    st.session_state["generation_in_progress"] = False
-                    st.session_state["generation_start"] = None
-                    st.rerun()
+                with col2:
+                    if st.button("🔄 Generate New Report", type="secondary", use_container_width=True):
+                        # Reset all generation state and show input again
+                        st.session_state["generation_progress"] = 0
+                        st.session_state["generation_step"] = 0
+                        st.session_state["generation_complete"] = False
+                        st.session_state["generation_in_progress"] = False
+                        st.session_state["generation_start"] = None
+                        st.session_state.pop("navigate_to_results", None)
+                        st.rerun()
 
     # Subtle info card beneath the form
     with st.container():

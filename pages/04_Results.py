@@ -830,7 +830,7 @@ def main() -> None:
 
     rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
     if outputs:
-            for o in outputs:
+        for o in outputs:
                 doc_version = extract_version(o.get("label"))
                 report_timestamp = o.get("timestamp") or generated_ts
                 ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
@@ -839,26 +839,26 @@ def main() -> None:
         rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
     # Optional pagination for summary table
-        sum_page_size = 10
-        sum_total = len(rows)
-        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
-        sum_pg_key = f"results_summary_page_{case_id}"
-        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+    sum_page_size = 10
+    sum_total = len(rows)
+    sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+    sum_pg_key = f"results_summary_page_{case_id}"
+    sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
     
     pc1, pc2, pc3 = st.columns([1, 2, 1])
     with pc1:
         if st.button("← Prev", key=f"res_sum_prev_{case_id}", disabled=(sum_cur_page <= 1)):
-                sum_cur_page = max(1, sum_cur_page - 1)
+            sum_cur_page = max(1, sum_cur_page - 1)
     with pc2:
             st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
     with pc3:
         if st.button("Next →", key=f"res_sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages)):
-                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+            sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
     
-        st.session_state[sum_pg_key] = sum_cur_page
-        sum_start = (sum_cur_page - 1) * sum_page_size
-        sum_end = min(sum_total, sum_start + sum_page_size)
-        page_rows = rows[sum_start:sum_end]
+    st.session_state[sum_pg_key] = sum_cur_page
+    sum_start = (sum_cur_page - 1) * sum_page_size
+    sum_end = min(sum_total, sum_start + sum_page_size)
+    page_rows = rows[sum_start:sum_end]
 
     # Table styling & render
     st.markdown(
