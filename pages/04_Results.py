@@ -668,7 +668,7 @@ def main() -> None:
     components.html(loading_spinner_html, height=140)
 
     try:
-        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
+        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=10)
         outputs = (r.json() or {}).get("items", []) if r.ok else []
         # Exclude legacy Edited subfolder entries from display
         try:
@@ -682,12 +682,7 @@ def main() -> None:
         outputs = []
 
     # --- QUICK UNBLOCK: bypass loading screen if outputs already exist ---
-    try:
-        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
-        _items = (r.json() or {}).get("items", []) if r.ok else []
-    except Exception:
-        _items = []
-    if _items:
+    if outputs:
         st.session_state["generation_complete"] = True
 
     try:
@@ -707,6 +702,49 @@ def main() -> None:
     # History-like summary table for this case
     st.markdown("### Report Summary")
     st.caption("Overview of all reports for this case")
+
+    # QUICK VIEWERS: render the three PDFs early so page feels responsive
+    try:
+        st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+        iframe_h = 600
+        col1, col2, col3 = st.columns(3)
+
+        def _proxy(u: str | None) -> str | None:
+            if not u:
+                return None
+            try:
+                from urllib.parse import quote as _q
+                return f"{backend}/proxy/pdf?url={_q(u, safe='')}"
+            except Exception:
+                return u
+
+        gt_simple = (assets or {}).get("ground_truth_pdf") or (assets or {}).get("ground_truth")
+        ai_simple = next((o.get("ai_url") for o in (outputs or []) if str(o.get("ai_url", "")).lower().endswith(".pdf")), None)
+        dr_simple = next((o.get("doctor_url") for o in (outputs or []) if str(o.get("doctor_url", "")).lower().endswith(".pdf")), None)
+
+        with col1:
+            st.markdown("<strong>GROUND TRUTH</strong>", unsafe_allow_html=True)
+            src = _proxy(gt_simple)
+            if src:
+                st.markdown(f"<iframe src=\"{src}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            else:
+                st.info("Ground Truth not available")
+        with col2:
+            st.markdown("<strong>AI GENERATED</strong>", unsafe_allow_html=True)
+            src = _proxy(ai_simple)
+            if src:
+                st.markdown(f"<iframe src=\"{src}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            else:
+                st.info("AI report not available")
+        with col3:
+            st.markdown("<strong>DOCTOR AS LLM</strong>", unsafe_allow_html=True)
+            src = _proxy(dr_simple)
+            if src:
+                st.markdown(f"<iframe src=\"{src}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            else:
+                st.info("Doctor report not available")
+    except Exception:
+        pass
 
     def extract_version(label: str | None) -> str:
             if not label:
@@ -757,7 +795,7 @@ def main() -> None:
                 return sess_ver
 
             # 3) Fetch GitHub state file directly
-            github_token = _os.getenv("GITHUB_TOKEN") or "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"
+            github_token = _os.getenv("GITHUB_TOKEN") or None
             github_username = "samarth0211"
             repo_name = "n8n-workflows-backup"
             branch = "main"
@@ -768,7 +806,7 @@ def main() -> None:
             if github_token:
                 headers["Authorization"] = f"token {github_token}"
 
-            r = _rq.get(url, headers=headers, timeout=10)
+            r = _rq.get(url, headers=headers, timeout=3)
             if r.ok:
                 data = r.json() or {}
                 content = data.get("content")
@@ -801,7 +839,7 @@ def main() -> None:
     def _get_metrics_for_version(backend: str, case_id: str, version: str) -> dict | None:
         try:
             import requests
-            r = requests.get(f"{backend}/s3/{case_id}/metrics", params={"version": version}, timeout=8)
+            r = requests.get(f"{backend}/s3/{case_id}/metrics", params={"version": version}, timeout=5)
             if r.ok:
                 data = r.json() or {}
                 if data.get("ok"):
@@ -881,7 +919,11 @@ def main() -> None:
             gt_effective_pdf_url = gt_generic
 
     # Warm metrics cache from outputs first (helps fill table below)
-    _probe_metrics_from_outputs(backend, case_id, outputs)
+    try:
+        # Limit warmup to a few candidates for responsiveness
+        _probe_metrics_from_outputs(backend, case_id, (outputs or [])[:3])
+    except Exception:
+        pass
 
     # Helper to ensure fresh load (avoid blank initial render)
     def _viewer_url(u: str | None) -> str | None:
@@ -1155,58 +1197,7 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
     except Exception as _tbl_err:
         st.warning(f"Summary table unavailable: {_tbl_err}")
 
-    # Viewers (GT | AI | Doctor) - plain inline PDFs in one row
-    st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
-    iframe_h = 600
-    col1, col2, col3 = st.columns(3)
-
-    # Compute simple effective URLs like the provided snippet
-    gt_effective_pdf_url_simple = gt_effective_pdf_url or assets.get("ground_truth")
-    ai_effective_pdf_url_simple = next((o.get("ai_url") for o in outputs if str(o.get("ai_url", "")).lower().endswith(".pdf")), None)
-    doc_effective_pdf_url_simple = next((o.get("doctor_url") for o in outputs if str(o.get("doctor_url", "")).lower().endswith(".pdf")), None)
-
-    # Always route through backend proxy to avoid mixed-content/CORS
-    def _proxy(u: str | None) -> str | None:
-        if not u:
-            return None
-        try:
-            from urllib.parse import quote as _q
-            return f"{backend}/proxy/pdf?url={_q(u, safe='')}"
-        except Exception:
-            return u
-
-    with col1:
-        st.markdown("<strong>GROUND TRUTH</strong>", unsafe_allow_html=True)
-        src = _proxy(gt_effective_pdf_url_simple)
-        if src:
-            st.markdown(
-                f"<iframe src=\"{src}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.info("Ground Truth not available")
-
-    with col2:
-        st.markdown("<strong>AI GENERATED</strong>", unsafe_allow_html=True)
-        src = _proxy(ai_effective_pdf_url_simple)
-        if src:
-            st.markdown(
-                f"<iframe src=\"{src}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.info("AI report not available")
-
-    with col3:
-        st.markdown("<strong>DOCTOR AS LLM</strong>", unsafe_allow_html=True)
-        src = _proxy(doc_effective_pdf_url_simple)
-        if src:
-            st.markdown(
-                f"<iframe src=\"{src}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.info("Doctor report not available")
+    # Viewers already rendered above for responsiveness
 
     # Discrepancy tabs (Comments | AI Report Editor) copied from History, bound to current case
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
