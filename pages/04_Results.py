@@ -606,24 +606,24 @@ def main() -> None:
     """
     components.html(loading_spinner_html, height=140)
     
-    try: 
-        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
-        outputs = (r.json() or {}).get("items", []) if r.ok else []
-        # Exclude legacy Edited subfolder entries from display
         try:
-            outputs = [o for o in outputs if not (
-                (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
-                (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
-            )]
+            r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
+            outputs = (r.json() or {}).get("items", []) if r.ok else []
+            # Exclude legacy Edited subfolder entries from display
+            try:
+                outputs = [o for o in outputs if not (
+                    (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
+                    (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
+                )]
+            except Exception:
+                    pass
         except Exception:
-            pass
-    except Exception:
-        outputs = []
-    try:
-        r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
-        assets = r_assets.json() if r_assets.ok else {}
-    except Exception:
-        assets = {}
+            outputs = []
+        try:
+            r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
+            assets = r_assets.json() if r_assets.ok else {}
+        except Exception:
+            assets = {}
 
     # Display case ID prominently
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
@@ -807,12 +807,12 @@ def main() -> None:
     _probe_metrics_from_outputs(backend, case_id, outputs)
 
     # Build rows
-    def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
-        ocr_start = o.get("ocr_start_time", "—")
-        ocr_end = o.get("ocr_end_time", "—")
-        total_tokens = o.get("total_tokens_used", "—")
-        input_tokens = o.get("total_input_tokens", "—")
-        output_tokens = o.get("total_output_tokens", "—")
+        def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
+            ocr_start = o.get("ocr_start_time", "—")
+            ocr_end = o.get("ocr_end_time", "—")
+            total_tokens = o.get("total_tokens_used", "—")
+            input_tokens = o.get("total_input_tokens", "—")
+            output_tokens = o.get("total_output_tokens", "—")
         
         def _fmt_num(v):
             try:
@@ -830,7 +830,7 @@ def main() -> None:
 
     rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
     if outputs:
-        for o in outputs:
+            for o in outputs:
                 doc_version = extract_version(o.get("label"))
                 report_timestamp = o.get("timestamp") or generated_ts
                 ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
@@ -839,26 +839,29 @@ def main() -> None:
         rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
     # Optional pagination for summary table
-    sum_page_size = 10
-    sum_total = len(rows)
-    sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
-    sum_pg_key = f"results_summary_page_{case_id}"
-    sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+        sum_page_size = 10
+        sum_total = len(rows)
+        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+        sum_pg_key = f"results_summary_page_{case_id}"
+        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
     
     pc1, pc2, pc3 = st.columns([1, 2, 1])
     with pc1:
-        if st.button("← Prev", key=f"res_sum_prev_{case_id}", disabled=(sum_cur_page <= 1)):
-            sum_cur_page = max(1, sum_cur_page - 1)
-    with pc2:
-            st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
+        prev_clicked = st.button("← Prev", key=f"res_sum_prev_{case_id}", disabled=(sum_cur_page <= 1))
     with pc3:
-        if st.button("Next →", key=f"res_sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages)):
-            sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
-    
-    st.session_state[sum_pg_key] = sum_cur_page
-    sum_start = (sum_cur_page - 1) * sum_page_size
-    sum_end = min(sum_total, sum_start + sum_page_size)
-    page_rows = rows[sum_start:sum_end]
+        next_clicked = st.button("Next →", key=f"res_sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages))
+
+    # Update page after reading both buttons, then update label
+    if prev_clicked:
+        sum_cur_page = max(1, sum_cur_page - 1)
+    if next_clicked:
+                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+        st.session_state[sum_pg_key] = sum_cur_page
+    with pc2:
+        st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
+        sum_start = (sum_cur_page - 1) * sum_page_size
+        sum_end = min(sum_total, sum_start + sum_page_size)
+        page_rows = rows[sum_start:sum_end]
 
     # Table styling & render
     st.markdown(
@@ -987,10 +990,10 @@ def main() -> None:
             table_html.append('</div>')
 
     # Close the table container (always close after rows loop)
-    table_html.append('</div>')
+            table_html.append('</div>')
     
     # Render the complete table
-    st.markdown("".join(table_html), unsafe_allow_html=True)
+            st.markdown("".join(table_html), unsafe_allow_html=True)
 
     # Viewers (GT | AI | Doctor)
     iframe_h = 480
@@ -1036,7 +1039,7 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-        # Prefer PDF AI outputs (dropdown like History)
+        # Prefer PDF AI outputs (strictly PDFs only in dropdown)
         from urllib.parse import urlparse
         def _is_pdf(u: str | None) -> bool:
             if not isinstance(u, str) or not u:
@@ -1045,11 +1048,8 @@ def main() -> None:
                 return urlparse(u).path.lower().endswith('.pdf')
             except Exception:
                 return u.lower().endswith('.pdf')
-        _pdf_outputs = [o for o in outputs if _is_pdf(o.get("ai_url"))]
-        if not _pdf_outputs:
-            _pdf_outputs = [o for o in outputs if _is_pdf(o.get("ai_url")) or _is_pdf(o.get("doctor_url"))]
-        if not _pdf_outputs:
-            _pdf_outputs = outputs
+        # Only include items whose AI URL is a PDF. If none, show message below.
+        _pdf_outputs = [o for o in (outputs or []) if _is_pdf(o.get("ai_url"))]
         # Dropdown labels
         labels = [o.get("label") or (o.get("ai_key") or "").split("/")[-1] for o in _pdf_outputs]
         if labels:
@@ -1064,7 +1064,8 @@ def main() -> None:
             st.session_state["results_ai_label"] = selected_label
             sel_ai = next((o for o in _pdf_outputs if (o.get("label") or (o.get("ai_key") or "").split("/")[-1]) == selected_label), None)
         else:
-            sel_ai = _pdf_outputs[0] if _pdf_outputs else None
+            sel_ai = None
+            st.info("No PDF AI outputs available for this case.")
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
             st.markdown(f"""

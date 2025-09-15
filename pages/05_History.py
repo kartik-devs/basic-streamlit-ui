@@ -678,14 +678,18 @@ def main() -> None:
         sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
         sc1, sc2, sc3 = st.columns([1, 2, 1])
         with sc1:
-            if st.button("← Prev", key=f"sum_prev_{case_id}", disabled=(sum_cur_page <= 1)):
-                sum_cur_page = max(1, sum_cur_page - 1)
+            prev_clicked = st.button("← Prev", key=f"sum_prev_{case_id}", disabled=(sum_cur_page <= 1))
+        with sc3:
+            next_clicked = st.button("Next →", key=f"sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages))
+        # Apply page changes first
+        if prev_clicked:
+            sum_cur_page = max(1, sum_cur_page - 1)
+        if next_clicked:
+            sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+        st.session_state[sum_pg_key] = sum_cur_page
+        # Now render the center label with updated value
         with sc2:
             st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
-        with sc3:
-            if st.button("Next →", key=f"sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages)):
-                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
-        st.session_state[sum_pg_key] = sum_cur_page
         sum_start = (sum_cur_page - 1) * sum_page_size
         sum_end = min(sum_total, sum_start + sum_page_size)
         page_rows = rows[sum_start:sum_end]
