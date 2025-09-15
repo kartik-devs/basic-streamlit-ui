@@ -677,11 +677,13 @@ def main() -> None:
     if outputs:
         st.session_state["generation_complete"] = True
 
-        try:
-            r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
-            assets = r_assets.json() if r_assets.ok else {}
-        except Exception:
-            assets = {}
+    # Always initialize and try to fetch latest assets (ground truth, etc.)
+    assets = {}
+    try:
+        r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
+        assets = r_assets.json() if r_assets.ok else {}
+    except Exception:
+        assets = {}
 
     # Display case ID prominently and allow correction if mismatched
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
