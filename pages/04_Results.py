@@ -859,9 +859,10 @@ def main() -> None:
     st.session_state[sum_pg_key] = sum_cur_page
     with pc2:
         st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
-        sum_start = (sum_cur_page - 1) * sum_page_size
-        sum_end = min(sum_total, sum_start + sum_page_size)
-        page_rows = rows[sum_start:sum_end]
+
+    sum_start = (sum_cur_page - 1) * sum_page_size
+    sum_end = min(sum_total, sum_start + sum_page_size)
+    page_rows = rows[sum_start:sum_end]
 
     # Table styling & render
     st.markdown(
@@ -878,25 +879,25 @@ def main() -> None:
     )
 
     table_html = [
-            '<div class="table-container">',
-            '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
+        '<div class="table-container">',
+        '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
-            '</div>'
-        ]
+        '</div>'
+    ]
 
     # Render rows with proper metrics data
     for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
@@ -964,14 +965,14 @@ def main() -> None:
             # Use fallback values from the row data
             sec2dur = sec3dur = sec4dur = sec9dur = '—'
         
-            gt_dl = dl_link(gt_url)
+        gt_dl = dl_link(gt_url)
             ai_dl = dl_link(ai_url)
             doc_dl = dl_link(doc_url)
             gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
             ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
             doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
         
-            table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
+        table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
@@ -987,13 +988,13 @@ def main() -> None:
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
-            table_html.append('</div>')
+        table_html.append('</div>')
 
     # Close the table container (always close after rows loop)
-            table_html.append('</div>')
+    table_html.append('</div>')
     
     # Render the complete table
-            st.markdown("".join(table_html), unsafe_allow_html=True)
+    st.markdown("".join(table_html), unsafe_allow_html=True)
 
     # Viewers (GT | AI | Doctor)
     iframe_h = 480
