@@ -541,7 +541,7 @@ def main() -> None:
                     if st.button("📊 View Results", type="primary", use_container_width=True):
                         try:
                             switch_page("pages/04_Results")
-                except Exception:
+                        except Exception:
                             st.rerun()
                 with col2:
                     if st.button("🔄 Generate New Report", type="secondary", use_container_width=True):
@@ -552,7 +552,7 @@ def main() -> None:
                         st.session_state["generation_in_progress"] = False
                         st.session_state["generation_start"] = None
                         st.session_state.pop("navigate_to_results", None)
-                    st.rerun()
+                        st.rerun()
 
     # Subtle info card beneath the form
     with st.container():
