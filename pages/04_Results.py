@@ -985,12 +985,12 @@ def main() -> None:
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
             table_html.append('</div>')
-    
-    # Close the table container
-            table_html.append('</div>')
+
+    # Close the table container (always close after rows loop)
+    table_html.append('</div>')
     
     # Render the complete table
-            st.markdown("".join(table_html), unsafe_allow_html=True)
+    st.markdown("".join(table_html), unsafe_allow_html=True)
 
     # Viewers (GT | AI | Doctor)
     iframe_h = 480
@@ -1009,7 +1009,18 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_effective_pdf_url:
-            st.markdown(f"<iframe src=\"{gt_effective_pdf_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
+                <object data="{gt_effective_pdf_url}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
+                    <iframe src="https://docs.google.com/viewer?url={quote(gt_effective_pdf_url, safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
+                            <p>PDF preview unavailable in your browser</p>
+                            <a href="{gt_effective_pdf_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
+                        </div>
+                    </iframe>
+                </object>
+            </div>
+            """, unsafe_allow_html=True)
         elif gt_generic:
                 st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
         else:
@@ -1056,7 +1067,18 @@ def main() -> None:
             sel_ai = _pdf_outputs[0] if _pdf_outputs else None
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
-            st.markdown(f"<iframe src=\"{sel_ai['ai_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
+                <object data="{sel_ai['ai_url']}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
+                    <iframe src="https://docs.google.com/viewer?url={quote(sel_ai['ai_url'], safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
+                            <p>PDF preview unavailable in your browser</p>
+                            <a href="{sel_ai['ai_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
+                        </div>
+                    </iframe>
+                </object>
+            </div>
+            """, unsafe_allow_html=True)
             ai_effective_pdf_url = sel_ai["ai_url"]
         else:
             st.info("Not available")
@@ -1076,7 +1098,18 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            st.markdown(f"<iframe src=\"{sel_ai['doctor_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
+                <object data="{sel_ai['doctor_url']}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
+                    <iframe src="https://docs.google.com/viewer?url={quote(sel_ai['doctor_url'], safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
+                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
+                            <p>PDF preview unavailable in your browser</p>
+                            <a href="{sel_ai['doctor_url']}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
+                        </div>
+                    </iframe>
+                </object>
+            </div>
+            """, unsafe_allow_html=True)
             doc_effective_pdf_url = sel_ai["doctor_url"]
         else:
             st.info("Not available")
