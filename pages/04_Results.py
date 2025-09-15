@@ -897,44 +897,61 @@ def main() -> None:
             return u
 
     def _render_pdf_viewer(unique_key: str, url: str | None, height_px: int, link_color: str = "#93c5fd", *, key_hint: str | None = None) -> None:
+        # Prefer direct <object> embed via backend streaming when S3 key is known
+        if key_hint:
+            try:
+                from urllib.parse import quote as _q
+                stream_url = f"{backend}/s3/stream?key={_q(key_hint, safe='')}"
+                html = f"""
+                <div style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {height_px}px;\">
+                    <object data=\"{stream_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\">
+                        <div style=\"text-align: center; padding: 2rem; border: 1px dashed #ccc;\">
+                            <p>No preview available</p>
+                            <a href=\"{stream_url}&download=1\" target=\"_blank\" style=\"color: {link_color}; text-decoration: none; font-size: 0.9rem;\">📥 Open PDF in New Tab</a>
+                        </div>
+                    </object>
+                </div>
+                <div style=\"margin-top: 0.5rem; text-align: center;\">
+                    <a href=\"{stream_url}&download=1\" target=\"_blank\" style=\"color: {link_color}; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a>
+                </div>
+                """
+                components.html(html, height=height_px + 32)
+                return
+            except Exception:
+                pass
+        # Fallback to iframe with viewer sequence
         if not url:
             st.info("Not available")
             return
         import uuid
         nonce = f"pv_{unique_key}_{uuid.uuid4().hex[:8]}"
-        base = _proxy_pdf(_viewer_url(url), key=key_hint) or url
+        base = _proxy_pdf(_viewer_url(url), key=None) or url
         gdv = f"https://docs.google.com/viewer?url={quote(base, safe='')}&embedded=true"
         html = f"""
-        <div id="wrap_{nonce}" style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {height_px}px;">
-          <iframe id="{nonce}" src="about:blank" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
+        <div id=\"wrap_{nonce}\" style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {height_px}px;\">
+          <iframe id=\"{nonce}\" src=\"about:blank\" width=\"100%\" height=\"100%\" style=\"border:none;\" sandbox=\"allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox\"></iframe>
         </div>
-        <div style="margin-top:.4rem;display:flex;gap:.5rem;">
-          <a id="lnk_{nonce}" href="{base}" target="_blank" style="color:{link_color};text-decoration:none;font-size:.9rem;">Open original PDF ↗</a>
+        <div style=\"margin-top:.4rem;display:flex;gap:.5rem;\">
+          <a id=\"lnk_{nonce}\" href=\"{base}\" target=\"_blank\" style=\"color:{link_color};text-decoration:none;font-size:.9rem;\">Open original PDF ↗</a>
         </div>
         <script>
-        (function(){{
+        (function(){
           const iframe = document.getElementById('{nonce}');
-          const link = document.getElementById('lnk_{nonce}');
           const base = '{base}';
           const gdvBase = '{gdv}';
           let tries = 0;
-          function withTs(u){{
+          function withTs(u){
              const sep = u.indexOf('?')>=0 ? '&' : '?';
              return u + sep + '_t=' + Date.now();
-          }}
+          }
           const candidates = [gdvBase, base, withTs(gdvBase), withTs(base)];
-          function tryNext(){{
+          function tryNext(){
             if (tries >= candidates.length) return;
             const url = candidates[tries++];
-            let settled = false;
-            const onload = () => {{ settled = true; }};
-            iframe.removeEventListener('load', onload);
-            iframe.addEventListener('load', onload, {{once:true}});
             iframe.src = url;
-            setTimeout(()=>{{ if(!settled) tryNext(); }}, 1800);
-          }}
+          }
           tryNext();
-        }})();
+        })();
         </script>
         """
         components.html(html, height=height_px + 32)
