@@ -588,7 +588,6 @@ def main() -> None:
     # Build table data
     try:
         with st.spinner("Loading report summary…"):
-            from datetime import datetime
             code_version = _fetch_code_version_for_case(case_id)
             # Use UTC offset for compatibility - suppress deprecation warning
             import warnings
@@ -786,10 +785,10 @@ def main() -> None:
                     input_tokens = _fmt_num(met.get('total_input_tokens'))
                     output_tokens = _fmt_num(met.get('total_output_tokens'))
                     # Section durations if provided by backend (extras dict)
-                    from datetime import datetime as _dt
+                    # Use global datetime import
                     def _parse_iso(x):
                         try:
-                            return _dt.fromisoformat(str(x).replace('Z', '+00:00')) if x else None
+                            return datetime.fromisoformat(str(x).replace('Z', '+00:00')) if x else None
                         except Exception:
                             return None
                     def _fmt_dur(s, e):

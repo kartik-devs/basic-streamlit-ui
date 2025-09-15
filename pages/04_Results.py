@@ -319,7 +319,8 @@ def _show_locked_results_page(case_id: str, status: dict):
         </body>
         </html>
         """
-        components.html(loading_html, height=500)
+        # Increase height to avoid abrupt clipping on some browsers and DPI scales
+        components.html(loading_html, height=680)
     
     # Show error state if generation failed
     elif status["failed"]:
@@ -380,7 +381,7 @@ def _show_locked_results_page(case_id: str, status: dict):
         </body>
         </html>
         """
-        components.html(error_html, height=300)
+        components.html(error_html, height=420)
     
     # Show not started state
     else:
@@ -441,7 +442,7 @@ def _show_locked_results_page(case_id: str, status: dict):
         </body>
         </html>
         """
-        components.html(not_started_html, height=300)
+        components.html(not_started_html, height=420)
     
     # Navigation buttons with better styling
     st.markdown("""
@@ -547,7 +548,7 @@ def main() -> None:
     </body>
     </html>
     """
-    components.html(success_html, height=120)
+    components.html(success_html, height=220)
 
     try:
         import requests
@@ -603,7 +604,7 @@ def main() -> None:
     </body>
     </html>
     """
-    components.html(loading_spinner_html, height=80)
+    components.html(loading_spinner_html, height=140)
     
     try: 
         r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
