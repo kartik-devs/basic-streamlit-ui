@@ -526,8 +526,14 @@ def proxy_pdf(url: str):
                     yield chunk
         headers = {
             "Content-Type": "application/pdf",
-            # Allow embedding in iframes from our frontend
+            # Allow embedding and cross-origin fetch for pdf.js
             "X-Accel-Buffering": "no",
+            "Cache-Control": "private, max-age=60",
+            "X-Frame-Options": "ALLOWALL",
+            "Content-Security-Policy": "frame-ancestors *",
+            "Access-Control-Allow-Origin": "*",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+            "Accept-Ranges": "bytes",
         }
         return StreamingResponse(_iter(), headers=headers, media_type="application/pdf")
     except HTTPException:
