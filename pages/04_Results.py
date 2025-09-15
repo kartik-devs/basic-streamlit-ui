@@ -1,6 +1,6 @@
 import streamlit as st
-from datetime import datetime, timezone
-
+from datetime import datetime
+from app.ui import inject_base_styles, theme_provider, top_nav
 import os
 import streamlit.components.v1 as components
 from urllib.parse import quote
@@ -602,13 +602,6 @@ def main() -> None:
                 switch_page("pages/01_Case_Report")
             except Exception:
                 st.experimental_rerun()
-    with c3:
-        if st.button("Force reload", use_container_width=True):
-            try:
-                st.cache_data.clear()
-            except Exception:
-                pass
-            st.experimental_rerun()
 
     try:
         import requests
@@ -668,17 +661,17 @@ def main() -> None:
 
     try:
         r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=10)
-        outputs = (r.json() or {}).get("items", []) if r.ok else []
-        # Exclude legacy Edited subfolder entries from display
-        try:
-            outputs = [o for o in outputs if not (
-                (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
-                (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
-            )]
+            outputs = (r.json() or {}).get("items", []) if r.ok else []
+            # Exclude legacy Edited subfolder entries from display
+            try:
+                outputs = [o for o in outputs if not (
+                    (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
+                    (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
+                )]
+            except Exception:
+                    pass
         except Exception:
-            pass
-    except Exception:
-        outputs = []
+            outputs = []
 
     # --- QUICK UNBLOCK: bypass loading screen if outputs already exist ---
     if outputs:
@@ -717,9 +710,31 @@ def main() -> None:
             except Exception:
                 return u
 
+        # Helper: extract 12-digit timestamp from a URL or label for ordering
+        def _ts_key(item: dict, field: str) -> str:
+            try:
+                import re
+                src = (item.get(field) or item.get('label') or item.get('ai_key') or item.get('doctor_key') or '')
+                m = re.search(r"(\d{12})", str(src))
+                return m.group(1) if m else ''
+            except Exception:
+                return ''
+
+        # Pick latest AI and Doctor PDFs independently
+        ai_pdf_items = [o for o in (outputs or []) if str(o.get('ai_url','')).lower().endswith('.pdf')]
+        dr_pdf_items = [o for o in (outputs or []) if str(o.get('doctor_url','')).lower().endswith('.pdf')]
+        try:
+            ai_pdf_items.sort(key=lambda o: _ts_key(o, 'ai_url'), reverse=True)
+        except Exception:
+            pass
+        try:
+            dr_pdf_items.sort(key=lambda o: _ts_key(o, 'doctor_url'), reverse=True)
+        except Exception:
+            pass
+        ai_simple = ai_pdf_items[0].get('ai_url') if ai_pdf_items else None
+        dr_simple = dr_pdf_items[0].get('doctor_url') if dr_pdf_items else None
+
         gt_simple = (assets or {}).get("ground_truth_pdf") or (assets or {}).get("ground_truth")
-        ai_simple = next((o.get("ai_url") for o in (outputs or []) if str(o.get("ai_url", "")).lower().endswith(".pdf")), None)
-        dr_simple = next((o.get("doctor_url") for o in (outputs or []) if str(o.get("doctor_url", "")).lower().endswith(".pdf")), None)
 
         with col1:
             st.markdown("<strong>GROUND TRUTH</strong>", unsafe_allow_html=True)
@@ -831,7 +846,7 @@ def main() -> None:
 
     # Get code version
     code_version = _fetch_code_version_for_case(case_id)
-    generated_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    generated_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
     # Metrics fetching function
     @st.cache_data(ttl=120)
@@ -980,26 +995,37 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
                 stream_url = f"{backend}/s3/stream?key={_q(key_hint, safe='')}"
                 html = f"""
                 <div style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {height_px}px;\">
-                    <object data=\"{stream_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\">\n                        <div style=\"text-align: center; padding: 2rem; border: 1px dashed #ccc;\">\n                            <p>No preview available</p>\n                            <a href=\"{stream_url}&download=1\" target=\"_blank\" style=\"color: {link_color}; text-decoration: none; font-size: 0.9rem;\">📥 Open PDF in New Tab</a>\n                        </div>\n                    </object>
+                    <object data=\"{stream_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\">
+                        <div style=\"text-align: center; padding: 2rem; border: 1px dashed #ccc;\">
+                            <p>No preview available</p>
+                            <a href=\"{stream_url}&download=1\" target=\"_blank\" style=\"color: {link_color}; text-decoration: none; font-size: 0.9rem;\">📥 Open PDF in New Tab</a>
+                        </div>
+                    </object>
                 </div>
-                <div style=\"margin-top: 0.5rem; text-align: center;\">\n                    <a href=\"{stream_url}&download=1\" target=\"_blank\" style=\"color: {link_color}; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a>\n                </div>
+                <div style=\"margin-top: 0.5rem; text-align: center;\">
+                    <a href=\"{stream_url}&download=1\" target=\"_blank\" style=\"color: {link_color}; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a>
+                </div>
                 """
                 components.html(html, height=height_px + 32)
                 return
             except Exception:
                 pass
-        # Fallback to iframe with resilient viewer sequence
+        # Fallback to iframe with viewer sequence
         if not url:
             st.info("Not available")
             return
         import uuid
         nonce = f"pv_{unique_key}_{uuid.uuid4().hex[:8]}"
-        raw = _viewer_url(url) or url
-        base = _proxy_pdf(raw, key=None) or raw
-        gdv_raw = f"https://docs.google.com/viewer?url={quote(raw, safe='')}&embedded=true"
-        gdv_base = f"https://docs.google.com/viewer?url={quote(base, safe='')}&embedded=true"
+        base = _proxy_pdf(_viewer_url(url), key=None) or url
+        gdv = f"https://docs.google.com/viewer?url={quote(base, safe='')}&embedded=true"
         html = f"""
-        <div id=\"wrap_{nonce}\" style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {height_px}px;\">\n          <iframe id=\"{nonce}\" src=\"about:blank\" width=\"100%\" height=\"100%\" style=\"border:none;\" sandbox=\"allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox\"></iframe>\n        </div>\n        <div style=\"margin-top:.4rem;display:flex;gap:.5rem;\">\n          <a id=\"lnk_{nonce}\" href=\"{raw}\" target=\"_blank\" style=\"color:{link_color};text-decoration:none;font-size:.9rem;\">Open original PDF ↗</a>\n        </div>\n        <script>\n        (function(){{\n          const iframe = document.getElementById('{nonce}');\n          const raw = '{raw}';\n          const base = '{base}';\n          const gdvRaw = '{gdv_raw}';\n          const gdvBase = '{gdv_base}';\n          let tries = 0;\n          function withTs(u){{\n             const sep = u.indexOf('?')>=0 ? '&' : '?';\n             return u + sep + '_t=' + Date.now();\n          }}\n          const candidates = [gdvRaw, gdvBase, raw, base, withTs(gdvRaw), withTs(gdvBase), withTs(raw), withTs(base)];\n          function tryNext(){{\n            if (tries >= candidates.length) return;\n            const url = candidates[tries++];\n            let settled = false;\n            const onload = () => {{ settled = true; }};\n            iframe.removeEventListener('load', onload);\n            iframe.addEventListener('load', onload, {{once:true}});\n            iframe.src = url;\n            setTimeout(()=>{{ if(!settled) tryNext(); }}, 2200);\n          }}\n          tryNext();\n        })();\n        </script>\n        """
+        <div id=\"wrap_{nonce}\" style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {height_px}px;\">
+          <iframe id=\"{nonce}\" src=\"{gdv}\" width=\"100%\" height=\"100%\" style=\"border:none;\" sandbox=\"allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox\"></iframe>
+        </div>
+        <div style=\"margin-top:.4rem;display:flex;gap:.5rem;\">
+          <a id=\"lnk_{nonce}\" href=\"{base}\" target=\"_blank\" style=\"color:{link_color};text-decoration:none;font-size:.9rem;\">Open original PDF ↗</a>
+        </div>
+        """
         components.html(html, height=height_px + 32)
 
     # Build rows
@@ -1035,12 +1061,12 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
         rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
     # Optional pagination for summary table
-    sum_page_size = 10
-    sum_total = len(rows)
-    sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
-    sum_pg_key = f"results_summary_page_{case_id}"
-    sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
-
+        sum_page_size = 10
+        sum_total = len(rows)
+        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+        sum_pg_key = f"results_summary_page_{case_id}"
+        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+    
     pc1, pc2, pc3 = st.columns([1, 2, 1])
     with pc1:
         prev_clicked = st.button("← Prev", key=f"res_sum_prev_{case_id}", disabled=(sum_cur_page <= 1))
@@ -1051,31 +1077,31 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
     if prev_clicked:
         sum_cur_page = max(1, sum_cur_page - 1)
     if next_clicked:
-        sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
-    st.session_state[sum_pg_key] = sum_cur_page
+                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+        st.session_state[sum_pg_key] = sum_cur_page
     with pc2:
         st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
 
-    sum_start = (sum_cur_page - 1) * sum_page_size
-    sum_end = min(sum_total, sum_start + sum_page_size)
-    page_rows = rows[sum_start:sum_end]
+        sum_start = (sum_cur_page - 1) * sum_page_size
+        sum_end = min(sum_total, sum_start + sum_page_size)
+        page_rows = rows[sum_start:sum_end]
 
     # Table styling & render (defensive: don't let errors block rest of page)
     try:
-        st.markdown(
-            """
-            <style>
-            .table-container { overflow-x: auto; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; margin-top: 12px; }
-            .history-table { min-width: 3200px; display: grid; gap: 0; grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px; }
-            .history-table > div:nth-child(4) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
-            .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
-            .history-table > div:nth-child(15n) { border-right: none; }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        """
+        <style>
+        .table-container { overflow-x: auto; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; margin-top: 12px; }
+        .history-table { min-width: 3200px; display: grid; gap: 0; grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px; }
+        .history-table > div:nth-child(4) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
+        .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
+        .history-table > div:nth-child(15n) { border-right: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        table_html = [
+    table_html = [
             '<div class="table-container">',
             '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
             '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
@@ -1089,14 +1115,14 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
             '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
             '</div>'
         ]
 
-        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
+    for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
             src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('label') or '') == doc_ver or (it.get('ai_key') or '').endswith(doc_ver)), None)
 
             met = None
@@ -1180,8 +1206,8 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
             table_html.append('</div>')
 
-        table_html.append('</div>')
-        st.markdown("".join(table_html), unsafe_allow_html=True)
+            table_html.append('</div>')
+            st.markdown("".join(table_html), unsafe_allow_html=True)
     except Exception as _tbl_err:
         st.warning(f"Summary table unavailable: {_tbl_err}")
 

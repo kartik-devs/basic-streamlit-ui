@@ -924,16 +924,31 @@ def main() -> None:
         # Final fallback: if still empty, show original outputs to avoid a blank dropdown
         if not _pdf_outputs:
             _pdf_outputs = outputs
+
+        # Helper to extract 12-digit timestamp for ordering
+        def _ts_key(item: dict) -> str:
+            try:
+                import re
+                src = (item.get('ai_url') or item.get('doctor_url') or item.get('label') or item.get('ai_key') or item.get('doctor_key') or '')
+                m = re.search(r"(\d{12})", str(src))
+                return m.group(1) if m else ''
+            except Exception:
+                return ''
+        try:
+            _pdf_outputs.sort(key=_ts_key, reverse=True)
+        except Exception:
+            pass
+
         labels = [o.get("label") or (o.get("ai_key") or "").split("/")[-1] for o in _pdf_outputs]
         
-        # Use session state to maintain selection across reruns
+        # Use session state to maintain selection across reruns, default to latest
         if labels:
             # Find current selection index
             current_label = st.session_state.get(ai_key)
             if current_label and current_label in labels:
                 default_index = labels.index(current_label)
             else:
-                default_index = 0
+                default_index = 0  # latest after sort desc
                 st.session_state[ai_key] = labels[0]
             
             selected_label = st.selectbox(
