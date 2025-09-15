@@ -590,7 +590,7 @@ def main() -> None:
         with st.spinner("Loading report summary…"):
             from datetime import datetime
             code_version = _fetch_code_version_for_case(case_id)
-            generated_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+            generated_ts = datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         
         # Determine ground truth URL for table
         if gt_pdf:
@@ -868,14 +868,20 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_pdf:
-            # Use PDF.js for better browser compatibility
+            # Use PDF.js viewer for better cross-browser compatibility
+            pdf_viewer_url = f"https://mozilla.github.io/pdf.js/web/viewer.html?file={gt_pdf}"
             st.markdown(f"""
-            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
-                <iframe src="{gt_pdf}" width="100%" height="{iframe_h}" 
+            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
+                <iframe src="{pdf_viewer_url}" width="100%" height="100%" 
                         style="border:none;" 
-                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads"
                         loading="lazy">
                 </iframe>
+            </div>
+            <div style="margin-top: 0.5rem; text-align: center;">
+                <a href="{gt_pdf}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                    📥 Download PDF
+                </a>
             </div>
             """, unsafe_allow_html=True)
             gt_effective_pdf_url = gt_pdf
@@ -889,13 +895,19 @@ def main() -> None:
                     url2 = d2.get("url")
                     fmt = d2.get("format")
                     if fmt == "pdf" and url2:
+                        pdf_viewer_url = f"https://mozilla.github.io/pdf.js/web/viewer.html?file={url2}"
                         st.markdown(f"""
-                        <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
-                            <iframe src="{url2}" width="100%" height="{iframe_h}" 
+                        <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
+                            <iframe src="{pdf_viewer_url}" width="100%" height="100%" 
                                     style="border:none;" 
-                                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads"
                                     loading="lazy">
                             </iframe>
+                        </div>
+                        <div style="margin-top: 0.5rem; text-align: center;">
+                            <a href="{url2}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">
+                                📥 Download PDF
+                            </a>
                         </div>
                         """, unsafe_allow_html=True)
                         gt_effective_pdf_url = url2
