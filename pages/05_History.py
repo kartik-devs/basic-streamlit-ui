@@ -627,347 +627,52 @@ def main() -> None:
                     url2 = d2.get("url")
                     fmt = d2.get("format")
                     if fmt == "pdf" and url2:
-                        gt_effective_pdf_url = url2
-                    else:
-                        gt_effective_pdf_url = gt_generic
-            except Exception:
-                gt_effective_pdf_url = gt_generic
-
-        # Helper function to extract timing and token data from metadata
-        def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
-            # Extract timing data
-            ocr_start = o.get("ocr_start_time", "—")
-            ocr_end = o.get("ocr_end_time", "—")
-            
-            # Extract token usage
-            total_tokens = o.get("total_tokens_used", "—")
-            input_tokens = o.get("total_input_tokens", "—")
-            output_tokens = o.get("total_output_tokens", "—")
-            
-            # Format timing (extract just time part if available)
-            if ocr_start != "—" and "T" in str(ocr_start):
-                try:
-                    ocr_start = str(ocr_start).split("T")[1].split("+")[0][:8]  # HH:MM:SS
-                except:
-                    pass
-            if ocr_end != "—" and "T" in str(ocr_end):
-                try:
-                    ocr_end = str(ocr_end).split("T")[1].split("+")[0][:8]  # HH:MM:SS
-                except:
-                    pass
-            
-            # Format token numbers with commas
-            if total_tokens != "—" and isinstance(total_tokens, (int, str)):
-                try:
-                    total_tokens = f"{int(total_tokens):,}"
-                except:
-                    pass
-            if input_tokens != "—" and isinstance(input_tokens, (int, str)):
-                try:
-                    input_tokens = f"{int(input_tokens):,}"
-                except:
-                    pass
-            if output_tokens != "—" and isinstance(output_tokens, (int, str)):
-                try:
-                    output_tokens = f"{int(output_tokens):,}"
-                except:
-                    pass
-            
-            return str(ocr_start), str(ocr_end), str(total_tokens), str(input_tokens), str(output_tokens)
-
-        rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
-        if outputs:
-            for o in outputs:
-                doc_version = extract_version(o.get("label")) 
-                # Use timestamp from S3 metadata instead of fake timestamp
-                report_timestamp = o.get("timestamp") or generated_ts
-                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
-                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
-        else:
-            st.warning("No outputs returned for this case. Verify the backend `/s3/{case_id}/outputs` endpoint and try Refetch/Cache Clear in Debug.")
-            rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
-
-        # Pagination controls for summary table (10 per page)
-        sum_page_size = 10
-        sum_total = len(rows)
-        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
-        sum_pg_key = f"hist_summary_page_{case_id}"
-        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
-        sc1, sc2, sc3 = st.columns([1, 2, 1])
-        with sc1:
-            prev_clicked = st.button("← Prev", key=f"sum_prev_{case_id}", disabled=(sum_cur_page <= 1))
-        with sc3:
-            next_clicked = st.button("Next →", key=f"sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages))
-        # Apply page changes first
-        if prev_clicked:
-            sum_cur_page = max(1, sum_cur_page - 1)
-        if next_clicked:
-            sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
-        st.session_state[sum_pg_key] = sum_cur_page
-        # Now render the center label with updated value
-        with sc2:
-            st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
-        sum_start = (sum_cur_page - 1) * sum_page_size
-        sum_end = min(sum_total, sum_start + sum_page_size)
-        page_rows = rows[sum_start:sum_end]
-
-        # Add CSS for horizontal scrolling
-        st.markdown("""
-        <style>
-        .table-container {
-            overflow-x: auto;
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 8px;
-            margin-top: 12px;
-        }
-        
-        .history-table {
-            min-width: 3200px;
-            display: grid;
-            gap: 0;
-            grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px;
-        }
-        
-        /* Add visual separation between Ground Truth and AI Generated columns */
-        .history-table > div:nth-child(4) {
-            border-right: 2px solid rgba(255,255,255,0.25) !important;
-        }
-        
-        /* Add vertical borders to table cells */
-        .history-table > div {
-            border-right: 1px solid rgba(255,255,255,0.12);
-        }
-        
-        /* Remove right border from last column */
-        .history-table > div:nth-child(15n) {
-            border-right: none;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-        # Render table HTML
-        table_html = [
-            '<div class="table-container">',
-            '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
-            '</div>'
-        ]
-        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
-            # If metrics are blank, try S3 JSON lookup; prefer direct version if doc_ver looks like timestamp
-            if (ocr_start == '—' and ocr_end == '—' and total_tokens == '—'):
-                met = None
-                # Direct probe when doc_ver is a 12-digit timestamp
-                try:
-                    import re as _re
-                    if _re.match(r"^\d{12}$", str(doc_ver or "")):
-                        met = _get_metrics_for_version(backend, case_id, f"{case_id}-{doc_ver}")
-                except Exception:
-                    met = None
-                # Fallback: infer from label/ai_key in outputs
-                try:
-                    # Find source item in outputs to get label/ai_key
-                    src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('label') or '') == doc_ver or (it.get('ai_key') or '').endswith(doc_ver)), None)
-                except Exception:
-                    src = None
-                if not met:
-                    versions = _infer_versions_from_label(case_id, (src or {}).get('label'), (src or {}).get('ai_key'))
-                    for v in versions:
-                        met = _get_metrics_for_version(backend, case_id, v)
-                        if met:
-                            break
-                if met:
-                    def _fmt_time(t):
-                        try:
-                            return str(t).split('T')[1].split('+')[0][:8]
-                        except Exception:
-                            return t or '—'
-                    ocr_start = _fmt_time(met.get('ocr_start_time') or '—')
-                    ocr_end = _fmt_time(met.get('ocr_end_time') or '—')
-                    def _fmt_num(n):
-                        try:
-                            return f"{int(n):,}" if n is not None else '—'
-                        except Exception:
-                            return str(n) if n is not None else '—'
-                    total_tokens = _fmt_num(met.get('total_tokens_used'))
-                    input_tokens = _fmt_num(met.get('total_input_tokens'))
-                    output_tokens = _fmt_num(met.get('total_output_tokens'))
-                    # Section durations if provided by backend (extras dict)
-                    # Use global datetime import
-                    def _parse_iso(x):
-                        try:
-                            return datetime.fromisoformat(str(x).replace('Z', '+00:00')) if x else None
-                        except Exception:
-                            return None
-                    def _fmt_dur(s, e):
-                        if not s or not e:
-                            return '—'
-                        try:
-                            secs = max(0.0, (e - s).total_seconds())
-                            m, s2 = divmod(int(round(secs)), 60)
-                            return f"{m:02d}:{s2:02d}"
-                        except Exception:
-                            return '—'
-                    extras = met.get('extras') or {}
-                    _s2s = _parse_iso(extras.get('section2 start time'))
-                    _s2e = _parse_iso(extras.get('section2 end time'))
-                    _s3s = _parse_iso(extras.get('section3 start time'))
-                    _s3e = _parse_iso(extras.get('section3 end time'))
-                    _s4s = _parse_iso(extras.get('section4 start time'))
-                    _s4e = _parse_iso(extras.get('section4 end time'))
-                    _s9s = _parse_iso(extras.get('section9 start time'))
-                    _s9e = _parse_iso(extras.get('section9 end time'))
-                    sec2dur = _fmt_dur(_s2s, _s2e)
-                    sec3dur = _fmt_dur(_s3s, _s3e)
-                    sec4dur = _fmt_dur(_s4s, _s4e)
-                    sec9dur = _fmt_dur(_s9s, _s9e)
-                else:
-                    sec2dur = sec3dur = sec4dur = sec9dur = '—'
-            else:
-                sec2dur = sec3dur = sec4dur = sec9dur = '—'
-            gt_dl = dl_link(gt_url)
-            ai_dl = dl_link(ai_url)
-            doc_dl = dl_link(doc_url)
-            gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
-            ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
-            doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
-            
-            # Append each row element individually
-            table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
-            table_html.append('</div>')
-        table_html.append('</div>')
-        st.markdown("".join(table_html), unsafe_allow_html=True)
-        
-        # Extra breathing room below the summary table
-        st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Error loading report summary: {str(e)}")
-        st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
-
-    # Denser layout height
-    iframe_h = 480
-
-    col1, col2, col3 = st.columns(3)
-
-    # Ground Truth
-    with col1:
-        st.markdown(
-            """
-            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
-              <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.35);color:#93c5fd;font-size:.8rem;font-weight:700;letter-spacing:.02em;">GROUND TRUTH</span>
-              <span style='font-weight:700;'>Ground Truth</span>
-            </div>
-            <div style='opacity:.75;margin:.25rem 0 .5rem;'>Original document preview</div>
-            <div style='opacity:.65;margin-top:-6px;'>• Converted to PDF from DOCX</div>
-            <div style='opacity:.65;margin-top:-2px;margin-bottom:.35rem;'>• Falls back to DOCX download if needed</div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if gt_pdf:
-            from urllib.parse import quote as _q
-            gt_key = assets.get('ground_truth_key')
-            base_url = f"{backend}/s3/stream?key={_q(gt_key, safe='')}" if gt_key else f"{backend}/proxy/pdf?url={_q(gt_pdf, safe='')}"
-            dl_url = f"{base_url}&download=1" if base_url.startswith(backend) else gt_pdf
-            container_id = f"hist_gt_canvas_{case_id}"
-            html = f"""
-            <div id=\"{container_id}\" style=\"height:{iframe_h}px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;padding:6px;background:white;\"></div>
-            <div style=\"margin-top:.4rem;display:flex;gap:.75rem;\"> 
-              <a href=\"{base_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
-              <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
-            </div>
-            <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
-            <script>
-            const pdfjsLib = window['pdfjs-dist/build/pdf'];
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-            (async () => {{
-              const url = '{base_url}';
-              const container = document.getElementById('{container_id}');
-              container.innerHTML = '';
-              try {{
-                const res = await fetch(url, {{ method: 'GET', headers: {{ 'Accept': 'application/pdf' }} }});
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const buf = await res.arrayBuffer();
-                const loadingTask = pdfjsLib.getDocument({{ data: buf }});
-                const pdf = await loadingTask.promise;
-                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {{
-                  const page = await pdf.getPage(pageNum);
-                  const viewport = page.getViewport({{ scale: 1.2 }});
-                  const canvas = document.createElement('canvas');
-                  const context = canvas.getContext('2d');
-                  canvas.style.display = 'block';
-                  canvas.style.width = '100%';
-                  const scale = container.clientWidth / viewport.width;
-                  const scaledViewport = page.getViewport({{ scale }});
-                  canvas.width = Math.floor(scaledViewport.width);
-                  canvas.height = Math.floor(scaledViewport.height);
-                  container.appendChild(canvas);
-                  await page.render({{ canvasContext: context, viewport: scaledViewport }}).promise;
-                }}
-              }} catch (e) {{
-                const div = document.createElement('div');
-                div.textContent = 'Failed to render PDF.';
-                div.style.opacity = '0.8';
-                container.appendChild(div);
-              }}
-            }})();
-            </script>
-            """
-            components.html(html, height=iframe_h + 54)
-            gt_effective_pdf_url = gt_pdf
-        elif gt_generic:
-            raw_key = assets.get("ground_truth_key") if isinstance(assets, dict) else None
-            params = {"key": raw_key} if raw_key else {"url": gt_generic}
-            try:
-                r2 = requests.get(f"{backend}/s3/ensure-pdf", params=params, timeout=10)
-                if r2.ok:
-                    d2 = r2.json() or {}
-                    url2 = d2.get("url")
-                    fmt = d2.get("format")
-                    if fmt == "pdf" and url2:
                         from urllib.parse import quote as _q
-                        k = d2.get('key')
-                        open_url = f"{backend}/s3/stream?key={_q(k, safe='')}" if k else url2
-                        dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else url2
-                        st.markdown(
-                            f"""
-                            <div style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;\"> 
-                              <object data=\"{open_url}#toolbar=1&navpanes=1&scrollbar=1\" type=\"application/pdf\" width=\"100%\" height=\"100%\"></object>
-                            </div>
-                            <div style=\"margin-top:.4rem;display:flex;gap:.75rem;\"> 
-                              <a href=\"{open_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
-                              <a href=\"{dl_url}\" target=\"_blank\" class=\"st-a\">📥 Download</a>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
+                        proxy_url = f"{backend}/proxy/pdf?url={_q(url2, safe='')}"
+                        container_id = f"hist_gt_canvas_{case_id}"
+                        html = f"""
+                        <div id=\"{container_id}\" style=\"height:{iframe_h}px;overflow:auto;border:1px solid #e5e7eb;border-radius:10px;padding:6px;background:white;\"></div>
+                        <div style=\"margin-top:.4rem;display:flex;gap:.75rem;\"> 
+                          <a href=\"{proxy_url}\" target=\"_blank\" class=\"st-a\">Open PDF ↗</a>
+                        </div>
+                        <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
+                        <script>
+                        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                        (async () => {{
+                          const url = '{proxy_url}';
+                          const container = document.getElementById('{container_id}');
+                          container.innerHTML = '';
+                          try {{
+                            const res = await fetch(url, {{ method: 'GET', headers: {{ 'Accept': 'application/pdf' }} }});
+                            if (!res.ok) throw new Error('HTTP ' + res.status);
+                            const buf = await res.arrayBuffer();
+                            const loadingTask = pdfjsLib.getDocument({{ data: buf }});
+                            const pdf = await loadingTask.promise;
+                            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {{
+                              const page = await pdf.getPage(pageNum);
+                              const viewport = page.getViewport({{ scale: 1.2 }});
+                              const canvas = document.createElement('canvas');
+                              const context = canvas.getContext('2d');
+                              canvas.style.display = 'block';
+                              canvas.style.width = '100%';
+                              const scale = container.clientWidth / viewport.width;
+                              const scaledViewport = page.getViewport({{ scale }});
+                              canvas.width = Math.floor(scaledViewport.width);
+                              canvas.height = Math.floor(scaledViewport.height);
+                              container.appendChild(canvas);
+                              await page.render({{ canvasContext: context, viewport: scaledViewport }}).promise;
+                            }}
+                          }} catch (e) {{
+                            const div = document.createElement('div');
+                            div.textContent = 'Failed to render PDF.';
+                            div.style.opacity = '0.8';
+                            container.appendChild(div);
+                          }}
+                        })();
+                        </script>
+                        """
+                        components.html(html, height=iframe_h + 54)
                         gt_effective_pdf_url = url2
                     else:
                         st.markdown(f"<a href=\"{url2 or gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
