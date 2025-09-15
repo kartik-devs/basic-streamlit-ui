@@ -530,6 +530,16 @@ def main() -> None:
     # Treat test case 0000 as alias of 9999 for Results
     case_id = "9999" if str(case_id_raw) == "0000" else case_id_raw
 
+    # Fetch outputs early so we can bypass the lock if they exist
+    try:
+        resp = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=10)
+        outputs = (resp.json() or {}).get("items", []) if resp.ok else []
+    except:
+        outputs = []
+
+    if outputs:
+        st.session_state["generation_complete"] = True
+
     # Check generation status - show beautiful loading state if running, block access if not complete
     generation_status = _check_generation_status(case_id)
     if not generation_status["complete"]:
