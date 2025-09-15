@@ -196,12 +196,12 @@ def main() -> None:
             # Debug mode: Complete instantly, otherwise linear progression over 2 hours
             if st.session_state.get("debug_mode", False):
                 # Debug mode: Complete in 5 seconds instead of 2 hours
-                debug_progress = min(5 + (elapsed_time / 5) * 94, 99)
+                debug_progress = min(5 + (elapsed_time / 5) * 95, 100)
                 st.session_state["generation_progress"] = int(debug_progress)
             else:
                 # Normal mode: Linear progression over 2 hours (7200 seconds)
                 if elapsed_time < 7200:  # Within 2 hours
-                    linear_progress = min(5 + (elapsed_time / 7200) * 94, 99)
+                    linear_progress = min(5 + (elapsed_time / 7200) * 95, 100)
                     st.session_state["generation_progress"] = int(linear_progress)
             
             # Update step status based on progress
@@ -216,6 +216,15 @@ def main() -> None:
                 st.session_state["generation_step"] = 3  # Generating report (50-80%)
             else:
                 st.session_state["generation_step"] = 4  # Finalizing & quality check (80-100%)
+
+        # Force-complete after 2 hours to avoid being stuck at ~98–99%
+        if elapsed_time >= 7200 and st.session_state.get("generation_in_progress"):
+            st.session_state["generation_progress"] = 100
+            st.session_state["generation_step"] = 4
+            st.session_state["generation_complete"] = True
+            st.session_state["generation_in_progress"] = False
+            st.session_state["navigate_to_results"] = True
+            st.rerun()
 
         # Optional auto-complete for demos (disabled by default). Set AUTO_COMPLETE_SECONDS to enable.
         auto_complete_env = os.getenv("AUTO_COMPLETE_SECONDS")
