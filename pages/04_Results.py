@@ -458,11 +458,37 @@ def _show_locked_results_page(case_id: str, status: dict):
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("🔄 Go to Case Report", type="primary", use_container_width=True):
+            navigated = False
             try:
                 from streamlit_extras.switch_page_button import switch_page
-                switch_page("pages/01_Case_Report")
+                for target in (
+                    "pages/01_Case_Report",
+                    "01_Case_Report",
+                    "Case Report",
+                    "Case_Report",
+                    "case report",
+                ):
+                    try:
+                        switch_page(target)
+                        navigated = True
+                        break
+                    except Exception:
+                        continue
             except Exception:
-                st.info("Please use the sidebar to navigate to 'Case Report'.")
+                pass
+            if not navigated:
+                # Last-resort client-side redirect to the root; main page provides clear buttons
+                components.html("""
+                    <script>
+                        try {
+                          if (window && window.parent) {
+                            window.parent.location.replace(window.parent.location.origin + window.parent.location.pathname);
+                          } else {
+                            window.location.replace('/');
+                          }
+                        } catch (e) {}
+                    </script>
+                """, height=0)
     
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1046,16 +1072,13 @@ def main() -> None:
         )
         if gt_effective_pdf_url:
             _gt_url = _viewer_url(gt_effective_pdf_url)
+            _gdv = f"https://docs.google.com/viewer?url={quote(_gt_url, safe='')}&embedded=true"
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{_gt_url}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(_gt_url, safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
-                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
-                            <p>PDF preview unavailable in your browser</p>
-                            <a href="{_gt_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
-                        </div>
-                    </iframe>
-                </object>
+                <iframe src="{_gdv}" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
+            </div>
+            <div style="margin-top:.4rem;display:flex;gap:.5rem;">
+                <a href="{_gt_url}" target="_blank" style="color:#93c5fd;text-decoration:none;font-size:.9rem;">Open original PDF ↗</a>
             </div>
             """, unsafe_allow_html=True)
         elif gt_generic:
@@ -1103,16 +1126,13 @@ def main() -> None:
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
             _ai_url = _viewer_url(sel_ai['ai_url'])
+            _gdv = f"https://docs.google.com/viewer?url={quote(_ai_url, safe='')}&embedded=true"
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{_ai_url}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(_ai_url, safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
-                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
-                            <p>PDF preview unavailable in your browser</p>
-                            <a href="{_ai_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
-                        </div>
-                    </iframe>
-                </object>
+                <iframe src="{_gdv}" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
+            </div>
+            <div style="margin-top:.4rem;display:flex;gap:.5rem;">
+                <a href="{_ai_url}" target="_blank" style="color:#c4b5fd;text-decoration:none;font-size:.9rem;">Open original PDF ↗</a>
             </div>
             """, unsafe_allow_html=True)
             ai_effective_pdf_url = _ai_url
@@ -1135,16 +1155,13 @@ def main() -> None:
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
             _dr_url = _viewer_url(sel_ai['doctor_url'])
+            _gdv = f"https://docs.google.com/viewer?url={quote(_dr_url, safe='')}&embedded=true"
             st.markdown(f"""
             <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {iframe_h}px;">
-                <object data="{_dr_url}#toolbar=1&navpanes=1&scrollbar=1" type="application/pdf" width="100%" height="100%">
-                    <iframe src="https://docs.google.com/viewer?url={quote(_dr_url, safe='')}&embedded=true" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox">
-                        <div style="text-align: center; padding: 2rem; border: 1px dashed #ccc;">
-                            <p>PDF preview unavailable in your browser</p>
-                            <a href="{_dr_url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-size: 0.9rem;">📥 Open PDF in New Tab</a>
-                        </div>
-                    </iframe>
-                </object>
+                <iframe src="{_gdv}" width="100%" height="100%" style="border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox"></iframe>
+            </div>
+            <div style="margin-top:.4rem;display:flex;gap:.5rem;">
+                <a href="{_dr_url}" target="_blank" style="color:#86efac;text-decoration:none;font-size:.9rem;">Open original PDF ↗</a>
             </div>
             """, unsafe_allow_html=True)
             doc_effective_pdf_url = _dr_url
