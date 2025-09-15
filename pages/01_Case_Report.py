@@ -295,6 +295,29 @@ def main() -> None:
         or "http://localhost:8000"
     ).rstrip("/")
 
+    # Show finished screen when a run has completed
+    if st.session_state.get("generation_complete") and not st.session_state.get("generation_in_progress"):
+        st.success("✅ Report generation completed successfully!")
+        fin = st.container()
+        with fin:
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("📊 View Results", type="primary", use_container_width=True):
+                    try:
+                        from streamlit_extras.switch_page_button import switch_page
+                        switch_page("pages/04_Results")
+                    except Exception:
+                        st.experimental_rerun()
+            with c2:
+                if st.button("🔄 Generate New Report", type="secondary", use_container_width=True):
+                    st.session_state["generation_progress"] = 0
+                    st.session_state["generation_step"] = 0
+                    st.session_state["generation_complete"] = False
+                    st.session_state["generation_in_progress"] = False
+                    st.session_state["generation_start"] = None
+                    st.experimental_rerun()
+        return
+
     # Show input form only when not generating and not completed
     if not st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
         # Create centered form with same width as info box below

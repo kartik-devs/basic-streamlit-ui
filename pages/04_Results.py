@@ -498,7 +498,7 @@ def main() -> None:
         _show_locked_results_page(case_id, generation_status)
         return
 
-    # Show beautiful success message when results are unlocked
+    # Show completion banner and quick actions when results are unlocked
     success_html = """
     <!DOCTYPE html>
     <html>
@@ -548,6 +548,20 @@ def main() -> None:
     </html>
     """
     components.html(success_html, height=220)
+
+    # Quick actions bar (Results | New run)
+    c1, c2, c3 = st.columns([1, 1, 4])
+    with c1:
+        if st.button("Go to Summary", type="primary", use_container_width=True):
+            st.session_state["results_scroll_to"] = "summary"
+            st.rerun()
+    with c2:
+        if st.button("Generate New Report", type="secondary", use_container_width=True):
+            try:
+                from streamlit_extras.switch_page_button import switch_page
+                switch_page("pages/01_Case_Report")
+            except Exception:
+                st.experimental_rerun()
 
     try:
         import requests
