@@ -1187,7 +1187,8 @@ def main() -> None:
             from urllib.parse import quote as _q
             ai_key = sel_ai.get('ai_key')
             ai_url = sel_ai.get('ai_url')
-            open_url = f"{backend}/s3/stream?key={_q(ai_key, safe='')}" if ai_key else ai_url
+            # Prefer S3 stream; otherwise use backend proxy to avoid CORS
+            open_url = f"{backend}/s3/stream?key={_q(ai_key, safe='')}" if ai_key else (f"{backend}/proxy/pdf?url={_q(ai_url, safe='')}" if ai_url else None)
             dl_url = f"{open_url}&download=1" if isinstance(open_url, str) and open_url.startswith(backend) else ai_url
             if open_url:
                 st.markdown(
@@ -1212,7 +1213,8 @@ def main() -> None:
             from urllib.parse import quote as _q
             dr_key = sel_ai.get('doctor_key')
             dr_url = sel_ai.get('doctor_url')
-            open_url = f"{backend}/s3/stream?key={_q(dr_key, safe='')}" if dr_key else dr_url
+            # Prefer S3 stream; otherwise use backend proxy
+            open_url = f"{backend}/s3/stream?key={_q(dr_key, safe='')}" if dr_key else (f"{backend}/proxy/pdf?url={_q(dr_url, safe='')}" if dr_url else None)
             dl_url = f"{open_url}&download=1" if isinstance(open_url, str) and open_url.startswith(backend) else dr_url
             if open_url:
                 st.markdown(

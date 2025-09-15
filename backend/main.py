@@ -553,8 +553,10 @@ def s3_stream(key: str, download: int = 0):
         client = s3_client()
         obj = client.get_object(Bucket=S3_BUCKET, Key=k)
         body = obj["Body"]
-        # Guess content type from key if not provided
+        # Guess content type from key if not provided; force PDF when key endswith .pdf
         ctype = obj.get("ContentType") or mimetypes.guess_type(k)[0] or "application/octet-stream"
+        if k.lower().endswith(".pdf"):
+            ctype = "application/pdf"
         filename = k.split("/")[-1] or "file.bin"
         disp = ("attachment" if download else "inline") + f"; filename=\"{filename}\""
         headers = {
@@ -567,6 +569,8 @@ def s3_stream(key: str, download: int = 0):
             "Content-Security-Policy": "frame-ancestors *",
             "Access-Control-Allow-Origin": "*",
             "Cross-Origin-Resource-Policy": "cross-origin",
+            # Help browser PDF viewers with seeking
+            "Accept-Ranges": "bytes",
         }
         return StreamingResponse(body, headers=headers, media_type=ctype)
     except Exception as e:

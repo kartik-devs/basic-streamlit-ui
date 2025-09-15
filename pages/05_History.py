@@ -992,7 +992,8 @@ def main() -> None:
             from urllib.parse import quote as _q
             ak = sel_ai.get('ai_key')
             aurl = sel_ai.get('ai_url')
-            open_url = f"{backend}/s3/stream?key={_q(ak, safe='')}" if ak else aurl
+            # Prefer stream by key; else proxy the URL to avoid CORS
+            open_url = f"{backend}/s3/stream?key={_q(ak, safe='')}" if ak else (f"{backend}/proxy/pdf?url={_q(aurl, safe='')}" if aurl else None)
             dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else aurl
             st.markdown(
                 f"""
@@ -1029,7 +1030,8 @@ def main() -> None:
             from urllib.parse import quote as _q
             dk = sel_ai.get('doctor_key')
             durl = sel_ai.get('doctor_url')
-            open_url = f"{backend}/s3/stream?key={_q(dk, safe='')}" if dk else durl
+            # Prefer stream; else proxy
+            open_url = f"{backend}/s3/stream?key={_q(dk, safe='')}" if dk else (f"{backend}/proxy/pdf?url={_q(durl, safe='')}" if durl else None)
             dl_url = f"{open_url}&download=1" if open_url.startswith(backend) else durl
             st.markdown(
                 f"""
