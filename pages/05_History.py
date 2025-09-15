@@ -868,7 +868,16 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_pdf:
-            st.markdown(f"<iframe src=\"{gt_pdf}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            # Use PDF.js for better browser compatibility
+            st.markdown(f"""
+            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+                <iframe src="{gt_pdf}" width="100%" height="{iframe_h}" 
+                        style="border:none;" 
+                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                        loading="lazy">
+                </iframe>
+            </div>
+            """, unsafe_allow_html=True)
             gt_effective_pdf_url = gt_pdf
         elif gt_generic:
             raw_key = assets.get("ground_truth_key") if isinstance(assets, dict) else None
@@ -880,7 +889,15 @@ def main() -> None:
                     url2 = d2.get("url")
                     fmt = d2.get("format")
                     if fmt == "pdf" and url2:
-                        st.markdown(f"<iframe src=\"{url2}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                        st.markdown(f"""
+                        <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+                            <iframe src="{url2}" width="100%" height="{iframe_h}" 
+                                    style="border:none;" 
+                                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                                    loading="lazy">
+                            </iframe>
+                        </div>
+                        """, unsafe_allow_html=True)
                         gt_effective_pdf_url = url2
                     else:
                         st.markdown(f"<a href=\"{url2 or gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
@@ -952,7 +969,15 @@ def main() -> None:
             sel_ai = next((o for o in _pdf_outputs if (o.get("label") or (o.get("ai_key") or "").split("/")[-1]) == selected_label), None)
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
-            st.markdown(f"<iframe src=\"{sel_ai['ai_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+                <iframe src="{sel_ai['ai_url']}" width="100%" height="{iframe_h}" 
+                        style="border:none;" 
+                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                        loading="lazy">
+                </iframe>
+            </div>
+            """, unsafe_allow_html=True)
             ai_effective_pdf_url = sel_ai["ai_url"]
         else:
             st.info("Not available")
@@ -973,7 +998,15 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            st.markdown(f"<iframe src=\"{sel_ai['doctor_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+                <iframe src="{sel_ai['doctor_url']}" width="100%" height="{iframe_h}" 
+                        style="border:none;" 
+                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                        loading="lazy">
+                </iframe>
+            </div>
+            """, unsafe_allow_html=True)
             doc_effective_pdf_url = sel_ai["doctor_url"]
         else:
             st.info("Not available")
@@ -1147,12 +1180,38 @@ def main() -> None:
                                 st.session_state[cache_key] = None
                     pw_url = st.session_state.get(cache_key)
                     if pw_url:
-                        st.markdown(f"<iframe src=\"{pw_url}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                        st.markdown(f"""
+                        <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+                            <iframe src="{pw_url}" width="100%" height="650" 
+                                    style="border:none;" 
+                                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                                    loading="lazy">
+                            </iframe>
+                        </div>
+                        """, unsafe_allow_html=True)
                     else:
                         st.warning("Playwright renderer unavailable. Falling back to quick viewer.")
-                        st.markdown(f"<iframe src=\"https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                        st.markdown(f"""
+                        <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+                            <iframe src="https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}" 
+                                    width="100%" height="650" 
+                                    style="border:none;" 
+                                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                                    loading="lazy">
+                            </iframe>
+                        </div>
+                        """, unsafe_allow_html=True)
                 except Exception:
-                    st.markdown(f"<iframe src=\"https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                    st.markdown(f"""
+                    <div style="border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+                        <iframe src="https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}" 
+                                width="100%" height="650" 
+                                style="border:none;" 
+                                sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                                loading="lazy">
+                        </iframe>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 # Additional download option for convenience
                 st.markdown("### Quick Actions")

@@ -11,7 +11,7 @@ from streamlit_extras.switch_page_button import switch_page
 
 def ensure_authenticated() -> bool:
     # Authentication removed - always allow access
-    return True
+        return True
 
 
 def _get_backend_base() -> str:
@@ -262,7 +262,6 @@ def main() -> None:
         # Old generation info removed - using progress bar above
         
         # Old generate new report section removed - using progress bar above
-        return
     
     # Backend base URL
     params = st.query_params if hasattr(st, "query_params") else {}
@@ -466,6 +465,17 @@ def main() -> None:
         
         # Progress bar
         st.progress(progress_value / 100)
+        
+        # Debug button - only show when generation is in progress
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🚀 Debug: Jump to 100%", type="secondary", use_container_width=True):
+                st.session_state["generation_progress"] = 100
+                st.session_state["generation_complete"] = True
+                st.session_state["generation_in_progress"] = False
+                st.session_state["generation_step"] = 4
+                st.success("🎉 Debug: Report generation completed instantly!")
+                st.rerun()
         
         # Auto-refresh every 2 seconds for real-time updates
         if st.session_state.get("generation_in_progress", False):

@@ -38,7 +38,7 @@ def _extract_patient_from_strings(case_id: str, *, gt_key: str | None = None, ai
 
 def ensure_authenticated() -> bool:
     # Authentication removed - always allow access
-    return True
+        return True
 
 
 def _ping_backend(backend_url: str) -> bool:
@@ -94,84 +94,376 @@ def _check_generation_status(case_id: str) -> dict:
 
 
 def _show_locked_results_page(case_id: str, status: dict):
-    """Show locked state when generation is not complete"""
+    """Show beautiful locked state when generation is not complete"""
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
     st.markdown(f"<h1 style='text-align: center; color: #1f77b4; margin-bottom: 1rem; font-size: 2.5rem; font-weight: bold;'>CASE ID: {case_id}</h1>", unsafe_allow_html=True)
-    
-    # Show lock icon and message
-    st.markdown("""
-        <div style="text-align: center; padding: 3rem 2rem; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 16px; margin: 2rem 0;">
-            <div style="font-size: 4rem; margin-bottom: 1rem;">🔒</div>
-            <h2 style="color: #495057; margin-bottom: 1rem;">Results Not Ready</h2>
-            <p style="color: #6c757d; font-size: 1.1rem; margin-bottom: 2rem;">
-                Your report is still being generated. Results will be available once the process is 100% complete.
-            </p>
-    """, unsafe_allow_html=True)
     
     # Show progress if generation has started
     if status["started"] and not status["failed"]:
         progress = status["progress"]
-        st.markdown(f"""
-            <div style="background: white; border-radius: 12px; padding: 1.5rem; margin: 1rem 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <span style="font-weight: 600; color: #495057;">Generation Progress</span>
-                    <span style="font-weight: 700; color: #1f77b4; font-size: 1.2rem;">{progress}%</span>
-                </div>
-                <div style="background: #e9ecef; border-radius: 8px; height: 12px; overflow: hidden;">
-                    <div style="background: linear-gradient(90deg, #1f77b4 0%, #17a2b8 100%); height: 100%; width: {progress}%; transition: width 0.3s ease;"></div>
-                </div>
-                <div style="text-align: center; margin-top: 1rem; color: #6c757d; font-size: 0.9rem;">
-                    {progress}% Complete
+        
+        # Calculate time estimates
+        elapsed_time = 0
+        remaining_time = 0
+        if status["start_time"]:
+            elapsed_time = (datetime.now() - status["start_time"]).total_seconds()
+            remaining_time = max(0, 7200 - elapsed_time)  # 2 hours total
+        
+        remaining_minutes = int(remaining_time // 60)
+        remaining_seconds = int(remaining_time % 60)
+        elapsed_minutes = int(elapsed_time // 60)
+        elapsed_seconds = int(elapsed_time % 60)
+        
+        # Get current process step based on progress
+        current_step = "Initializing..."
+        if progress < 5:
+            current_step = "Validating case ID"
+        elif progress < 15:
+            current_step = "Processing documents"
+        elif progress < 30:
+            current_step = "OCR extraction in progress"
+        elif progress < 50:
+            current_step = "AI analysis in progress"
+        elif progress < 70:
+            current_step = "Generating report sections"
+        elif progress < 85:
+            current_step = "Quality assurance check"
+        elif progress < 95:
+            current_step = "Finalizing report"
+        else:
+            current_step = "Almost complete..."
+        
+        # Create beautiful loading state using components.html
+        loading_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                @keyframes pulse {{
+                    0%, 100% {{ transform: scale(1); }}
+                    50% {{ transform: scale(1.1); }}
+                }}
+                @keyframes float {{
+                    0% {{ transform: translateX(-50px) translateY(-50px); }}
+                    100% {{ transform: translateX(50px) translateY(50px); }}
+                }}
+                @keyframes shimmer {{
+                    0% {{ transform: translateX(-100%); }}
+                    100% {{ transform: translateX(100%); }}
+                }}
+                .loading-container {{
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    border-radius: 20px;
+                    padding: 3rem 2rem;
+                    margin: 2rem 0;
+                    color: white;
+                    text-align: center;
+                    box-shadow: 0 20px 40px rgba(102, 126, 234, 0.3);
+                    position: relative;
+                    overflow: hidden;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                }}
+                .bg-animation {{
+                    position: absolute;
+                    top: -50%;
+                    left: -50%;
+                    width: 200%;
+                    height: 200%;
+                    background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+                    background-size: 20px 20px;
+                    animation: float 20s infinite linear;
+                    pointer-events: none;
+                }}
+                .content {{
+                    position: relative;
+                    z-index: 2;
+                }}
+                .icon {{
+                    font-size: 4rem;
+                    margin-bottom: 1.5rem;
+                    animation: pulse 2s infinite;
+                    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+                }}
+                .title {{
+                    margin-bottom: 0.5rem;
+                    font-size: 2rem;
+                    font-weight: 700;
+                    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                }}
+                .subtitle {{
+                    margin-bottom: 2rem;
+                    font-size: 1.1rem;
+                    opacity: 0.9;
+                    font-weight: 300;
+                }}
+                .progress-container {{
+                    background: rgba(255,255,255,0.2);
+                    border-radius: 15px;
+                    padding: 1.5rem;
+                    margin: 1.5rem 0;
+                    backdrop-filter: blur(10px);
+                    border: 1px solid rgba(255,255,255,0.3);
+                }}
+                .progress-header {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 1rem;
+                }}
+                .progress-label {{
+                    font-weight: 600;
+                    font-size: 1.1rem;
+                }}
+                .progress-percentage {{
+                    font-weight: 700;
+                    font-size: 1.5rem;
+                    background: linear-gradient(45deg, #ffd700, #ffed4e);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    background-clip: text;
+                }}
+                .progress-bar-bg {{
+                    background: rgba(255,255,255,0.3);
+                    border-radius: 10px;
+                    height: 16px;
+                    overflow: hidden;
+                    position: relative;
+                    box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+                }}
+                .progress-bar-fill {{
+                    background: linear-gradient(90deg, #ffd700 0%, #ffed4e 50%, #ffd700 100%);
+                    height: 100%;
+                    width: {progress}%;
+                    transition: width 0.5s ease;
+                    position: relative;
+                    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.5);
+                }}
+                .progress-bar-shimmer {{
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%);
+                    animation: shimmer 2s infinite;
+                }}
+                .time-info {{
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 1rem;
+                    margin-top: 1.5rem;
+                    font-size: 0.9rem;
+                }}
+                .time-card {{
+                    background: rgba(255,255,255,0.15);
+                    padding: 0.75rem;
+                    border-radius: 8px;
+                    text-align: center;
+                }}
+                .time-label {{
+                    font-weight: 600;
+                    margin-bottom: 0.25rem;
+                }}
+                .time-value {{
+                    font-size: 1.1rem;
+                    font-weight: 700;
+                }}
+                .status-message {{
+                    background: rgba(255,255,255,0.1);
+                    border-radius: 10px;
+                    padding: 1rem;
+                    margin-top: 1rem;
+                    font-size: 0.95rem;
+                    border-left: 4px solid #ffd700;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="loading-container">
+                <div class="bg-animation"></div>
+                <div class="content">
+                    <div class="icon">⚡</div>
+                    <h2 class="title">Report Generation in Progress</h2>
+                    <p class="subtitle">{current_step}</p>
+                    
+                    <div class="progress-container">
+                        <div class="progress-header">
+                            <span class="progress-label">Progress</span>
+                            <span class="progress-percentage">{progress}%</span>
+                        </div>
+                        
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill">
+                                <div class="progress-bar-shimmer"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="time-info">
+                            <div class="time-card">
+                                <div class="time-label">⏱️ Elapsed</div>
+                                <div class="time-value">{elapsed_minutes}m {elapsed_seconds}s</div>
+                            </div>
+                            <div class="time-card">
+                                <div class="time-label">⏳ Remaining</div>
+                                <div class="time-value">{remaining_minutes}m {remaining_seconds}s</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="status-message">
+                        <strong>🔄 Real n8n workflow running in background</strong><br>
+                        <span style="opacity: 0.8;">Your report is being processed by our AI system. This may take up to 2 hours.</span>
+                    </div>
                 </div>
             </div>
-        """, unsafe_allow_html=True)
+        </body>
+        </html>
+        """
+        components.html(loading_html, height=500)
     
     # Show error state if generation failed
     elif status["failed"]:
-        st.markdown("""
-            <div style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; border-radius: 12px; padding: 1.5rem; margin: 1rem 0; text-align: center;">
-                <div style="font-size: 2rem; margin-bottom: 1rem;">❌</div>
-                <h3 style="margin-bottom: 1rem;">Generation Failed</h3>
-                <p style="margin-bottom: 1.5rem; opacity: 0.9;">
+        error_html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                @keyframes shake {
+                    0%, 100% { transform: translateX(0); }
+                    25% { transform: translateX(-5px); }
+                    75% { transform: translateX(5px); }
+                }
+                .error-container {
+                    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+                    border-radius: 20px;
+                    padding: 3rem 2rem;
+                    margin: 2rem 0;
+                    color: white;
+                    text-align: center;
+                    box-shadow: 0 20px 40px rgba(255, 107, 107, 0.3);
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                }
+                .error-icon {
+                    font-size: 4rem;
+                    margin-bottom: 1.5rem;
+                    animation: shake 0.5s ease-in-out;
+                }
+                .error-title {
+                    margin-bottom: 1rem;
+                    font-size: 2rem;
+                    font-weight: 700;
+                }
+                .error-message {
+                    margin-bottom: 2rem;
+                    font-size: 1.1rem;
+                    opacity: 0.9;
+                }
+                .error-tip {
+                    background: rgba(255,255,255,0.2);
+                    border-radius: 10px;
+                    padding: 1rem;
+                    margin-top: 1rem;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="error-container">
+                <div class="error-icon">❌</div>
+                <h2 class="error-title">Generation Failed</h2>
+                <p class="error-message">
                     There was an error during report generation. Please try again.
                 </p>
+                <div class="error-tip">
+                    <strong>💡 Tip:</strong> Check your case ID and try generating the report again.
                 </div>
-        """, unsafe_allow_html=True)
+            </div>
+        </body>
+        </html>
+        """
+        components.html(error_html, height=300)
     
     # Show not started state
     else:
-        st.markdown("""
-            <div style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%); color: #212529; border-radius: 12px; padding: 1.5rem; margin: 1rem 0; text-align: center;">
-                <div style="font-size: 2rem; margin-bottom: 1rem;">⏳</div>
-                <h3 style="margin-bottom: 1rem;">Generation Not Started</h3>
-                <p style="margin-bottom: 1.5rem; opacity: 0.8;">
+        not_started_html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                @keyframes bounce {
+                    0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+                    40% { transform: translateY(-10px); }
+                    60% { transform: translateY(-5px); }
+                }
+                .not-started-container {
+                    background: linear-gradient(135deg, #ffd89b 0%, #19547b 100%);
+                    border-radius: 20px;
+                    padding: 3rem 2rem;
+                    margin: 2rem 0;
+                    color: white;
+                    text-align: center;
+                    box-shadow: 0 20px 40px rgba(255, 216, 155, 0.3);
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                }
+                .not-started-icon {
+                    font-size: 4rem;
+                    margin-bottom: 1.5rem;
+                    animation: bounce 2s infinite;
+                }
+                .not-started-title {
+                    margin-bottom: 1rem;
+                    font-size: 2rem;
+                    font-weight: 700;
+                }
+                .not-started-message {
+                    margin-bottom: 2rem;
+                    font-size: 1.1rem;
+                    opacity: 0.9;
+                }
+                .not-started-tip {
+                    background: rgba(255,255,255,0.2);
+                    border-radius: 10px;
+                    padding: 1rem;
+                    margin-top: 1rem;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="not-started-container">
+                <div class="not-started-icon">⏳</div>
+                <h2 class="not-started-title">Ready to Generate Report</h2>
+                <p class="not-started-message">
                     Please start report generation first to view results.
                 </p>
+                <div class="not-started-tip">
+                    <strong>🚀 Get Started:</strong> Go to Case Report page and click "Generate Report"
+                </div>
             </div>
-        """, unsafe_allow_html=True)
+        </body>
+        </html>
+        """
+        components.html(not_started_html, height=300)
     
-    # Navigation buttons
+    # Navigation buttons with better styling
     st.markdown("""
-        </div>
+        <div style="
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 2rem;
+            flex-wrap: wrap;
+        ">
     """, unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("🔄 Go to Generating Report", type="primary", use_container_width=True):
-            try:
-                from streamlit_extras.switch_page_button import switch_page
-                switch_page("Generating_Report")
-            except Exception:
-                st.info("Please use the sidebar to navigate to 'Generating Report'.")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("📋 Go to Case Report", type="secondary", use_container_width=True):
+        if st.button("🔄 Go to Case Report", type="primary", use_container_width=True):
             try:
                 from streamlit_extras.switch_page_button import switch_page
                 switch_page("pages/01_Case_Report")
             except Exception:
                 st.info("Please use the sidebar to navigate to 'Case Report'.")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def main() -> None:
@@ -200,30 +492,62 @@ def main() -> None:
         st.info("No active case. Go to Case Report and start a run.")
         return
 
-    # Check generation status - show progress if running, block access if not complete
+    # Check generation status - show beautiful loading state if running, block access if not complete
     generation_status = _check_generation_status(case_id)
     if not generation_status["complete"]:
-        # Check if generation is in progress
-        if st.session_state.get("generation_in_progress", False):
-            progress = generation_status["progress"]
-            st.info(f"🔄 Report is currently being generated... Progress: {progress}%")
-            st.progress(progress / 100)
-            
-            # Show estimated time remaining
-            if generation_status["start_time"]:
-                elapsed_time = (datetime.now() - generation_status["start_time"]).total_seconds()
-                remaining_time = max(0, 7200 - elapsed_time)  # 2 hours total
-                remaining_minutes = int(remaining_time // 60)
-                remaining_seconds = int(remaining_time % 60)
-                st.info(f"⏱️ Estimated time remaining: {remaining_minutes}m {remaining_seconds}s")
-            
-            st.info("Please wait for the report to complete before viewing results.")
-        else:
-            st.info("ℹ️ No report generation in progress. Please go to Case Report to start generating a report.")
+        _show_locked_results_page(case_id, generation_status)
         return
 
-    # Show success message when results are unlocked
-    st.success("🎉 Report generation complete! Results are now available.")
+    # Show beautiful success message when results are unlocked
+    success_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            @keyframes celebration {
+                0%, 100% { transform: scale(1) rotate(0deg); }
+                25% { transform: scale(1.1) rotate(-5deg); }
+                75% { transform: scale(1.1) rotate(5deg); }
+            }
+            .success-container {
+                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                border-radius: 15px;
+                padding: 1.5rem 2rem;
+                margin: 1rem 0;
+                color: white;
+                text-align: center;
+                box-shadow: 0 10px 30px rgba(79, 172, 254, 0.3);
+                border: 1px solid rgba(255,255,255,0.2);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+            .success-icon {
+                font-size: 2.5rem;
+                margin-bottom: 0.5rem;
+                animation: celebration 1s ease-in-out;
+            }
+            .success-title {
+                margin: 0;
+                font-size: 1.3rem;
+                font-weight: 700;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            }
+            .success-message {
+                margin: 0.5rem 0 0 0;
+                opacity: 0.9;
+                font-size: 1rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="success-container">
+            <div class="success-icon">🎉</div>
+            <h3 class="success-title">Report Generation Complete!</h3>
+            <p class="success-message">Results are now available for viewing</p>
+        </div>
+    </body>
+    </html>
+    """
+    components.html(success_html, height=120)
 
     try:
         import requests
@@ -231,26 +555,74 @@ def main() -> None:
         st.error("Requests not available.")
         return
 
-    # Fetch outputs and assets for this case
-    with st.spinner("Loading case data…"):
+    # Fetch outputs and assets for this case with beautiful loading
+    loading_spinner_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            .loading-spinner-container {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 12px;
+                padding: 1.5rem;
+                margin: 1rem 0;
+                color: white;
+                text-align: center;
+                box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+            .loading-content {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 1rem;
+                font-size: 1.1rem;
+                font-weight: 600;
+            }
+            .spinner {
+                width: 20px;
+                height: 20px;
+                border: 2px solid rgba(255,255,255,0.3);
+                border-top: 2px solid white;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="loading-spinner-container">
+            <div class="loading-content">
+                <div class="spinner"></div>
+                Loading case data and reports...
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    components.html(loading_spinner_html, height=80)
+    
+    try: 
+        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
+        outputs = (r.json() or {}).get("items", []) if r.ok else []
+        # Exclude legacy Edited subfolder entries from display
         try:
-            r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
-            outputs = (r.json() or {}).get("items", []) if r.ok else []
-            # Exclude legacy Edited subfolder entries from display
-            try:
-                outputs = [o for o in outputs if not (
-                    (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
-                    (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
-                )]
-            except Exception:
-                pass
+            outputs = [o for o in outputs if not (
+                (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
+                (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
+            )]
         except Exception:
-            outputs = []
-        try:
-            r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
-            assets = r_assets.json() if r_assets.ok else {}
-        except Exception:
-            assets = {}
+            pass
+    except Exception:
+        outputs = []
+    try:
+        r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
+        assets = r_assets.json() if r_assets.ok else {}
+    except Exception:
+        assets = {}
 
     # Display case ID prominently
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
@@ -261,29 +633,29 @@ def main() -> None:
     st.caption("Overview of all reports for this case")
 
     def extract_version(label: str | None) -> str:
-        if not label:
-            return "—"
-        import re
-        m = re.match(r"^(\d{12})", label)
-        if m:
-            return m.group(1)
-        return label
+            if not label:
+                return "—"
+            import re
+            m = re.match(r"^(\d{12})", label)
+            if m:
+                return m.group(1)
+            return label
 
     def file_name(url: str | None) -> str:
-        if not url:
-            return "—"
-        try:
-            from urllib.parse import urlparse
-            return urlparse(url).path.split("/")[-1]
-        except Exception:
-            return url
+            if not url:
+                return "—"
+            try:
+                from urllib.parse import urlparse
+                return urlparse(url).path.split("/")[-1]
+            except Exception:
+                return url
 
     def dl_link(raw_url: str | None) -> str | None:
-        if not raw_url:
-            return None
-        fname = file_name(raw_url)
-        from urllib.parse import quote as _q
-        return f"{backend}/proxy/download?url={_q(raw_url, safe='')}&filename={_q(fname, safe='')}"
+            if not raw_url:
+                return None
+            fname = file_name(raw_url)
+            from urllib.parse import quote as _q
+            return f"{backend}/proxy/download?url={_q(raw_url, safe='')}&filename={_q(fname, safe='')}"
 
     # Code version fetching - try backend, then GitHub state file by default
     @st.cache_data(ttl=300)
@@ -457,35 +829,35 @@ def main() -> None:
 
     rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
     if outputs:
-        for o in outputs:
-            doc_version = extract_version(o.get("label"))
-            report_timestamp = o.get("timestamp") or generated_ts
-            ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
-            rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
+            for o in outputs:
+                doc_version = extract_version(o.get("label"))
+                report_timestamp = o.get("timestamp") or generated_ts
+                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
     else:
         rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
     # Optional pagination for summary table
-    sum_page_size = 10
-    sum_total = len(rows)
-    sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
-    sum_pg_key = f"results_summary_page_{case_id}"
-    sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+        sum_page_size = 10
+        sum_total = len(rows)
+        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+        sum_pg_key = f"results_summary_page_{case_id}"
+        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
     
     pc1, pc2, pc3 = st.columns([1, 2, 1])
     with pc1:
         if st.button("← Prev", key=f"res_sum_prev_{case_id}", disabled=(sum_cur_page <= 1)):
-            sum_cur_page = max(1, sum_cur_page - 1)
+                sum_cur_page = max(1, sum_cur_page - 1)
     with pc2:
-        st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
     with pc3:
         if st.button("Next →", key=f"res_sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages)):
-            sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
     
-    st.session_state[sum_pg_key] = sum_cur_page
-    sum_start = (sum_cur_page - 1) * sum_page_size
-    sum_end = min(sum_total, sum_start + sum_page_size)
-    page_rows = rows[sum_start:sum_end]
+        st.session_state[sum_pg_key] = sum_cur_page
+        sum_start = (sum_cur_page - 1) * sum_page_size
+        sum_end = min(sum_total, sum_start + sum_page_size)
+        page_rows = rows[sum_start:sum_end]
 
     # Table styling & render
     st.markdown(
@@ -502,25 +874,25 @@ def main() -> None:
     )
 
     table_html = [
-        '<div class="table-container">',
-        '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
+            '<div class="table-container">',
+            '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
-        '</div>'
-    ]
+            '</div>'
+        ]
 
     # Render rows with proper metrics data
     for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
@@ -588,36 +960,36 @@ def main() -> None:
             # Use fallback values from the row data
             sec2dur = sec3dur = sec4dur = sec9dur = '—'
         
-        gt_dl = dl_link(gt_url)
-        ai_dl = dl_link(ai_url)
-        doc_dl = dl_link(doc_url)
-        gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
-        ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
-        doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
+            gt_dl = dl_link(gt_url)
+            ai_dl = dl_link(ai_url)
+            doc_dl = dl_link(doc_url)
+            gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
+            ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
+            doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
         
-        table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
-        table_html.append('</div>')
+            table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
+            table_html.append('</div>')
     
     # Close the table container
-    table_html.append('</div>')
+            table_html.append('</div>')
     
     # Render the complete table
-    st.markdown("".join(table_html), unsafe_allow_html=True)
+            st.markdown("".join(table_html), unsafe_allow_html=True)
 
     # Viewers (GT | AI | Doctor)
     iframe_h = 480
