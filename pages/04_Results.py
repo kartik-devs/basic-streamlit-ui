@@ -670,6 +670,16 @@ def main() -> None:
             pass
     except Exception:
         outputs = []
+
+    # --- QUICK UNBLOCK: bypass loading screen if outputs already exist ---
+    try:
+        r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
+        _items = (r.json() or {}).get("items", []) if r.ok else []
+    except Exception:
+        _items = []
+    if _items:
+        st.session_state["generation_complete"] = True
+
     try:
         r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
         assets = r_assets.json() if r_assets.ok else {}
