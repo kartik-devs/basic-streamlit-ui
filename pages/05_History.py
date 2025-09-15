@@ -199,6 +199,23 @@ def _get_case_assets(backend: str, case_id: str) -> dict:
     return {}
 
 
+def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
+    """Return HTTPS presigned URL for an S3 key via backend cache/presign."""
+    if not s3_key:
+        return None
+    try:
+        import requests as _rq
+        r = _rq.get(f"{backend}/cache/presign", params={"key": s3_key}, timeout=6)
+        if r.ok:
+            data = r.json() or {}
+            url = data.get("url")
+            if isinstance(url, str):
+                return url
+    except Exception:
+        pass
+    return None
+
+
 @st.cache_data(show_spinner=False, ttl=60)  # Cache for 1 minute
 def _get_case_comments(backend: str, case_id: str, ai_label: str = None) -> list[dict]:
     """Fetch comments for a specific case with caching."""
