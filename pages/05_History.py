@@ -451,7 +451,7 @@ def main() -> None:
     st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
     only_canonical = st.checkbox(
         "Show only canonical workflow reports (with metrics)",
-        value=True,
+        value=False,
         key=f"hist_only_canon_{case_id}",
     )
     if outputs and only_canonical:
@@ -460,7 +460,11 @@ def main() -> None:
             def _base_name(it: dict) -> str:
                 return (it.get("label") or (it.get("ai_key") or "").split("/")[-1] or "").strip()
             canon_re = _re.compile(rf"^(\d{{12}})-{case_id}-CompleteAIGeneratedReport\.(pdf|docx)$", _re.IGNORECASE)
-            outputs = [o for o in outputs if canon_re.match(_base_name(o) or "")]
+            filtered = [o for o in outputs if canon_re.match(_base_name(o) or "")]
+            if filtered:
+                outputs = filtered
+            else:
+                st.info("No canonical reports found. Showing all outputs.")
         except Exception:
             pass
     

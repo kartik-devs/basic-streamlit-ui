@@ -661,17 +661,17 @@ def main() -> None:
 
     try:
         r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=10)
-            outputs = (r.json() or {}).get("items", []) if r.ok else []
-            # Exclude legacy Edited subfolder entries from display
-            try:
-                outputs = [o for o in outputs if not (
-                    (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
-                    (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
-                )]
-            except Exception:
-                    pass
+        outputs = (r.json() or {}).get("items", []) if r.ok else []
+        # Exclude legacy Edited subfolder entries from display
+        try:
+            outputs = [o for o in outputs if not (
+                (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
+                (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
+            )]
         except Exception:
-            outputs = []
+            pass
+    except Exception:
+        outputs = []
 
     # --- QUICK UNBLOCK: bypass loading screen if outputs already exist ---
     if outputs:
