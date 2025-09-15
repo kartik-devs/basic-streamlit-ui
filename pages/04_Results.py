@@ -929,30 +929,11 @@ def main() -> None:
         gdv = f"https://docs.google.com/viewer?url={quote(base, safe='')}&embedded=true"
         html = f"""
         <div id=\"wrap_{nonce}\" style=\"border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; height: {height_px}px;\">
-          <iframe id=\"{nonce}\" src=\"about:blank\" width=\"100%\" height=\"100%\" style=\"border:none;\" sandbox=\"allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox\"></iframe>
+          <iframe id=\"{nonce}\" src=\"{gdv}\" width=\"100%\" height=\"100%\" style=\"border:none;\" sandbox=\"allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-presentation allow-popups-to-escape-sandbox\"></iframe>
         </div>
         <div style=\"margin-top:.4rem;display:flex;gap:.5rem;\">
           <a id=\"lnk_{nonce}\" href=\"{base}\" target=\"_blank\" style=\"color:{link_color};text-decoration:none;font-size:.9rem;\">Open original PDF ↗</a>
         </div>
-        <script>
-        (function(){
-          const iframe = document.getElementById('{nonce}');
-          const base = '{base}';
-          const gdvBase = '{gdv}';
-          let tries = 0;
-          function withTs(u){
-             const sep = u.indexOf('?')>=0 ? '&' : '?';
-             return u + sep + '_t=' + Date.now();
-          }
-          const candidates = [gdvBase, base, withTs(gdvBase), withTs(base)];
-          function tryNext(){
-            if (tries >= candidates.length) return;
-            const url = candidates[tries++];
-            iframe.src = url;
-          }
-          tryNext();
-        })();
-        </script>
         """
         components.html(html, height=height_px + 32)
 
