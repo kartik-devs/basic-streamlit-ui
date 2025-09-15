@@ -204,6 +204,7 @@ def api_n8n_start(case_id: str, username: Optional[str] = None):
     uses HTTP 202 for started, 500 for failure.
     """
     try:
+        # Ensure we pass the dynamic case_id from the request; never use a default
         res = n8n_manager.trigger_main_workflow_and_capture_execution(case_id, {"case_id": case_id, "username": username})
         ok = bool(res.get("success") or res.get("started"))
         status = 202 if ok else 500

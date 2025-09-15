@@ -385,7 +385,7 @@ def main() -> None:
                 # Store case ID for S3 fetching in results page
                 st.session_state["current_case_id"] = cid
                 
-                # Trigger n8n workflow (long-running, 2-hour process)
+                # Trigger n8n workflow (long-running, 2-hour process) with dynamic case_id
                 try:
                     n8n_response = requests.post(
                         f"{BACKEND_BASE}/n8n/start",

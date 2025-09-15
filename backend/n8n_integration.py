@@ -222,7 +222,8 @@ class N8nWorkflowManager:
         Returns a dict with at least { started: bool, success: bool, execution_id?: str, error?: str }.
         Execution id capture depends on N8N_API_KEY and N8N_MAIN_WORKFLOW_ID.
         """
-        payload = payload or {"case_id": case_id}
+        # Always construct payload from provided case_id; never use hardcoded defaults
+        payload = {"case_id": case_id, **(payload or {})}
         # Enforce case_id consistency; drop patient_id in favor of case_id
         if "patient_id" in payload and not payload.get("case_id"):
             payload["case_id"] = payload.get("patient_id")
@@ -239,7 +240,8 @@ class N8nWorkflowManager:
                 # Enforce case_id key in payload for consistency
                 if "case_id" not in payload:
                     payload = {**payload, "case_id": case_id}
-                r = self.session.post(self.trigger_webhook_url, json=payload, timeout=10)
+                # Send strictly JSON body with dynamic case_id
+                r = self.session.post(self.trigger_webhook_url, json={"case_id": case_id, **(payload or {})}, timeout=10)
                 r.raise_for_status()
                 started = True
         except Exception as e:
