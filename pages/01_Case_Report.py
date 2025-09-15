@@ -303,10 +303,16 @@ def main() -> None:
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("📊 View Results", type="primary", use_container_width=True):
+                    # Try multiple navigation strategies for robustness
                     try:
                         from streamlit_extras.switch_page_button import switch_page
-                        switch_page("pages/04_Results")
+                        try:
+                            switch_page("pages/04_Results")
+                        except Exception:
+                            switch_page("Results")
                     except Exception:
+                        # Fallback: set an intent and rerun; Results reads last/current case_id
+                        st.session_state["_goto_results_intent"] = True
                         st.experimental_rerun()
             with c2:
                 if st.button("🔄 Generate New Report", type="secondary", use_container_width=True):
