@@ -1153,11 +1153,22 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
     ai_effective_pdf_url_simple = next((o.get("ai_url") for o in outputs if str(o.get("ai_url", "")).lower().endswith(".pdf")), None)
     doc_effective_pdf_url_simple = next((o.get("doctor_url") for o in outputs if str(o.get("doctor_url", "")).lower().endswith(".pdf")), None)
 
+    # Always route through backend proxy to avoid mixed-content/CORS
+    def _proxy(u: str | None) -> str | None:
+        if not u:
+            return None
+        try:
+            from urllib.parse import quote as _q
+            return f"{backend}/proxy/pdf?url={_q(u, safe='')}"
+        except Exception:
+            return u
+
     with col1:
         st.markdown("<strong>GROUND TRUTH</strong>", unsafe_allow_html=True)
-        if gt_effective_pdf_url_simple:
+        src = _proxy(gt_effective_pdf_url_simple)
+        if src:
             st.markdown(
-                f"<iframe src=\"{gt_effective_pdf_url_simple}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>",
+                f"<iframe src=\"{src}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>",
                 unsafe_allow_html=True,
             )
         else:
@@ -1165,9 +1176,10 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
 
     with col2:
         st.markdown("<strong>AI GENERATED</strong>", unsafe_allow_html=True)
-        if ai_effective_pdf_url_simple:
+        src = _proxy(ai_effective_pdf_url_simple)
+        if src:
             st.markdown(
-                f"<iframe src=\"{ai_effective_pdf_url_simple}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>",
+                f"<iframe src=\"{src}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>",
                 unsafe_allow_html=True,
             )
         else:
@@ -1175,9 +1187,10 @@ def _presign_from_key(backend: str, s3_key: str | None) -> str | None:
 
     with col3:
         st.markdown("<strong>DOCTOR AS LLM</strong>", unsafe_allow_html=True)
-        if doc_effective_pdf_url_simple:
+        src = _proxy(doc_effective_pdf_url_simple)
+        if src:
             st.markdown(
-                f"<iframe src=\"{doc_effective_pdf_url_simple}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>",
+                f"<iframe src=\"{src}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>",
                 unsafe_allow_html=True,
             )
         else:
