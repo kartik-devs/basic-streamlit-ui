@@ -807,19 +807,19 @@ def main() -> None:
     _probe_metrics_from_outputs(backend, case_id, outputs)
 
     # Build rows
-        def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
-            ocr_start = o.get("ocr_start_time", "—")
-            ocr_end = o.get("ocr_end_time", "—")
-            total_tokens = o.get("total_tokens_used", "—")
-            input_tokens = o.get("total_input_tokens", "—")
-            output_tokens = o.get("total_output_tokens", "—")
-        
+    def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
+        ocr_start = o.get("ocr_start_time", "—")
+        ocr_end = o.get("ocr_end_time", "—")
+        total_tokens = o.get("total_tokens_used", "—")
+        input_tokens = o.get("total_input_tokens", "—")
+        output_tokens = o.get("total_output_tokens", "—")
+
         def _fmt_num(v):
             try:
                 return f"{int(v):,}" if v is not None and v != "—" else ("—" if v is None else v)
             except Exception:
                 return str(v) if v is not None else "—"
-        
+
         return (
             str(ocr_start),
             str(ocr_end),
@@ -830,20 +830,20 @@ def main() -> None:
 
     rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
     if outputs:
-            for o in outputs:
-                doc_version = extract_version(o.get("label"))
-                report_timestamp = o.get("timestamp") or generated_ts
-                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
-                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
+        for o in outputs:
+            doc_version = extract_version(o.get("label"))
+            report_timestamp = o.get("timestamp") or generated_ts
+            ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+            rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
     else:
         rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
     # Optional pagination for summary table
-        sum_page_size = 10
-        sum_total = len(rows)
-        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
-        sum_pg_key = f"results_summary_page_{case_id}"
-        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+    sum_page_size = 10
+    sum_total = len(rows)
+    sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+    sum_pg_key = f"results_summary_page_{case_id}"
+    sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
     
     pc1, pc2, pc3 = st.columns([1, 2, 1])
     with pc1:
@@ -855,8 +855,8 @@ def main() -> None:
     if prev_clicked:
         sum_cur_page = max(1, sum_cur_page - 1)
     if next_clicked:
-                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
-        st.session_state[sum_pg_key] = sum_cur_page
+        sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+    st.session_state[sum_pg_key] = sum_cur_page
     with pc2:
         st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
         sum_start = (sum_cur_page - 1) * sum_page_size
