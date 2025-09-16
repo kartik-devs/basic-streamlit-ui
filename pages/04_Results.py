@@ -282,7 +282,7 @@ def main() -> None:
             except Exception:
                 return ''
         try:
-            outputs.sort(key=_ts_key, reverse=False)  # False = chronological order
+            outputs.sort(key=_ts_key, reverse=True)  # True = latest first (reverse chronological)
         except Exception:
             pass
     except Exception:
@@ -345,8 +345,10 @@ def main() -> None:
                 return "—"
             try:
                 import re
-                # Look for 12-digit timestamp pattern (YYYYMMDDHHMM)
-                match = re.search(r"(\d{12})", url)
+                from urllib.parse import urlparse
+                
+                # Look for 12-digit timestamp pattern (YYYYMMDDHHMM) in URL
+                match = re.search(r"(\d{12})", str(url))
                 if match:
                     timestamp = match.group(1)
                     # Convert YYYYMMDDHHMM to readable format
@@ -356,9 +358,50 @@ def main() -> None:
                     hour = timestamp[8:10]
                     minute = timestamp[10:12]
                     return f"{year}-{month}-{day} {hour}:{minute}"
-                # Fallback to filename if no timestamp found
-                from urllib.parse import urlparse
-                return urlparse(url).path.split("/")[-1]
+                
+                # If no timestamp in URL, try to extract from filename
+                parsed_url = urlparse(url)
+                filename = parsed_url.path.split("/")[-1]
+                
+                # Look for timestamp in filename
+                filename_match = re.search(r"(\d{12})", filename)
+                if filename_match:
+                    timestamp = filename_match.group(1)
+                    year = timestamp[:4]
+                    month = timestamp[4:6]
+                    day = timestamp[6:8]
+                    hour = timestamp[8:10]
+                    minute = timestamp[10:12]
+                    return f"{year}-{month}-{day} {hour}:{minute}"
+                
+                # Look for other date patterns in filename (YYYY-MM-DD, YYYYMMDD, etc.)
+                date_patterns = [
+                    r"(\d{4}-\d{2}-\d{2})",  # YYYY-MM-DD
+                    r"(\d{8})",              # YYYYMMDD
+                    r"(\d{4}_\d{2}_\d{2})",  # YYYY_MM_DD
+                ]
+                
+                for pattern in date_patterns:
+                    date_match = re.search(pattern, filename)
+                    if date_match:
+                        date_str = date_match.group(1)
+                        # Try to parse and format the date
+                        try:
+                            if '-' in date_str:
+                                year, month, day = date_str.split('-')
+                            elif '_' in date_str:
+                                year, month, day = date_str.split('_')
+                            else:  # YYYYMMDD
+                                year = date_str[:4]
+                                month = date_str[4:6]
+                                day = date_str[6:8]
+                            
+                            return f"{year}-{month}-{day}"
+                        except:
+                            continue
+                
+                # Fallback to filename if no date found
+                return filename
             except Exception:
                 return url
 
