@@ -394,9 +394,10 @@ def main() -> None:
         )
         return
 
-    # Build patient map (best-effort, cached) - only for first 20 cases for speed
+    # Build patient map (best-effort, cached) for all visible cases
+    # Cached lookups and threaded requests keep this snappy in practice
     with st.spinner("Loading patient names…"):
-        cases_to_load = cases[:20]  # Limit to first 20 cases for speed
+        cases_to_load = cases
         cid_to_patient = _case_to_patient_map(backend, cases_to_load)
 
     # Build display labels and predictive select - only for visible cases
