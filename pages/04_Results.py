@@ -317,8 +317,8 @@ def main() -> None:
                 outputs = filtered
             else:
                 st.info("No canonical reports found. Showing all outputs.")
-    except Exception:
-        pass
+        except Exception:
+            pass
 
     # Display case ID prominently
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)

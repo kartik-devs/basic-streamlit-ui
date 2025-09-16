@@ -302,7 +302,8 @@ def main() -> None:
         try:
             _start_backend_pinger(backend)
             st.session_state["pinger_started"] = True
-            st.session_state["pinger_start_time"] = datetime.now()
+            from datetime import datetime as _dt
+            st.session_state["pinger_start_time"] = _dt.now()
         except Exception as e:
             st.warning(f"⚠️ Could not start backend pinger: {e}")
     
