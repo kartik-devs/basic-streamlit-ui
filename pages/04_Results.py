@@ -38,7 +38,7 @@ def _extract_patient_from_strings(case_id: str, *, gt_key: str | None = None, ai
 
 def ensure_authenticated() -> bool:
     # Authentication removed - always allow access
-    return True
+        return True
 
 
 def _ping_backend(backend_url: str) -> bool:
@@ -116,14 +116,14 @@ def _show_locked_results_page(case_id: str, status: dict):
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                     <span style="font-weight: 600; color: #495057;">Generation Progress</span>
                     <span style="font-weight: 700; color: #1f77b4; font-size: 1.2rem;">{progress}%</span>
-                </div>
+                        </div>
                 <div style="background: #e9ecef; border-radius: 8px; height: 12px; overflow: hidden;">
                     <div style="background: linear-gradient(90deg, #1f77b4 0%, #17a2b8 100%); height: 100%; width: {progress}%; transition: width 0.3s ease;"></div>
-                </div>
+                            </div>
                 <div style="text-align: center; margin-top: 1rem; color: #6c757d; font-size: 0.9rem;">
                     {progress}% Complete
-                </div>
-            </div>
+                        </div>
+                            </div>
         """, unsafe_allow_html=True)
     
     # Show error state if generation failed
@@ -147,7 +147,7 @@ def _show_locked_results_page(case_id: str, status: dict):
                 <p style="margin-bottom: 1.5rem; opacity: 0.8;">
                     Please start report generation first to view results.
                 </p>
-            </div>
+                </div>
         """, unsafe_allow_html=True)
     
     # Navigation buttons
@@ -156,34 +156,34 @@ def _show_locked_results_page(case_id: str, status: dict):
     """, unsafe_allow_html=True)
     
     def _robust_switch_to_case_report():
-        try:
-            from streamlit_extras.switch_page_button import switch_page
-            for target in (
-                "pages/01_Case_Report",
-                "01_Case_Report",
-                "Case Report",
-                "Case_Report",
-                "case report",
-            ):
-                try:
-                    switch_page(target)
+            try:
+                from streamlit_extras.switch_page_button import switch_page
+                for target in (
+                    "pages/01_Case_Report",
+                    "01_Case_Report",
+                    "Case Report",
+                    "Case_Report",
+                    "case report",
+                ):
+                    try:
+                        switch_page(target)
                     return True
-                except Exception:
-                    continue
-        except Exception:
-            pass
+                    except Exception:
+                        continue
+            except Exception:
+                pass
         # Fallback: client-side redirect to root; main page should provide clear nav
         components.html(
             """
-            <script>
-                try {
-                  if (window && window.parent) {
-                    window.parent.location.replace(window.parent.location.origin + window.parent.location.pathname);
-                  } else {
-                    window.location.replace('/');
-                  }
-                } catch (e) {}
-            </script>
+                    <script>
+                        try {
+                          if (window && window.parent) {
+                            window.parent.location.replace(window.parent.location.origin + window.parent.location.pathname);
+                          } else {
+                            window.location.replace('/');
+                          }
+                        } catch (e) {}
+                    </script>
             """,
             height=0,
         )
@@ -262,22 +262,22 @@ def main() -> None:
     with st.spinner("Loading case data…"):
         try:
             r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
-            outputs = (r.json() or {}).get("items", []) if r.ok else []
-            # Exclude legacy Edited subfolder entries from display
-            try:
-                outputs = [o for o in outputs if not (
-                    (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
-                    (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
-                )]
-            except Exception:
-                pass
-        except Exception:
-            outputs = []
+        outputs = (r.json() or {}).get("items", []) if r.ok else []
+        # Exclude legacy Edited subfolder entries from display
         try:
-            r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
-            assets = r_assets.json() if r_assets.ok else {}
+            outputs = [o for o in outputs if not (
+                (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
+                (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
+            )]
         except Exception:
-            assets = {}
+            pass
+    except Exception:
+        outputs = []
+    try:
+        r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
+        assets = r_assets.json() if r_assets.ok else {}
+    except Exception:
+        assets = {}
 
     # Optionally show only canonical workflow reports which can have metrics JSON
     st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
@@ -309,29 +309,29 @@ def main() -> None:
     st.caption("Overview of all reports for this case")
 
     def extract_version(label: str | None) -> str:
-        if not label:
-            return "—"
-        import re
-        m = re.match(r"^(\d{12})", label)
-        if m:
-            return m.group(1)
-        return label
+            if not label:
+                return "—"
+            import re
+            m = re.match(r"^(\d{12})", label)
+            if m:
+                return m.group(1)
+            return label
 
     def file_name(url: str | None) -> str:
-        if not url:
-            return "—"
-        try:
-            from urllib.parse import urlparse
-            return urlparse(url).path.split("/")[-1]
-        except Exception:
-            return url
+            if not url:
+                return "—"
+            try:
+                from urllib.parse import urlparse
+                return urlparse(url).path.split("/")[-1]
+            except Exception:
+                return url
 
     def dl_link(raw_url: str | None) -> str | None:
-        if not raw_url:
-            return None
-        fname = file_name(raw_url)
-        from urllib.parse import quote as _q
-        return f"{backend}/proxy/download?url={_q(raw_url, safe='')}&filename={_q(fname, safe='')}"
+            if not raw_url:
+                return None
+            fname = file_name(raw_url)
+            from urllib.parse import quote as _q
+            return f"{backend}/proxy/download?url={_q(raw_url, safe='')}&filename={_q(fname, safe='')}"
 
     # Code version fetching - try backend, then GitHub state file by default
     @st.cache_data(ttl=300)
@@ -495,19 +495,19 @@ def main() -> None:
     _probe_metrics_from_outputs(backend, case_id, outputs)
 
     # Build rows
-    def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
-        ocr_start = o.get("ocr_start_time", "—")
-        ocr_end = o.get("ocr_end_time", "—")
-        total_tokens = o.get("total_tokens_used", "—")
-        input_tokens = o.get("total_input_tokens", "—")
-        output_tokens = o.get("total_output_tokens", "—")
-        
+        def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
+            ocr_start = o.get("ocr_start_time", "—")
+            ocr_end = o.get("ocr_end_time", "—")
+            total_tokens = o.get("total_tokens_used", "—")
+            input_tokens = o.get("total_input_tokens", "—")
+            output_tokens = o.get("total_output_tokens", "—")
+
         def _fmt_num(v):
             try:
                 return f"{int(v):,}" if v is not None and v != "—" else ("—" if v is None else v)
             except Exception:
                 return str(v) if v is not None else "—"
-        
+
         return (
             str(ocr_start),
             str(ocr_end),
@@ -518,11 +518,11 @@ def main() -> None:
 
     rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
     if outputs:
-        for o in outputs:
-            doc_version = extract_version(o.get("label"))
-            report_timestamp = o.get("timestamp") or generated_ts
-            ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
-            rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
+            for o in outputs:
+                doc_version = extract_version(o.get("label"))
+                report_timestamp = o.get("timestamp") or generated_ts
+                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
     else:
         rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
@@ -532,153 +532,153 @@ def main() -> None:
     sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
     sum_pg_key = f"results_summary_page_{case_id}"
     sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
-    
+
     pc1, pc2, pc3 = st.columns([1, 2, 1])
     with pc1:
         if st.button("← Prev", key=f"res_sum_prev_{case_id}", disabled=(sum_cur_page <= 1)):
-            sum_cur_page = max(1, sum_cur_page - 1)
+        sum_cur_page = max(1, sum_cur_page - 1)
     with pc2:
         st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
     with pc3:
         if st.button("Next →", key=f"res_sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages)):
             sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
-    
+
     st.session_state[sum_pg_key] = sum_cur_page
     sum_start = (sum_cur_page - 1) * sum_page_size
     sum_end = min(sum_total, sum_start + sum_page_size)
     page_rows = rows[sum_start:sum_end]
 
     # Table styling & render
-    st.markdown(
-        """
-        <style>
-        .table-container { overflow-x: auto; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; margin-top: 12px; }
-        .history-table { min-width: 3200px; display: grid; gap: 0; grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px; }
-        .history-table > div:nth-child(4) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
-        .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
-        .history-table > div:nth-child(15n) { border-right: none; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            """
+            <style>
+            .table-container { overflow-x: auto; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; margin-top: 12px; }
+            .history-table { min-width: 3200px; display: grid; gap: 0; grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px; }
+            .history-table > div:nth-child(4) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
+            .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
+            .history-table > div:nth-child(15n) { border-right: none; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    table_html = [
-        '<div class="table-container">',
-        '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
-        '</div>'
-    ]
+        table_html = [
+            '<div class="table-container">',
+            '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
+            '</div>'
+        ]
 
     # Render rows with proper metrics data
-    for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
+        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
         # Find source item in outputs to get label/ai_key for metrics lookup
-        src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('label') or '') == doc_ver or (it.get('ai_key') or '').endswith(doc_ver)), None)
-        
+            src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('label') or '') == doc_ver or (it.get('ai_key') or '').endswith(doc_ver)), None)
+
         # Try to get metrics data
-        met = None
-        if src:
+            met = None
+            if src:
             # Try direct version lookup first
-            versions = _infer_versions_from_label(case_id, src.get('label'), src.get('ai_key'))
-            for v in versions:
-                met = _get_metrics_for_version(backend, case_id, v)
-                if met:
-                    break
-        
+                versions = _infer_versions_from_label(case_id, src.get('label'), src.get('ai_key'))
+                for v in versions:
+                    met = _get_metrics_for_version(backend, case_id, v)
+                    if met:
+                        break
+
         # Format metrics data if available
-        if met:
-            def _fmt_time(t):
-                try:
-                    return str(t).split('T')[1].split('+')[0][:8]
-                except Exception:
-                    return t or '—'
-            ocr_start = _fmt_time(met.get('ocr_start_time') or '—')
-            ocr_end = _fmt_time(met.get('ocr_end_time') or '—')
-            def _fmt_num(n):
-                try:
-                    return f"{int(n):,}" if n is not None else '—'
-                except Exception:
-                    return str(n) if n is not None else '—'
-            total_tokens = _fmt_num(met.get('total_tokens_used'))
-            input_tokens = _fmt_num(met.get('total_input_tokens'))
-            output_tokens = _fmt_num(met.get('total_output_tokens'))
-            
+            if met:
+                def _fmt_time(t):
+                    try:
+                        return str(t).split('T')[1].split('+')[0][:8]
+                    except Exception:
+                        return t or '—'
+                ocr_start = _fmt_time(met.get('ocr_start_time') or '—')
+                ocr_end = _fmt_time(met.get('ocr_end_time') or '—')
+                def _fmt_num(n):
+                    try:
+                        return f"{int(n):,}" if n is not None else '—'
+                    except Exception:
+                        return str(n) if n is not None else '—'
+                total_tokens = _fmt_num(met.get('total_tokens_used'))
+                input_tokens = _fmt_num(met.get('total_input_tokens'))
+                output_tokens = _fmt_num(met.get('total_output_tokens'))
+
             # Section durations if provided by backend (extras dict)
-            from datetime import datetime as _dt
-            def _parse_iso(x):
-                try:
-                    return _dt.fromisoformat(str(x).replace('Z', '+00:00')) if x else None
-                except Exception:
-                    return None
-            def _fmt_dur(s, e):
-                if not s or not e:
-                    return '—'
-                try:
-                    secs = max(0.0, (e - s).total_seconds())
-                    m, s2 = divmod(int(round(secs)), 60)
-                    return f"{m:02d}:{s2:02d}"
-                except Exception:
-                    return '—'
-            extras = met.get('extras') or {}
-            _s2s = _parse_iso(extras.get('section2 start time'))
-            _s2e = _parse_iso(extras.get('section2 end time'))
-            _s3s = _parse_iso(extras.get('section3 start time'))
-            _s3e = _parse_iso(extras.get('section3 end time'))
-            _s4s = _parse_iso(extras.get('section4 start time'))
-            _s4e = _parse_iso(extras.get('section4 end time'))
-            _s9s = _parse_iso(extras.get('section9 start time'))
-            _s9e = _parse_iso(extras.get('section9 end time'))
-            sec2dur = _fmt_dur(_s2s, _s2e)
-            sec3dur = _fmt_dur(_s3s, _s3e)
-            sec4dur = _fmt_dur(_s4s, _s4e)
-            sec9dur = _fmt_dur(_s9s, _s9e)
-        else:
+                from datetime import datetime as _dt
+                def _parse_iso(x):
+                    try:
+                        return _dt.fromisoformat(str(x).replace('Z', '+00:00')) if x else None
+                    except Exception:
+                        return None
+                def _fmt_dur(s, e):
+                    if not s or not e:
+                        return '—'
+                    try:
+                        secs = max(0.0, (e - s).total_seconds())
+                        m, s2 = divmod(int(round(secs)), 60)
+                        return f"{m:02d}:{s2:02d}"
+                    except Exception:
+                        return '—'
+                extras = met.get('extras') or {}
+                _s2s = _parse_iso(extras.get('section2 start time'))
+                _s2e = _parse_iso(extras.get('section2 end time'))
+                _s3s = _parse_iso(extras.get('section3 start time'))
+                _s3e = _parse_iso(extras.get('section3 end time'))
+                _s4s = _parse_iso(extras.get('section4 start time'))
+                _s4e = _parse_iso(extras.get('section4 end time'))
+                _s9s = _parse_iso(extras.get('section9 start time'))
+                _s9e = _parse_iso(extras.get('section9 end time'))
+                sec2dur = _fmt_dur(_s2s, _s2e)
+                sec3dur = _fmt_dur(_s3s, _s3e)
+                sec4dur = _fmt_dur(_s4s, _s4e)
+                sec9dur = _fmt_dur(_s9s, _s9e)
+            else:
             # Use fallback values from the row data
-            sec2dur = sec3dur = sec4dur = sec9dur = '—'
-        
-        gt_dl = dl_link(gt_url)
-        ai_dl = dl_link(ai_url)
-        doc_dl = dl_link(doc_url)
-        gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
-        ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
-        doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
-        
-        table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
+                sec2dur = sec3dur = sec4dur = sec9dur = '—'
+
+            gt_dl = dl_link(gt_url)
+            ai_dl = dl_link(ai_url)
+            doc_dl = dl_link(doc_url)
+            gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
+            ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
+            doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
+
+            table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
+            table_html.append('</div>')
+
+    # Close the table container
         table_html.append('</div>')
     
-    # Close the table container
-    table_html.append('</div>')
-    
     # Render the complete table
-    st.markdown("".join(table_html), unsafe_allow_html=True)
+        st.markdown("".join(table_html), unsafe_allow_html=True)
 
     # Viewers (GT | AI | Doctor)
     iframe_h = 480
