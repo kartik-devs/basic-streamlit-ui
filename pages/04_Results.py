@@ -286,7 +286,7 @@ def main() -> None:
                 if isinstance(iso, str):
                     try:
                         return _dt.fromisoformat(iso)
-                    except Exception:
+            except Exception:
                         pass
                 import re
                 src = (item.get('ai_key') or item.get('label') or '')
@@ -298,7 +298,7 @@ def main() -> None:
             outputs.sort(key=_ts_key, reverse=True)  # True = latest first (reverse chronological)
         except Exception:
             pass
-    except Exception:
+        except Exception:
         outputs = []
         assets = {}
 
@@ -306,7 +306,7 @@ def main() -> None:
     st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
     only_canonical = st.checkbox(
         "Show only canonical workflow reports (with metrics)",
-        value=False,
+        value=True,
         key=f"hist_only_canon_{case_id}",
     )
     if outputs and only_canonical:

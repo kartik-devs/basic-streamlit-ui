@@ -455,7 +455,7 @@ def main() -> None:
     st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
     only_canonical = st.checkbox(
         "Show only canonical workflow reports (with metrics)",
-        value=False,
+        value=True,
         key=f"hist_only_canon_{case_id}",
     )
     if outputs and only_canonical:
