@@ -601,7 +601,7 @@ def main() -> None:
                         if v in seen:
                             continue
                         seen.add(v)
-                        _ = _get_metrics_for_version(backend, case_id, v)
+                        _ = _get_metrics_for_version(backend, effective_case_id, v)
         except Exception:
             pass
 
@@ -653,7 +653,7 @@ def main() -> None:
             gt_effective_pdf_url = gt_generic
 
     # Warm metrics cache from outputs first (helps fill table below)
-    _probe_metrics_from_outputs(backend, case_id, outputs)
+    _probe_metrics_from_outputs(backend, effective_case_id, outputs)
 
     # Helper: inline PDF via base64 (reliable on Streamlit Cloud)
     def _render_pdf_base64(proxy_url: str, height_px: int) -> None:
@@ -774,7 +774,7 @@ def main() -> None:
                 if not timestamp_match and doc_url:
                     timestamp_match = _re.search(r"(\d{12})", str(doc_url))
                 if timestamp_match:
-                    met = _get_metrics_for_version(backend, case_id, f"{case_id}-{timestamp_match.group(1)}")
+                    met = _get_metrics_for_version(backend, effective_case_id, f"{effective_case_id}-{timestamp_match.group(1)}")
             except Exception:
                 met = None
             try:
@@ -782,9 +782,9 @@ def main() -> None:
             except Exception:
                 src = None
             if not met:
-                versions = _infer_versions_from_label(case_id, (src or {}).get('label'), (src or {}).get('ai_key'))
+                versions = _infer_versions_from_label(effective_case_id, (src or {}).get('label'), (src or {}).get('ai_key'))
                 for v in versions:
-                    met = _get_metrics_for_version(backend, case_id, v)
+                    met = _get_metrics_for_version(backend, effective_case_id, v)
                     if met:
                         break
             if met:

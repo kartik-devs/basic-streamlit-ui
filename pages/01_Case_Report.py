@@ -191,14 +191,27 @@ def main() -> None:
             st.caption(f"Current mapping: 0000 ➜ {dbg_alias}")
         else:
             st.caption("Enter a 4-digit case id, e.g. 9999")
+        st.markdown("---")
+        dbg_secs = st.number_input(
+            "Override generation duration (seconds) for normal IDs",
+            min_value=5,
+            max_value=7200,
+            value=int(st.session_state.get("debug_target_seconds", 7200)),
+            step=5,
+            help="Applies to all case IDs except special 0000 fast path. Use small values for quick testing.",
+        )
+        st.session_state["debug_target_seconds"] = int(dbg_secs)
     
     # Check if generation is already in progress
     if st.session_state.get("generation_in_progress", False):
         st.markdown("## Case Report Generation")
         # Show progress bar instead of old card
         case_id = st.session_state.get("current_case_id", "Unknown")
-        # Test shortcut: dummy case '0000' completes in 60 seconds
-        target_seconds = 60 if str(case_id) == "0000" else 7200
+        # Determine simulated target duration
+        if str(case_id) == "0000":
+            target_seconds = 60
+        else:
+            target_seconds = int(st.session_state.get("debug_target_seconds", 7200))
         
         # Calculate elapsed time
         start_time = st.session_state.get("generation_start")
@@ -218,7 +231,7 @@ def main() -> None:
                 debug_progress = min(5 + (elapsed_time / 5) * 95, 100)
                 st.session_state["generation_progress"] = int(debug_progress)
             else:
-                # Normal mode: Linear progression over 2 hours (7200 seconds)
+                # Normal mode: Linear progression over target_seconds
                 if elapsed_time < target_seconds:  # Within target window
                     linear_progress = min(5 + (elapsed_time / target_seconds) * 95, 100)
                     st.session_state["generation_progress"] = int(linear_progress)
@@ -509,9 +522,9 @@ def main() -> None:
             elapsed_time = 0
         
         # Calculate progress based on elapsed time
-        # Linear progression over 2 hours (7200 seconds)
-        # Start at 1%, reach 100% in 2 hours
-        linear_progress = min(1 + (elapsed_time / 7200) * 99, 100)
+        # Linear progression over configured target seconds (default 7200)
+        target_seconds = int(st.session_state.get("debug_target_seconds", 7200))
+        linear_progress = min(1 + (elapsed_time / target_seconds) * 99, 100)
         st.session_state["generation_progress"] = int(linear_progress)
         
         # Update step status based on progress
