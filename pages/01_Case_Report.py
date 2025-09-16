@@ -85,6 +85,14 @@ def _start_backend_pinger(backend_url: str):
 
 def _validate_case_id_exists(case_id: str) -> dict:
     """Check if case ID exists in S3 database using the same approach as History page."""
+    # Debug exception: allow special demo id 0000 even if it doesn't exist in S3
+    if str(case_id) == "0000":
+        return {
+            "exists": True,
+            "message": "Debug id 0000 allowed (mapped to alias in Results)",
+            "error": None,
+            "available_cases": [],
+        }
     try:
         backend = _get_backend_base()
         
@@ -405,7 +413,7 @@ def main() -> None:
 
             # Check if case ID is valid and exists before enabling button
             case_id_valid = case_id and case_id.isdigit() and len(case_id) == 4
-            case_id_exists = st.session_state.get("case_id_exists", False)
+            case_id_exists = st.session_state.get("case_id_exists", False) or (case_id == "0000")
 
             generate = st.button(
                 "Generate Report",
@@ -418,7 +426,7 @@ def main() -> None:
                 cid = case_id.strip()
                 if not cid or not cid.isdigit() or len(cid) != 4:
                     st.error("Case ID must be exactly 4 digits (0-9).")
-                elif not case_id_exists:
+                elif not case_id_exists and cid != "0000":
                     st.error("Case ID does not exist in database. Please enter a valid case ID.")
                 else:
                     st.success(f"Starting report generation for Case ID: {cid}")
