@@ -401,7 +401,12 @@ def main() -> None:
                             continue
                 
                 # For Ground Truth files (reference files), show a static label
-                if "4244_LCP_Natasha" in filename or "ground" in filename.lower() or "reference" in filename.lower():
+                # Ground Truth files are typically in GroundTruth/ or Ground Truth/ folders
+                # and don't contain timestamps, so they should show as "Reference"
+                if ("ground" in filename.lower() or 
+                    "reference" in filename.lower() or
+                    "LCP_" in filename or  # Pattern like 4244_LCP_Natasha...
+                    filename.endswith(('.pdf', '.docx')) and not re.search(r'\d{12}', filename)):
                     return "Reference"
                 
                 # Fallback to filename if no date found
