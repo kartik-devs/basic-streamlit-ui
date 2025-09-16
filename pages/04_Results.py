@@ -554,7 +554,8 @@ def main() -> None:
             return "—"
 
     # Get code version
-    code_version = _fetch_code_version_for_case(case_id)
+    # Use effective case id for code version in debug alias flows
+    code_version = _fetch_code_version_for_case(effective_case_id)
     generated_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
     # Metrics fetching function
@@ -888,15 +889,16 @@ def main() -> None:
         table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
+        # Ensure ordering matches headers: Input, Output, OCR, Sections
         def _with_min_label(x: str) -> str:
             try:
                 return ((x or '—') + ' min') if (x and x != '—') else x
             except Exception:
                 return x
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_min_label(ocr_duration)}</div>')
         # total_tokens is hidden; skip appending
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_min_label(ocr_duration)}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_min_label(sec2dur)}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_min_label(sec3dur)}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_min_label(sec4dur)}</div>')
