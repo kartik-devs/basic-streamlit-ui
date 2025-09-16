@@ -271,12 +271,26 @@ def main() -> None:
             )]
         except Exception:
             pass
+        
+        # Sort outputs chronologically (oldest first)
+        def _ts_key(item: dict) -> str:
+            try:
+                import re
+                src = (item.get('ai_url') or item.get('doctor_url') or item.get('label') or item.get('ai_key') or item.get('doctor_key') or '')
+                m = re.search(r"(\d{12})", str(src))
+                return m.group(1) if m else ''
+            except Exception:
+                return ''
+        try:
+            outputs.sort(key=_ts_key, reverse=False)  # False = chronological order
+        except Exception:
+            pass
     except Exception:
         outputs = []
-    try:
+        try:
         r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
         assets = r_assets.json() if r_assets.ok else {}
-    except Exception:
+        except Exception:
         assets = {}
 
     # Optionally show only canonical workflow reports which can have metrics JSON
@@ -297,8 +311,8 @@ def main() -> None:
                 outputs = filtered
             else:
                 st.info("No canonical reports found. Showing all outputs.")
-        except Exception:
-            pass
+    except Exception:
+        pass
 
     # Display case ID prominently
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
@@ -325,6 +339,42 @@ def main() -> None:
                 return urlparse(url).path.split("/")[-1]
             except Exception:
                 return url
+
+    def extract_date_from_url(url: str | None) -> str:
+            if not url:
+                return "—"
+            try:
+                import re
+                # Look for 12-digit timestamp pattern (YYYYMMDDHHMM)
+                match = re.search(r"(\d{12})", url)
+                if match:
+                    timestamp = match.group(1)
+                    # Convert YYYYMMDDHHMM to readable format
+                    year = timestamp[:4]
+                    month = timestamp[4:6]
+                    day = timestamp[6:8]
+                    hour = timestamp[8:10]
+                    minute = timestamp[10:12]
+                    return f"{year}-{month}-{day} {hour}:{minute}"
+                # Fallback to filename if no timestamp found
+                from urllib.parse import urlparse
+                return urlparse(url).path.split("/")[-1]
+            except Exception:
+                return url
+
+    def calculate_ocr_duration(ocr_start: str, ocr_end: str) -> str:
+            if not ocr_start or not ocr_end or ocr_start == "—" or ocr_end == "—":
+                return "—"
+            try:
+                from datetime import datetime
+                start_dt = datetime.fromisoformat(ocr_start.replace('Z', '+00:00'))
+                end_dt = datetime.fromisoformat(ocr_end.replace('Z', '+00:00'))
+                duration = end_dt - start_dt
+                total_seconds = int(duration.total_seconds())
+                minutes, seconds = divmod(total_seconds, 60)
+                return f"{minutes:02d}:{seconds:02d}"
+            except Exception:
+                return "—"
 
     def dl_link(raw_url: str | None) -> str | None:
             if not raw_url:
@@ -516,15 +566,14 @@ def main() -> None:
             str(_fmt_num(output_tokens)),
         )
 
-    rows: list[tuple[str, str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
+    rows: list[tuple[str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
     if outputs:
             for o in outputs:
-                doc_version = extract_version(o.get("label"))
                 report_timestamp = o.get("timestamp") or generated_ts
                 ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
-                rows.append((report_timestamp, code_version, doc_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
+                rows.append((report_timestamp, code_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
     else:
-        rows.append((generated_ts, code_version, "—", gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
+        rows.append((generated_ts, code_version, gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
     # Optional pagination for summary table
     sum_page_size = 10
@@ -553,8 +602,8 @@ def main() -> None:
             """
             <style>
             .table-container { overflow-x: auto; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; margin-top: 12px; }
-            .history-table { min-width: 3200px; display: grid; gap: 0; grid-template-columns: 240px 180px 200px 3.6fr 3.6fr 3.6fr 140px 140px 160px 160px 160px 180px 180px 180px 180px; }
-            .history-table > div:nth-child(4) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
+            .history-table { min-width: 3140px; display: grid; gap: 0; grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 140px 140px 100px 160px 160px 160px 180px 180px 180px 180px; }
+            .history-table > div:nth-child(3) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
             .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
             .history-table > div:nth-child(15n) { border-right: none; }
             </style>
@@ -567,12 +616,12 @@ def main() -> None:
             '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
             '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Document Version</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
+            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Time</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
@@ -584,9 +633,9 @@ def main() -> None:
         ]
 
     # Render rows with proper metrics data
-        for (gen_time, code_ver, doc_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
+        for (gen_time, code_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
         # Find source item in outputs to get label/ai_key for metrics lookup
-            src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('label') or '') == doc_ver or (it.get('ai_key') or '').endswith(doc_ver)), None)
+            src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('doctor_url') == doc_url)), None)
 
         # Try to get metrics data
             met = None
@@ -652,19 +701,19 @@ def main() -> None:
             gt_dl = dl_link(gt_url)
             ai_dl = dl_link(ai_url)
             doc_dl = dl_link(doc_url)
-            gt_link = f'<a href="{gt_dl}" class="st-a" download>{file_name(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
-            ai_link = f'<a href="{ai_dl}" class="st-a" download>{file_name(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
-            doc_link = f'<a href="{doc_dl}" class="st-a" download>{file_name(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
+            gt_link = f'<a href="{gt_dl}" class="st-a" download>{extract_date_from_url(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
+            ai_link = f'<a href="{ai_dl}" class="st-a" download>{extract_date_from_url(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
+            doc_link = f'<a href="{doc_dl}" class="st-a" download>{extract_date_from_url(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
 
             table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{doc_ver}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{calculate_ocr_duration(ocr_start, ocr_end)}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
