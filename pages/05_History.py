@@ -288,9 +288,13 @@ def _initials(name: str) -> str:
 
 
 def main() -> None:
-    st.set_page_config(page_title="History (All Cases)", page_icon="🗂️", layout="wide")
-    theme_provider()
-    inject_base_styles()
+    try:
+        st.set_page_config(page_title="History (All Cases)", page_icon="🗂️", layout="wide")
+        theme_provider()
+        inject_base_styles()
+    except Exception as e:
+        st.error(f"Error initializing page: {str(e)}")
+        return
     
     # Initialize backend pinger to keep backend alive
     backend = _get_backend_base()
@@ -739,248 +743,248 @@ def main() -> None:
                         gt_effective_pdf_url = gt_generic
             except Exception:
                 gt_effective_pdf_url = gt_generic
-
-        # Helper function to extract timing and token data from metadata
-        def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
-            # Extract timing data
-            ocr_start = o.get("ocr_start_time", "—")
-            ocr_end = o.get("ocr_end_time", "—")
-            
-            # Extract token usage
-            total_tokens = o.get("total_tokens_used", "—")
-            input_tokens = o.get("total_input_tokens", "—")
-            output_tokens = o.get("total_output_tokens", "—")
-            
-            # Format timing (extract just time part if available)
-            if ocr_start != "—" and "T" in str(ocr_start):
-                try:
-                    ocr_start = str(ocr_start).split("T")[1].split("+")[0][:8]  # HH:MM:SS
-                except:
-                    pass
-            if ocr_end != "—" and "T" in str(ocr_end):
-                try:
-                    ocr_end = str(ocr_end).split("T")[1].split("+")[0][:8]  # HH:MM:SS
-                except:
-                    pass
-            
-            # Format token numbers with commas
-            if total_tokens != "—" and isinstance(total_tokens, (int, str)):
-                try:
-                    total_tokens = f"{int(total_tokens):,}"
-                except:
-                    pass
-            if input_tokens != "—" and isinstance(input_tokens, (int, str)):
-                try:
-                    input_tokens = f"{int(input_tokens):,}"
-                except:
-                    pass
-            if output_tokens != "—" and isinstance(output_tokens, (int, str)):
-                try:
-                    output_tokens = f"{int(output_tokens):,}"
-                except:
-                    pass
-            
-            return str(ocr_start), str(ocr_end), str(total_tokens), str(input_tokens), str(output_tokens)
-
-        rows: list[tuple[str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
-        if outputs:
-            for o in outputs:
-                # Use timestamp from S3 metadata instead of fake timestamp
-                report_timestamp = o.get("timestamp") or generated_ts
-                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
-                rows.append((report_timestamp, code_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
-        else:
-            st.warning("No outputs returned for this case. Verify the backend `/s3/{case_id}/outputs` endpoint and try Refetch/Cache Clear in Debug.")
-            rows.append((generated_ts, code_version, gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
-
-        # Pagination controls for summary table (10 per page)
-        sum_page_size = 10
-        sum_total = len(rows)
-        sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
-        sum_pg_key = f"hist_summary_page_{case_id}"
-        sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
-        sc1, sc2, sc3 = st.columns([1, 2, 1])
-        with sc1:
-            if st.button("← Prev", key=f"sum_prev_{case_id}", disabled=(sum_cur_page <= 1)):
-                sum_cur_page = max(1, sum_cur_page - 1)
-        with sc2:
-            st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
-        with sc3:
-            if st.button("Next →", key=f"sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages)):
-                sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
-        st.session_state[sum_pg_key] = sum_cur_page
-        sum_start = (sum_cur_page - 1) * sum_page_size
-        sum_end = min(sum_total, sum_start + sum_page_size)
-        page_rows = rows[sum_start:sum_end]
-
-        # Add CSS for horizontal scrolling
-        st.markdown("""
-        <style>
-        .table-container {
-            overflow-x: auto;
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 8px;
-            margin-top: 12px;
-        }
-        
-        .history-table {
-            min-width: 2900px;
-            display: grid;
-            gap: 0;
-            grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 100px 160px 160px 160px 180px 180px 180px 180px;
-        }
-        
-        /* Add visual separation between Ground Truth and AI Generated columns */
-        .history-table > div:nth-child(3) {
-            border-right: 2px solid rgba(255,255,255,0.25) !important;
-        }
-        
-        /* Add vertical borders to table cells */
-        .history-table > div {
-            border-right: 1px solid rgba(255,255,255,0.12);
-        }
-        
-        /* Remove right border from last column */
-        .history-table > div:nth-child(13n) {
-            border-right: none;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-        # Render table HTML
-        table_html = [
-            '<div class="table-container">',
-            '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Time</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
-            '</div>'
-        ]
-        for (gen_time, code_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
-            # If metrics are blank, try S3 JSON lookup
-            if (ocr_start == '—' and ocr_end == '—' and total_tokens == '—'):
-                met = None
-                # Try to find metrics using ai_url or doc_url
-                try:
-                    import re as _re
-                    # Extract timestamp from URLs for metrics lookup
-                    timestamp_match = None
-                    if ai_url:
-                        timestamp_match = _re.search(r"(\d{12})", str(ai_url))
-                    if not timestamp_match and doc_url:
-                        timestamp_match = _re.search(r"(\d{12})", str(doc_url))
-                    if timestamp_match:
-                        met = _get_metrics_for_version(backend, case_id, f"{case_id}-{timestamp_match.group(1)}")
-                except Exception:
-                    met = None
-                # Fallback: infer from label/ai_key in outputs
-                try:
-                    # Find source item in outputs to get label/ai_key
-                    src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('doctor_url') == doc_url)), None)
-                except Exception:
-                    src = None
-                if not met:
-                    versions = _infer_versions_from_label(case_id, (src or {}).get('label'), (src or {}).get('ai_key'))
-                    for v in versions:
-                        met = _get_metrics_for_version(backend, case_id, v)
-                        if met:
-                            break
-                if met:
-                    def _fmt_time(t):
-                        try:
-                            return str(t).split('T')[1].split('+')[0][:8]
-                        except Exception:
-                            return t or '—'
-                    ocr_start = _fmt_time(met.get('ocr_start_time') or '—')
-                    ocr_end = _fmt_time(met.get('ocr_end_time') or '—')
-                    def _fmt_num(n):
-                        try:
-                            return f"{int(n):,}" if n is not None else '—'
-                        except Exception:
-                            return str(n) if n is not None else '—'
-                    total_tokens = _fmt_num(met.get('total_tokens_used'))
-                    input_tokens = _fmt_num(met.get('total_input_tokens'))
-                    output_tokens = _fmt_num(met.get('total_output_tokens'))
-                    # Section durations if provided by backend (extras dict)
-                    from datetime import datetime as _dt
-                    def _parse_iso(x):
-                        try:
-                            return _dt.fromisoformat(str(x).replace('Z', '+00:00')) if x else None
-                        except Exception:
-                            return None
-                    def _fmt_dur(s, e):
-                        if not s or not e:
-                            return '—'
-                        try:
-                            secs = max(0.0, (e - s).total_seconds())
-                            m, s2 = divmod(int(round(secs)), 60)
-                            return f"{m:02d}:{s2:02d}"
-                        except Exception:
-                            return '—'
-                    extras = met.get('extras') or {}
-                    _s2s = _parse_iso(extras.get('section2 start time'))
-                    _s2e = _parse_iso(extras.get('section2 end time'))
-                    _s3s = _parse_iso(extras.get('section3 start time'))
-                    _s3e = _parse_iso(extras.get('section3 end time'))
-                    _s4s = _parse_iso(extras.get('section4 start time'))
-                    _s4e = _parse_iso(extras.get('section4 end time'))
-                    _s9s = _parse_iso(extras.get('section9 start time'))
-                    _s9e = _parse_iso(extras.get('section9 end time'))
-                    sec2dur = _fmt_dur(_s2s, _s2e)
-                    sec3dur = _fmt_dur(_s3s, _s3e)
-                    sec4dur = _fmt_dur(_s4s, _s4e)
-                    sec9dur = _fmt_dur(_s9s, _s9e)
-                else:
-                    sec2dur = sec3dur = sec4dur = sec9dur = '—'
-            else:
-                sec2dur = sec3dur = sec4dur = sec9dur = '—'
-            
-            # Calculate OCR duration - use metrics data if available, otherwise use row data
-            if met:
-                ocr_duration = calculate_ocr_duration(met.get('ocr_start_time'), met.get('ocr_end_time'))
-            else:
-                ocr_duration = calculate_ocr_duration(ocr_start, ocr_end)
-            gt_dl = dl_link(gt_url)
-            ai_dl = dl_link(ai_url)
-            doc_dl = dl_link(doc_url)
-            gt_link = f'<a href="{gt_dl}" class="st-a" download>{extract_date_from_url(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
-            ai_link = f'<a href="{ai_dl}" class="st-a" download>{extract_date_from_url(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
-            doc_link = f'<a href="{doc_dl}" class="st-a" download>{extract_date_from_url(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
-            
-            # Append each row element individually
-            table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_duration}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
-            table_html.append('</div>')
-        table_html.append('</div>')
-        st.markdown("".join(table_html), unsafe_allow_html=True)
-        
-        # Extra breathing room below the summary table
-        st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
     except Exception as e:
         st.error(f"Error loading report summary: {str(e)}")
-        st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
+        return
+
+    # Helper function to extract timing and token data from metadata
+    def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
+        # Extract timing data
+        ocr_start = o.get("ocr_start_time", "—")
+        ocr_end = o.get("ocr_end_time", "—")
+        
+        # Extract token usage
+        total_tokens = o.get("total_tokens_used", "—")
+        input_tokens = o.get("total_input_tokens", "—")
+        output_tokens = o.get("total_output_tokens", "—")
+        
+        # Format timing (extract just time part if available)
+        if ocr_start != "—" and "T" in str(ocr_start):
+            try:
+                ocr_start = str(ocr_start).split("T")[1].split("+")[0][:8]  # HH:MM:SS
+            except:
+                pass
+        if ocr_end != "—" and "T" in str(ocr_end):
+            try:
+                ocr_end = str(ocr_end).split("T")[1].split("+")[0][:8]  # HH:MM:SS
+            except:
+                pass
+        
+        # Format token numbers with commas
+        if total_tokens != "—" and isinstance(total_tokens, (int, str)):
+            try:
+                total_tokens = f"{int(total_tokens):,}"
+            except:
+                pass
+        if input_tokens != "—" and isinstance(input_tokens, (int, str)):
+            try:
+                input_tokens = f"{int(input_tokens):,}"
+            except:
+                pass
+        if output_tokens != "—" and isinstance(output_tokens, (int, str)):
+            try:
+                output_tokens = f"{int(output_tokens):,}"
+            except:
+                pass
+        
+        return str(ocr_start), str(ocr_end), str(total_tokens), str(input_tokens), str(output_tokens)
+
+    rows: list[tuple[str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
+    if outputs:
+        for o in outputs:
+            # Use timestamp from S3 metadata instead of fake timestamp
+            report_timestamp = o.get("timestamp") or generated_ts
+            ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+            rows.append((report_timestamp, code_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
+    else:
+        st.warning("No outputs returned for this case. Verify the backend `/s3/{case_id}/outputs` endpoint and try Refetch/Cache Clear in Debug.")
+        rows.append((generated_ts, code_version, gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
+
+    # Pagination controls for summary table (10 per page)
+    sum_page_size = 10
+    sum_total = len(rows)
+    sum_total_pages = max(1, (sum_total + sum_page_size - 1) // sum_page_size)
+    sum_pg_key = f"hist_summary_page_{case_id}"
+    sum_cur_page = int(st.session_state.get(sum_pg_key, 1))
+    sc1, sc2, sc3 = st.columns([1, 2, 1])
+    with sc1:
+        if st.button("← Prev", key=f"sum_prev_{case_id}", disabled=(sum_cur_page <= 1)):
+            sum_cur_page = max(1, sum_cur_page - 1)
+    with sc2:
+        st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
+    with sc3:
+        if st.button("Next →", key=f"sum_next_{case_id}", disabled=(sum_cur_page >= sum_total_pages)):
+            sum_cur_page = min(sum_total_pages, sum_cur_page + 1)
+    st.session_state[sum_pg_key] = sum_cur_page
+    sum_start = (sum_cur_page - 1) * sum_page_size
+    sum_end = min(sum_total, sum_start + sum_page_size)
+    page_rows = rows[sum_start:sum_end]
+
+    # Add CSS for horizontal scrolling
+    st.markdown("""
+    <style>
+    .table-container {
+        overflow-x: auto;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 8px;
+        margin-top: 12px;
+    }
+    
+    .history-table {
+        min-width: 2900px;
+        display: grid;
+        gap: 0;
+        grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 100px 160px 160px 160px 180px 180px 180px 180px;
+    }
+    
+    /* Add visual separation between Ground Truth and AI Generated columns */
+    .history-table > div:nth-child(3) {
+        border-right: 2px solid rgba(255,255,255,0.25) !important;
+    }
+    
+    /* Add vertical borders to table cells */
+    .history-table > div {
+        border-right: 1px solid rgba(255,255,255,0.12);
+    }
+    
+    /* Remove right border from last column */
+    .history-table > div:nth-child(13n) {
+        border-right: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Render table HTML
+    table_html = [
+        '<div class="table-container">',
+        '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Code Version</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">OCR Time</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">Section 9 Time</div>',
+        '</div>'
+    ]
+    for (gen_time, code_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
+        # If metrics are blank, try S3 JSON lookup
+        if (ocr_start == '—' and ocr_end == '—' and total_tokens == '—'):
+            met = None
+            # Try to find metrics using ai_url or doc_url
+            try:
+                import re as _re
+                # Extract timestamp from URLs for metrics lookup
+                timestamp_match = None
+                if ai_url:
+                    timestamp_match = _re.search(r"(\d{12})", str(ai_url))
+                if not timestamp_match and doc_url:
+                    timestamp_match = _re.search(r"(\d{12})", str(doc_url))
+                if timestamp_match:
+                    met = _get_metrics_for_version(backend, case_id, f"{case_id}-{timestamp_match.group(1)}")
+            except Exception:
+                met = None
+            # Fallback: infer from label/ai_key in outputs
+            try:
+                # Find source item in outputs to get label/ai_key
+                src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('doctor_url') == doc_url)), None)
+            except Exception:
+                src = None
+            if not met:
+                versions = _infer_versions_from_label(case_id, (src or {}).get('label'), (src or {}).get('ai_key'))
+                for v in versions:
+                    met = _get_metrics_for_version(backend, case_id, v)
+                    if met:
+                        break
+            if met:
+                def _fmt_time(t):
+                    try:
+                        return str(t).split('T')[1].split('+')[0][:8]
+                    except Exception:
+                        return t or '—'
+                ocr_start = _fmt_time(met.get('ocr_start_time') or '—')
+                ocr_end = _fmt_time(met.get('ocr_end_time') or '—')
+                def _fmt_num(n):
+                    try:
+                        return f"{int(n):,}" if n is not None else '—'
+                    except Exception:
+                        return str(n) if n is not None else '—'
+                total_tokens = _fmt_num(met.get('total_tokens_used'))
+                input_tokens = _fmt_num(met.get('total_input_tokens'))
+                output_tokens = _fmt_num(met.get('total_output_tokens'))
+                # Section durations if provided by backend (extras dict)
+                from datetime import datetime as _dt
+                def _parse_iso(x):
+                    try:
+                        return _dt.fromisoformat(str(x).replace('Z', '+00:00')) if x else None
+                    except Exception:
+                        return None
+                def _fmt_dur(s, e):
+                    if not s or not e:
+                        return '—'
+                    try:
+                        secs = max(0.0, (e - s).total_seconds())
+                        m, s2 = divmod(int(round(secs)), 60)
+                        return f"{m:02d}:{s2:02d}"
+                    except Exception:
+                        return '—'
+                extras = met.get('extras') or {}
+                _s2s = _parse_iso(extras.get('section2 start time'))
+                _s2e = _parse_iso(extras.get('section2 end time'))
+                _s3s = _parse_iso(extras.get('section3 start time'))
+                _s3e = _parse_iso(extras.get('section3 end time'))
+                _s4s = _parse_iso(extras.get('section4 start time'))
+                _s4e = _parse_iso(extras.get('section4 end time'))
+                _s9s = _parse_iso(extras.get('section9 start time'))
+                _s9e = _parse_iso(extras.get('section9 end time'))
+                sec2dur = _fmt_dur(_s2s, _s2e)
+                sec3dur = _fmt_dur(_s3s, _s3e)
+                sec4dur = _fmt_dur(_s4s, _s4e)
+                sec9dur = _fmt_dur(_s9s, _s9e)
+            else:
+                sec2dur = sec3dur = sec4dur = sec9dur = '—'
+        else:
+            sec2dur = sec3dur = sec4dur = sec9dur = '—'
+        
+        # Calculate OCR duration - use metrics data if available, otherwise use row data
+        if met:
+            ocr_duration = calculate_ocr_duration(met.get('ocr_start_time'), met.get('ocr_end_time'))
+        else:
+            ocr_duration = calculate_ocr_duration(ocr_start, ocr_end)
+        gt_dl = dl_link(gt_url)
+        ai_dl = dl_link(ai_url)
+        doc_dl = dl_link(doc_url)
+        gt_link = f'<a href="{gt_dl}" class="st-a" download>{extract_date_from_url(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
+        ai_link = f'<a href="{ai_dl}" class="st-a" download>{extract_date_from_url(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
+        doc_link = f'<a href="{doc_dl}" class="st-a" download>{extract_date_from_url(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
+        
+        # Append each row element individually
+        table_html.append('<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.06);">')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{gen_time}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;">{code_ver}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_duration}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
+        table_html.append('</div>')
+    table_html.append('</div>')
+    st.markdown("".join(table_html), unsafe_allow_html=True)
+    
+    # Extra breathing room below the summary table
+    st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
 
     # Denser layout height
     iframe_h = 480
