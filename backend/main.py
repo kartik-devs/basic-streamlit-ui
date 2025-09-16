@@ -28,6 +28,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Fallback DB connector (ensures availability for comment/history endpoints)
@@ -528,9 +529,12 @@ def proxy_pdf(url: str):
             # Allow embedding and cross-origin fetch for pdf.js
             "X-Accel-Buffering": "no",
             "Cache-Control": "private, max-age=60",
-            "X-Frame-Options": "ALLOWALL",
-            "Content-Security-Policy": "frame-ancestors *",
+            "X-Frame-Options": "SAMEORIGIN",
+            "Content-Security-Policy": "frame-ancestors 'self' *",
             "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Expose-Headers": "*",
             "Cross-Origin-Resource-Policy": "cross-origin",
             "Accept-Ranges": "bytes",
         }
@@ -570,9 +574,12 @@ def s3_stream(key: str, download: int = 0):
             # Allow embedding in iframes across origins
             "X-Accel-Buffering": "no",
             "Cache-Control": "private, max-age=60",
-            "X-Frame-Options": "ALLOWALL",
-            "Content-Security-Policy": "frame-ancestors *",
+            "X-Frame-Options": "SAMEORIGIN",
+            "Content-Security-Policy": "frame-ancestors 'self' *",
             "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Expose-Headers": "*",
             "Cross-Origin-Resource-Policy": "cross-origin",
             # Help browser PDF viewers with seeking
             "Accept-Ranges": "bytes",

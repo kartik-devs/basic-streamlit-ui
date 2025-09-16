@@ -697,7 +697,9 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_effective_pdf_url:
-            st.markdown(f"<iframe src=\"{gt_effective_pdf_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            # Use backend proxy to avoid CORS issues
+            proxy_url = f"{backend}/proxy/pdf?url=" + quote(gt_effective_pdf_url, safe="")
+            st.markdown(f"<iframe src=\"{proxy_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
         elif gt_generic:
                 st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
         else:
@@ -744,7 +746,9 @@ def main() -> None:
             sel_ai = _pdf_outputs[0] if _pdf_outputs else None
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
-            st.markdown(f"<iframe src=\"{sel_ai['ai_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            # Use backend proxy to avoid CORS issues
+            proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['ai_url'], safe="")
+            st.markdown(f"<iframe src=\"{proxy_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
             ai_effective_pdf_url = sel_ai["ai_url"]
         else:
             st.info("Not available")
@@ -764,7 +768,9 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            st.markdown(f"<iframe src=\"{sel_ai['doctor_url']}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            # Use backend proxy to avoid CORS issues
+            proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['doctor_url'], safe="")
+            st.markdown(f"<iframe src=\"{proxy_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
             doc_effective_pdf_url = sel_ai["doctor_url"]
         else:
             st.info("Not available")
