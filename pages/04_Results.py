@@ -262,12 +262,12 @@ def main() -> None:
     with st.spinner("Loading case data…"):
         try:
             r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
-        outputs = (r.json() or {}).get("items", []) if r.ok else []
-        # Also fetch latest assets to get Ground Truth last modified
-        try:
+            outputs = (r.json() or {}).get("items", []) if r.ok else []
+            # Also fetch latest assets to get Ground Truth last modified
             r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
             assets = r_assets.json() if r_assets.ok else {}
         except Exception:
+            outputs = []
             assets = {}
         # Exclude legacy Edited subfolder entries from display
         try:
@@ -280,15 +280,15 @@ def main() -> None:
         
         # Sort outputs by S3 LastModified when available; fallback to embedded timestamp
         def _ts_key(item: dict):
+            from datetime import datetime as _dt
+            iso = item.get('sort_last_modified') or item.get('ai_last_modified') or item.get('doctor_last_modified')
+            if isinstance(iso, str):
+                try:
+                    return _dt.fromisoformat(iso)
+                except Exception:
+                    pass
+            import re
             try:
-                from datetime import datetime as _dt
-                iso = item.get('sort_last_modified') or item.get('ai_last_modified') or item.get('doctor_last_modified')
-                if isinstance(iso, str):
-                    try:
-                        return _dt.fromisoformat(iso)
-            except Exception:
-                        pass
-                import re
                 src = (item.get('ai_key') or item.get('label') or '')
                 m = re.search(r"(\d{12})", str(src))
                 return m.group(1) if m else ''
@@ -298,9 +298,6 @@ def main() -> None:
             outputs.sort(key=_ts_key, reverse=True)  # True = latest first (reverse chronological)
         except Exception:
             pass
-        except Exception:
-        outputs = []
-        assets = {}
 
     # Optionally show only canonical workflow reports which can have metrics JSON
     st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
