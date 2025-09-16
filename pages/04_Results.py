@@ -763,7 +763,7 @@ def main() -> None:
         display: grid;
         gap: 0;
         /* Columns: Generated | Code | GT | AI | Doctor | Input | Output | OCR | Sec2 | Sec3 | Sec4 | Sec9 */
-        grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 160px 160px 140px 180px 180px 180px 180px;
+        grid-template-columns: 240px 220px 3.6fr 3.6fr 3.6fr 160px 160px 140px 180px 180px 180px 180px;
     }
     .history-table > div:nth-child(3) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
     .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
@@ -888,19 +888,19 @@ def main() -> None:
         table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-        def _with_mins(x: str) -> str:
+        def _with_min_label(x: str) -> str:
             try:
-                return (x or '—') + ('' if x == '—' or ':' in x else ' mins')
+                return ((x or '—') + ' min') if (x and x != '—') else x
             except Exception:
                 return x
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(ocr_duration)}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_min_label(ocr_duration)}</div>')
         # total_tokens is hidden; skip appending
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec2dur)}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec3dur)}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec4dur)}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec9dur)}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_min_label(sec2dur)}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_min_label(sec3dur)}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_min_label(sec4dur)}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_min_label(sec9dur)}</div>')
         table_html.append('</div>')
     table_html.append('</div>')
     st.markdown("".join(table_html), unsafe_allow_html=True)
