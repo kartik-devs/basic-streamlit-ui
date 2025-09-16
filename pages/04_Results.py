@@ -155,23 +155,50 @@ def _show_locked_results_page(case_id: str, status: dict):
         </div>
     """, unsafe_allow_html=True)
     
+    def _robust_switch_to_case_report():
+        try:
+            from streamlit_extras.switch_page_button import switch_page
+            for target in (
+                "pages/01_Case_Report",
+                "01_Case_Report",
+                "Case Report",
+                "Case_Report",
+                "case report",
+            ):
+                try:
+                    switch_page(target)
+                    return True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        # Fallback: client-side redirect to root; main page should provide clear nav
+        components.html(
+            """
+            <script>
+                try {
+                  if (window && window.parent) {
+                    window.parent.location.replace(window.parent.location.origin + window.parent.location.pathname);
+                  } else {
+                    window.location.replace('/');
+                  }
+                } catch (e) {}
+            </script>
+            """,
+            height=0,
+        )
+        return False
+
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("🔄 Go to Generating Report", type="primary", use_container_width=True):
-            try:
-                from streamlit_extras.switch_page_button import switch_page
-                switch_page("Generating_Report")
-            except Exception:
-                st.info("Please use the sidebar to navigate to 'Generating Report'.")
-    
+            # Generating happens on Case Report; route there robustly
+            _robust_switch_to_case_report()
+
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("📋 Go to Case Report", type="secondary", use_container_width=True):
-            try:
-                from streamlit_extras.switch_page_button import switch_page
-                switch_page("pages/01_Case_Report")
-            except Exception:
-                st.info("Please use the sidebar to navigate to 'Case Report'.")
+            _robust_switch_to_case_report()
 
 
 def main() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 def inject_base_styles() -> None:
@@ -206,6 +207,34 @@ def top_nav(active: str = "Dashboard") -> None:
             st.markdown("", unsafe_allow_html=True)
         with right:
             rcols = st.columns([1, 3, 2, 2, 2])
+            
+            def _robust_switch(page_candidates: tuple[str, ...]) -> None:
+                """Try multiple page names; if all fail, soft-redirect to root so sidebar is available."""
+                try:
+                    from streamlit_extras.switch_page_button import switch_page
+                    for target in page_candidates:
+                        try:
+                            switch_page(target)
+                            return
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+                # Fallback: client-side redirect to app root
+                components.html(
+                    """
+                    <script>
+                      try {
+                        if (window && window.parent) {
+                          window.parent.location.replace(window.parent.location.origin + window.parent.location.pathname);
+                        } else {
+                          window.location.replace('/');
+                        }
+                      } catch (e) {}
+                    </script>
+                    """,
+                    height=0,
+                )
             # Theme toggle
             with rcols[0]:
                 current_theme = st.session_state.get("theme", "dark")
@@ -216,27 +245,31 @@ def top_nav(active: str = "Dashboard") -> None:
             # Case Report nav
             with rcols[1]:
                 if st.button("📝 Case Report", key="topnav_case", use_container_width=True, help="Open Case Report"):
-                    try:
-                        from streamlit_extras.switch_page_button import switch_page
-                        switch_page("pages/01_Case_Report")
-                    except Exception:
-                        st.rerun()
+                    _robust_switch((
+                        "pages/01_Case_Report",
+                        "01_Case_Report",
+                        "Case Report",
+                        "Case_Report",
+                        "case report",
+                    ))
             # Results nav
             with rcols[2]:
                 if st.button("🧪 Results", key="topnav_results", use_container_width=True, help="Open Results"):
-                    try:
-                        from streamlit_extras.switch_page_button import switch_page
-                        switch_page("pages/04_Results")
-                    except Exception:
-                        st.rerun()
+                    _robust_switch((
+                        "pages/04_Results",
+                        "04_Results",
+                        "Results",
+                        "results",
+                    ))
             # History nav
             with rcols[3]:
                 if st.button("📚 History", key="topnav_history", use_container_width=True, help="Open History"):
-                    try:
-                        from streamlit_extras.switch_page_button import switch_page
-                        switch_page("pages/05_History")
-                    except Exception:
-                        st.rerun()
+                    _robust_switch((
+                        "pages/05_History",
+                        "05_History",
+                        "History",
+                        "history",
+                    ))
             # Logout
             with rcols[4]:
                 if st.button("Log out", use_container_width=True):
