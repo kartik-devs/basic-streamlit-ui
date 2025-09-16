@@ -638,33 +638,33 @@ def main() -> None:
     _probe_metrics_from_outputs(backend, case_id, outputs)
 
     # Build rows
-        def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
+    def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
             ocr_start = o.get("ocr_start_time", "—")
             ocr_end = o.get("ocr_end_time", "—")
             total_tokens = o.get("total_tokens_used", "—")
             input_tokens = o.get("total_input_tokens", "—")
             output_tokens = o.get("total_output_tokens", "—")
 
-        def _fmt_num(v):
+    def _fmt_num(v):
             try:
                 return f"{int(v):,}" if v is not None and v != "—" else ("—" if v is None else v)
             except Exception:
                 return str(v) if v is not None else "—"
 
-        return (
-            str(ocr_start),
-            str(ocr_end),
-            str(_fmt_num(total_tokens)),
-            str(_fmt_num(input_tokens)),
-            str(_fmt_num(output_tokens)),
-        )
+    return (
+        str(ocr_start),
+        str(ocr_end),
+        str(_fmt_num(total_tokens)),
+        str(_fmt_num(input_tokens)),
+        str(_fmt_num(output_tokens)),
+    )
 
     rows: list[tuple[str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
     if outputs:
-            for o in outputs:
-                report_timestamp = o.get("timestamp") or generated_ts
-                ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
-                rows.append((report_timestamp, code_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
+        for o in outputs:
+            report_timestamp = o.get("timestamp") or generated_ts
+            ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
+            rows.append((report_timestamp, code_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))
     else:
         rows.append((generated_ts, code_version, gt_effective_pdf_url, None, None, "—", "—", "—", "—", "—"))
 
@@ -678,7 +678,7 @@ def main() -> None:
     pc1, pc2, pc3 = st.columns([1, 2, 1])
     with pc1:
         if st.button("← Prev", key=f"res_sum_prev_{case_id}", disabled=(sum_cur_page <= 1)):
-        sum_cur_page = max(1, sum_cur_page - 1)
+            sum_cur_page = max(1, sum_cur_page - 1)
     with pc2:
         st.markdown(f"<div style='text-align:center;opacity:.85;'>Page {sum_cur_page} of {sum_total_pages}</div>", unsafe_allow_html=True)
     with pc3:
@@ -691,7 +691,7 @@ def main() -> None:
     page_rows = rows[sum_start:sum_end]
 
     # Table styling & render
-        st.markdown(
+    st.markdown(
             """
             <style>
             .table-container { overflow-x: auto; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; margin-top: 12px; }
@@ -702,9 +702,9 @@ def main() -> None:
             </style>
             """,
             unsafe_allow_html=True,
-        )
+    )
 
-        table_html = [
+    table_html = [
             '<div class="table-container">',
             '<div class="history-table" style="border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);">',
             '<div style="padding:.75rem 1rem;font-weight:700;">Report Generated</div>',
@@ -724,9 +724,9 @@ def main() -> None:
         ]
 
     # Render rows with proper metrics data
-        for (gen_time, code_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
+    for (gen_time, code_ver, gt_url, ai_url, doc_url, ocr_start, ocr_end, total_tokens, input_tokens, output_tokens) in page_rows:
         # Find source item in outputs to get label/ai_key for metrics lookup
-            src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('doctor_url') == doc_url)), None)
+        src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('doctor_url') == doc_url)), None)
 
         # Try to get metrics data
             met = None
