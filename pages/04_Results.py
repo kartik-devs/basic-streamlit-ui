@@ -278,12 +278,17 @@ def main() -> None:
                 import re
                 src = (item.get('ai_url') or item.get('doctor_url') or item.get('label') or item.get('ai_key') or item.get('doctor_key') or '')
                 m = re.search(r"(\d{12})", str(src))
-                return m.group(1) if m else ''
-            except Exception:
+                result = m.group(1) if m else ''
+                print(f"DEBUG: Sorting - extracted timestamp '{result}' from '{src}'")
+                return result
+            except Exception as e:
+                print(f"DEBUG: Sorting error: {e}")
                 return ''
         try:
             outputs.sort(key=_ts_key, reverse=True)  # True = latest first (reverse chronological)
-        except Exception:
+            print(f"DEBUG: Sorted {len(outputs)} outputs")
+        except Exception as e:
+            print(f"DEBUG: Sort error: {e}")
             pass
     except Exception:
         outputs = []
@@ -347,6 +352,9 @@ def main() -> None:
                 import re
                 from urllib.parse import urlparse
                 
+                # Debug: print the URL to see what we're working with
+                print(f"DEBUG: Extracting date from URL: {url}")
+                
                 # Look for 12-digit timestamp pattern (YYYYMMDDHHMM) in URL
                 match = re.search(r"(\d{12})", str(url))
                 if match:
@@ -357,11 +365,14 @@ def main() -> None:
                     day = timestamp[6:8]
                     hour = timestamp[8:10]
                     minute = timestamp[10:12]
-                    return f"{year}-{month}-{day} {hour}:{minute}"
+                    result = f"{year}-{month}-{day} {hour}:{minute}"
+                    print(f"DEBUG: Found timestamp in URL: {result}")
+                    return result
                 
                 # If no timestamp in URL, try to extract from filename
                 parsed_url = urlparse(url)
                 filename = parsed_url.path.split("/")[-1]
+                print(f"DEBUG: Extracted filename: {filename}")
                 
                 # Look for timestamp in filename
                 filename_match = re.search(r"(\d{12})", filename)
@@ -372,7 +383,9 @@ def main() -> None:
                     day = timestamp[6:8]
                     hour = timestamp[8:10]
                     minute = timestamp[10:12]
-                    return f"{year}-{month}-{day} {hour}:{minute}"
+                    result = f"{year}-{month}-{day} {hour}:{minute}"
+                    print(f"DEBUG: Found timestamp in filename: {result}")
+                    return result
                 
                 # Look for other date patterns in filename (YYYY-MM-DD, YYYYMMDD, etc.)
                 date_patterns = [
@@ -396,13 +409,17 @@ def main() -> None:
                                 month = date_str[4:6]
                                 day = date_str[6:8]
                             
-                            return f"{year}-{month}-{day}"
+                            result = f"{year}-{month}-{day}"
+                            print(f"DEBUG: Found date pattern in filename: {result}")
+                            return result
                         except:
                             continue
                 
                 # Fallback to filename if no date found
+                print(f"DEBUG: No date found, using filename: {filename}")
                 return filename
-            except Exception:
+            except Exception as e:
+                print(f"DEBUG: Error extracting date: {e}")
                 return url
 
     def calculate_ocr_duration(ocr_start: str, ocr_end: str) -> str:
