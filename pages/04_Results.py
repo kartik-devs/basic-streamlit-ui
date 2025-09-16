@@ -729,14 +729,14 @@ def main() -> None:
         src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('doctor_url') == doc_url)), None)
 
         # Try to get metrics data
-            met = None
-            if src:
-            # Try direct version lookup first
-                versions = _infer_versions_from_label(case_id, src.get('label'), src.get('ai_key'))
-                for v in versions:
-                    met = _get_metrics_for_version(backend, case_id, v)
-                    if met:
-                        break
+        met = None
+        if src:
+        # Try direct version lookup first
+            versions = _infer_versions_from_label(case_id, src.get('label'), src.get('ai_key'))
+            for v in versions:
+                met = _get_metrics_for_version(backend, case_id, v)
+                if met:
+                    break
 
         # Format metrics data if available
             if met:
