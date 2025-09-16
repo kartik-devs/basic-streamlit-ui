@@ -929,7 +929,15 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
             if last_modified:
                 # Convert to UTC string format
                 timestamp = last_modified.strftime("%Y-%m-%d %H:%M UTC")
-            
+
+            # Also collect LastModified for doctor file if present
+            doc_lm = file_metadata.get(doctor_key.split("/")[-1], {}).get("last_modified") if doctor_key else None
+            # Choose max for sorting
+            sort_lm = None
+            for lm in (last_modified, doc_lm):
+                if lm and (sort_lm is None or lm > sort_lm):
+                    sort_lm = lm
+
             items.append({
                 "label": name,
                 "ai_url": s3_presign(key),
@@ -937,10 +945,20 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
                 "ai_key": key,
                 "doctor_key": doctor_key or "",
                 "timestamp": timestamp,
+                "ai_last_modified": (last_modified.isoformat() if last_modified else None),
+                "doctor_last_modified": (doc_lm.isoformat() if doc_lm else None),
+                "sort_last_modified": (sort_lm.isoformat() if sort_lm else None),
             })
 
-    # Sort newest first by LastModified if available; fallback to name
-    def _key_sort(it: dict[str, str]) -> str:
+    # Sort newest first by LastModified if available; fallback to ai_key/label
+    from datetime import datetime as _dt
+    def _key_sort(it: dict[str, Any]):
+        iso = it.get("sort_last_modified")
+        if isinstance(iso, str):
+            try:
+                return _dt.fromisoformat(iso)
+            except Exception:
+                pass
         return it.get("ai_key", it.get("label", ""))
     items = sorted(items, key=_key_sort, reverse=True)
     return {"case_id": case_id, "items": items}
@@ -1197,7 +1215,7 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
     response: Dict[str, Any] = {"case_id": case_id, "report_id": report_id}
     client = s3_client()
 
-    def newest_under(prefix: str, exts: tuple[str, ...]) -> str | None:
+    def newest_under(prefix: str, exts: tuple[str, ...]) -> tuple[str | None, Any | None]:
         paginator = client.get_paginator("list_objects_v2")
         newest_key = None
         newest_time = None
@@ -1212,19 +1230,23 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
                 if newest_time is None or (lm and lm > newest_time):
                     newest_time = lm
                     newest_key = key
-        return newest_key
+        return newest_key, newest_time
 
     # Try standard layout first
     base1 = f"reports/{case_id}/{report_id}"
-    gt1 = newest_under(f"{base1}/", ("ground_truth.pdf",))
-    gen_html1 = newest_under(f"{base1}/", ("generated.html",))
-    gen_pdf1 = newest_under(f"{base1}/", ("generated.pdf",))
+    gt1, gt1_lm = newest_under(f"{base1}/", ("ground_truth.pdf",))
+    gen_html1, _ = newest_under(f"{base1}/", ("generated.html",))
+    gen_pdf1, _ = newest_under(f"{base1}/", ("generated.pdf",))
 
     # Try observed layout (Output/ folder)
     base2 = f"{case_id}/"
     gt2 = None
+    gt2_lm = None
     for p in (f"{base2}Ground Truth/", f"{base2}GroundTruth/"):
-        gt2 = newest_under(p, (".pdf", ".docx")) or gt2
+        _k, _lm = newest_under(p, (".pdf", ".docx"))
+        if _k and not gt2:
+            gt2 = _k
+            gt2_lm = _lm
     import re
     ai_re = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-.+?-CompleteAIGenerated\\.pdf$", re.IGNORECASE)
     ai_re_new = re.compile(rf"^{case_id}/Output/(\d{{12}})-{case_id}-CompleteAIGeneratedReport\\.(pdf|docx)$", re.IGNORECASE)
@@ -1333,6 +1355,10 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
         elif gt2:
             # Might be docx; the UI can offer download, not inline view
             response["ground_truth"] = s3_presign(gt2)
+        # Attach last modified for GT when known
+        lm = gt1_lm if gt1 else gt2_lm
+        if lm:
+            response["ground_truth_last_modified"] = lm.isoformat()
         if gen_html1:
             response["generated_html"] = s3_presign(gen_html1)
         if gen_pdf1:

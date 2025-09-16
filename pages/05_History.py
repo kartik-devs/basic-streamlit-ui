@@ -960,7 +960,18 @@ def main() -> None:
         gt_dl = dl_link(gt_url)
         ai_dl = dl_link(ai_url)
         doc_dl = dl_link(doc_url)
-        gt_link = f'<a href="{gt_dl}" class="st-a" download>{extract_date_from_url(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
+        # Prefer ground truth last modified from assets if available
+        gt_last_modified_iso = (assets or {}).get('ground_truth_last_modified')
+        if isinstance(gt_last_modified_iso, str):
+            try:
+                from datetime import datetime as _dt
+                _dt_obj = _dt.fromisoformat(gt_last_modified_iso)
+                gt_text = _dt_obj.strftime('%Y-%m-%d %H:%M')
+            except Exception:
+                gt_text = extract_date_from_url(gt_url)
+        else:
+            gt_text = extract_date_from_url(gt_url)
+        gt_link = f'<a href="{gt_dl}" class="st-a" download>{gt_text}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
         ai_link = f'<a href="{ai_dl}" class="st-a" download>{extract_date_from_url(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
         doc_link = f'<a href="{doc_dl}" class="st-a" download>{extract_date_from_url(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
         

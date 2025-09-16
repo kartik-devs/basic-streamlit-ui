@@ -263,6 +263,12 @@ def main() -> None:
         try:
             r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
         outputs = (r.json() or {}).get("items", []) if r.ok else []
+        # Also fetch latest assets to get Ground Truth last modified
+        try:
+            r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
+            assets = r_assets.json() if r_assets.ok else {}
+        except Exception:
+            assets = {}
         # Exclude legacy Edited subfolder entries from display
         try:
             outputs = [o for o in outputs if not (
@@ -272,11 +278,18 @@ def main() -> None:
         except Exception:
             pass
         
-        # Sort outputs chronologically (latest first)
-        def _ts_key(item: dict) -> str:
+        # Sort outputs by S3 LastModified when available; fallback to embedded timestamp
+        def _ts_key(item: dict):
             try:
+                from datetime import datetime as _dt
+                iso = item.get('sort_last_modified') or item.get('ai_last_modified') or item.get('doctor_last_modified')
+                if isinstance(iso, str):
+                    try:
+                        return _dt.fromisoformat(iso)
+                    except Exception:
+                        pass
                 import re
-                src = (item.get('ai_url') or item.get('doctor_url') or item.get('label') or item.get('ai_key') or item.get('doctor_key') or '')
+                src = (item.get('ai_key') or item.get('label') or '')
                 m = re.search(r"(\d{12})", str(src))
                 return m.group(1) if m else ''
             except Exception:
@@ -287,10 +300,6 @@ def main() -> None:
             pass
     except Exception:
         outputs = []
-        try:
-        r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
-        assets = r_assets.json() if r_assets.ok else {}
-        except Exception:
         assets = {}
 
     # Optionally show only canonical workflow reports which can have metrics JSON
@@ -792,7 +801,18 @@ def main() -> None:
             gt_dl = dl_link(gt_url)
             ai_dl = dl_link(ai_url)
             doc_dl = dl_link(doc_url)
-            gt_link = f'<a href="{gt_dl}" class="st-a" download>{extract_date_from_url(gt_url)}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
+            # Show Ground Truth last modified date from assets if available
+            gt_lm_iso = (assets or {}).get('ground_truth_last_modified')
+            if isinstance(gt_lm_iso, str):
+                try:
+                    from datetime import datetime as _dt
+                    _dt_obj = _dt.fromisoformat(gt_lm_iso)
+                    gt_text = _dt_obj.strftime('%Y-%m-%d %H:%M')
+                except Exception:
+                    gt_text = extract_date_from_url(gt_url)
+            else:
+                gt_text = extract_date_from_url(gt_url)
+            gt_link = f'<a href="{gt_dl}" class="st-a" download>{gt_text}</a>' if gt_dl else '<span style="opacity:.6;">—</span>'
             ai_link = f'<a href="{ai_dl}" class="st-a" download>{extract_date_from_url(ai_url)}</a>' if ai_dl else '<span style="opacity:.6;">—</span>'
             doc_link = f'<a href="{doc_dl}" class="st-a" download>{extract_date_from_url(doc_url)}</a>' if doc_dl else '<span style="opacity:.6;">—</span>'
 
