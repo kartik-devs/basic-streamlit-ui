@@ -737,10 +737,10 @@ def main() -> None:
         }
         
         .history-table {
-            min-width: 3140px;
+            min-width: 2900px;
             display: grid;
             gap: 0;
-            grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 140px 140px 100px 160px 160px 160px 180px 180px 180px 180px;
+            grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 100px 160px 160px 160px 180px 180px 180px 180px;
         }
         
         /* Add visual separation between Ground Truth and AI Generated columns */
@@ -754,7 +754,7 @@ def main() -> None:
         }
         
         /* Remove right border from last column */
-        .history-table > div:nth-child(15n) {
+        .history-table > div:nth-child(13n) {
             border-right: none;
         }
         </style>
@@ -769,8 +769,6 @@ def main() -> None:
             '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">OCR Start</div>',
-            '<div style="padding:.75rem 1rem;font-weight:700;">OCR End</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">OCR Time</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
             '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
@@ -873,8 +871,6 @@ def main() -> None:
             table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_start}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_end}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{calculate_ocr_duration(ocr_start, ocr_end)}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
