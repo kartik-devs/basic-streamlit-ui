@@ -991,48 +991,21 @@ def main() -> None:
             sel_ver = st.selectbox("AI report version (DOCX only)", options=labels_docx, index=0, key=f"editor_ver_{case_id}")
             chosen_url = docx_map.get(sel_ver)
             if chosen_url:
-                editor_html = f"""
-                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 20px; background: white; font-family: Arial, sans-serif;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee;">
-                        <h3 style="margin: 0; color: #333;">📄 Document Viewer</h3>
-                        <div>
-                            <button onclick="downloadOriginal()" style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">📥 Download Document</button>
-                        </div>
-                    </div>
-                    <div style="margin-bottom: 15px; padding: 10px; background: #e9ecef; border-radius: 4px; font-size: 14px;">
-                        <strong>📄 Document:</strong> {sel_ver} | <strong>Case ID:</strong> {case_id}
-                    </div>
-                    <div id="editor" style="min-height: 600px; border: 1px solid #ccc; border-radius: 4px; background: white;">
-                        <iframe id="documentViewer" src="" style="width: 100%; height: 600px; border: none; border-radius: 4px;"></iframe>
-                    </div>
-                <script>
-                    async function loadDocument() {{
-                            const documentUrl = '{chosen_url}';
-                            const iframe = document.getElementById('documentViewer');
-                            if (documentUrl.toLowerCase().includes('.docx')) {{
-                                const viewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${{encodeURIComponent(documentUrl)}}`;
-                                iframe.src = viewerUrl;
-                            }} else if (documentUrl.toLowerCase().includes('.pdf')) {{
-                                const viewerUrl = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${{encodeURIComponent(documentUrl)}}`;
-                                iframe.src = viewerUrl;
-                            }} else {{
-                                iframe.src = documentUrl;
-                            }}
-                        }}
-                    function downloadOriginal() {{
-                        const proxyUrl = '{backend}/proxy/docx?url=' + encodeURIComponent('{chosen_url}');
-                        const link = document.createElement('a');
-                        link.href = proxyUrl;
-                        link.download = '{case_id}_original_{sel_ver}.docx';
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                    }}
-                    window.addEventListener('load', loadDocument);
-                </script>
-                </div>
-                """
-                components.html(editor_html, height=750)
+                # Convert to PDF via backend and render inline (no external viewers)
+                try:
+                    import requests as _rq
+                    ensure = _rq.get(f"{backend}/s3/ensure-pdf", params={"url": chosen_url}, timeout=30)
+                    if ensure.ok:
+                        d = ensure.json() or {}
+                        pdf_url = d.get("url") or chosen_url
+                    else:
+                        pdf_url = chosen_url
+                except Exception:
+                    pdf_url = chosen_url
+                proxy_pdf = f"{backend}/proxy/pdf?url=" + __import__('urllib.parse').parse.quote(pdf_url, safe='')
+                _render_pdf_base64(proxy_pdf, 600)
+                st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_pdf}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
+                st.caption("Preview uses a built-in PDF viewer to avoid third-party script blocks.")
                 
                 st.markdown("### Upload edited DOCX back to S3")
                 up_col1, up_col2 = st.columns([1, 1])

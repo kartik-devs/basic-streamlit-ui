@@ -1340,10 +1340,12 @@ def main() -> None:
                     if pw_url:
                         st.markdown(f"<iframe src=\"{pw_url}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
                     else:
-                        st.warning("Playwright renderer unavailable. Falling back to quick viewer.")
-                        st.markdown(f"<iframe src=\"https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                        st.warning("Playwright renderer unavailable. Falling back to built-in PDF viewer.")
+                        _proxy = f"{backend}/proxy/pdf?url=" + quote(chosen_url, safe='')
+                        _render_pdf_base64(_proxy, 650)
                 except Exception:
-                    st.markdown(f"<iframe src=\"https://view.officeapps.live.com/op/embed.aspx?src={quote(chosen_url, safe='')}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                    _proxy = f"{backend}/proxy/pdf?url=" + quote(chosen_url, safe='')
+                    _render_pdf_base64(_proxy, 650)
                 
                 # Additional download option for convenience
                 st.markdown("### Quick Actions")
