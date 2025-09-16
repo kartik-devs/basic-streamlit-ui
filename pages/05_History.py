@@ -875,6 +875,7 @@ def main() -> None:
             # Use backend proxy to avoid CORS issues
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(gt_pdf, safe="")
             st.markdown(f"<iframe src=\"{proxy_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
             gt_effective_pdf_url = gt_pdf
         elif gt_generic:
             raw_key = assets.get("ground_truth_key") if isinstance(assets, dict) else None
@@ -976,6 +977,7 @@ def main() -> None:
             # Use backend proxy to avoid CORS issues
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['ai_url'], safe="")
             st.markdown(f"<iframe src=\"{proxy_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
             ai_effective_pdf_url = sel_ai["ai_url"]
         else:
             st.info("Not available")
@@ -999,6 +1001,7 @@ def main() -> None:
             # Use backend proxy to avoid CORS issues
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['doctor_url'], safe="")
             st.markdown(f"<iframe src=\"{proxy_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
             doc_effective_pdf_url = sel_ai["doctor_url"]
         else:
             st.info("Not available")

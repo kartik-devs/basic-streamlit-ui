@@ -512,6 +512,19 @@ def s3_presign_post(key: str, content_type: str = "application/octet-stream", ex
     )
 
 # --- Simple PDF proxy to avoid CORS issues in client-side PDF.js ---
+@app.options("/proxy/pdf")
+def proxy_pdf_options():
+    """Handle CORS preflight requests for PDF proxy."""
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Max-Age": "86400",
+        }
+    )
+
 @app.get("/proxy/pdf")
 def proxy_pdf(url: str):
     try:
