@@ -366,14 +366,49 @@ def main() -> None:
             if not ocr_start or not ocr_end or ocr_start == "—" or ocr_end == "—":
                 return "—"
             try:
-                from datetime import datetime
-                start_dt = datetime.fromisoformat(ocr_start.replace('Z', '+00:00'))
-                end_dt = datetime.fromisoformat(ocr_end.replace('Z', '+00:00'))
+                from datetime import datetime, time
+                
+                # Handle different time formats
+                def parse_time(time_str: str) -> datetime:
+                    time_str = str(time_str).strip()
+                    
+                    # If it's a full ISO datetime string
+                    if 'T' in time_str:
+                        return datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+                    
+                    # If it's just a time string (HH:MM:SS)
+                    elif ':' in time_str and len(time_str.split(':')) >= 2:
+                        time_parts = time_str.split(':')
+                        if len(time_parts) >= 2:
+                            hours = int(time_parts[0])
+                            minutes = int(time_parts[1])
+                            seconds = int(time_parts[2]) if len(time_parts) > 2 else 0
+                            # Create a datetime for today with the given time
+                            today = datetime.now().replace(hour=hours, minute=minutes, second=seconds, microsecond=0)
+                            return today
+                    
+                    # If it's a timestamp (seconds since epoch)
+                    elif time_str.isdigit():
+                        return datetime.fromtimestamp(int(time_str))
+                    
+                    raise ValueError(f"Unrecognized time format: {time_str}")
+                
+                start_dt = parse_time(ocr_start)
+                end_dt = parse_time(ocr_end)
+                
+                # Calculate duration
                 duration = end_dt - start_dt
                 total_seconds = int(duration.total_seconds())
+                
+                # Handle negative durations (might happen with time-only strings)
+                if total_seconds < 0:
+                    total_seconds = abs(total_seconds)
+                
                 minutes, seconds = divmod(total_seconds, 60)
                 return f"{minutes:02d}:{seconds:02d}"
-            except Exception:
+            except Exception as e:
+                # Debug: print the error to help troubleshoot
+                print(f"OCR duration calculation error: {e}, start: {ocr_start}, end: {ocr_end}")
                 return "—"
 
     def dl_link(raw_url: str | None) -> str | None:
@@ -696,6 +731,12 @@ def main() -> None:
             # Use fallback values from the row data
                 sec2dur = sec3dur = sec4dur = sec9dur = '—'
 
+            # Calculate OCR duration - use metrics data if available, otherwise use row data
+            if met:
+                ocr_duration = calculate_ocr_duration(met.get('ocr_start_time'), met.get('ocr_end_time'))
+            else:
+                ocr_duration = calculate_ocr_duration(ocr_start, ocr_end)
+
             gt_dl = dl_link(gt_url)
             ai_dl = dl_link(ai_url)
             doc_dl = dl_link(doc_url)
@@ -709,7 +750,7 @@ def main() -> None:
             table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{calculate_ocr_duration(ocr_start, ocr_end)}</div>')
+            table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_duration}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
             table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
