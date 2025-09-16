@@ -696,8 +696,34 @@ def main() -> None:
         )
 
     rows: list[tuple[str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
+    def _is_docx(u: str | None) -> bool:
+        try:
+            return bool(u) and str(u).lower().endswith('.docx')
+        except Exception:
+            return False
     if outputs:
+        seen_versions: set[str] = set()
+        def _version_key(item: dict) -> str | None:
+            try:
+                import re as _re
+                for src in (item.get('label'), item.get('ai_url'), item.get('doctor_url')):
+                    if not src:
+                        continue
+                    m = _re.search(r"(\d{12})", str(src))
+                    if m:
+                        return m.group(1)
+            except Exception:
+                return None
+            return None
         for o in outputs:
+            # Exclude DOCX rows in table to avoid duplicates; prefer PDFs/others
+            if _is_docx(o.get("ai_url")) or _is_docx(o.get("doctor_url")):
+                continue
+            vkey = _version_key(o)
+            if vkey and vkey in seen_versions:
+                continue
+            if vkey:
+                seen_versions.add(vkey)
             report_timestamp = o.get("timestamp") or generated_ts
             ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
             rows.append((report_timestamp, code_version, gt_effective_pdf_url, o.get("ai_url"), o.get("doctor_url"), ocr_start, ocr_end, total_tokens, input_tokens, output_tokens))

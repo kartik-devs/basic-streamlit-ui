@@ -821,12 +821,30 @@ def main() -> None:
         except Exception:
             return False
     if outputs:
+        seen_versions: set[str] = set()
+        def _version_key(item: dict) -> str | None:
+            try:
+                import re as _re
+                for src in (item.get('label'), item.get('ai_url'), item.get('doctor_url')):
+                    if not src:
+                        continue
+                    m = _re.search(r"(\d{12})", str(src))
+                    if m:
+                        return m.group(1)
+            except Exception:
+                return None
+            return None
         for o in outputs:
             # New rule: do not allow DOCX rows in the table; only show PDFs/others
             ai_url = o.get("ai_url") or ""
             dr_url = o.get("doctor_url") or ""
             if _is_docx(ai_url) or _is_docx(dr_url):
                 continue
+            vkey = _version_key(o)
+            if vkey and vkey in seen_versions:
+                continue
+            if vkey:
+                seen_versions.add(vkey)
             # Use timestamp from S3 metadata instead of fake timestamp
             report_timestamp = o.get("timestamp") or generated_ts
             ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
