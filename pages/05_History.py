@@ -1338,7 +1338,9 @@ def main() -> None:
                                 st.session_state[cache_key] = None
                     pw_url = st.session_state.get(cache_key)
                     if pw_url:
-                        st.markdown(f"<iframe src=\"{pw_url}\" width=\"100%\" height=\"650\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+                        # Always render via backend proxy + base64 to avoid CSP/X-Frame issues
+                        _proxy_pw = f"{backend}/proxy/pdf?url=" + quote(pw_url, safe='')
+                        _render_pdf_base64(_proxy_pw, 650)
                     else:
                         st.warning("Playwright renderer unavailable. Falling back to built-in PDF viewer.")
                         _proxy = f"{backend}/proxy/pdf?url=" + quote(chosen_url, safe='')
@@ -1627,27 +1629,27 @@ def main() -> None:
                         import requests as _rq
                         backend = st.session_state.get("backend_url", "http://localhost:8000")
                         if form_section.startswith("    └─ "):
-                                subsection = form_section.replace("    └─ ", "")
-                                section = section_to_subsection[form_section]
+                            subsection = form_section.replace("    └─ ", "")
+                            section = section_to_subsection[form_section]
                         else:
                             section = form_section
                             subsection = form_section
-                            payload = {
-                                "case_id": case_id,
-                                "ai_label": selected_label or None,
-                                "section": section,
-                                "subsection": subsection,
-                                                            "username": st.session_state.get("username") or "anonymous",
-                                                            "severity": form_severity,
-                                                            "comment": form_text.strip(),
-                            }
-                            _rq.post(f"{backend}/comments", json=payload, timeout=8)
-                            _get_case_comments.clear()
-                            st.success("Added.")
+                        payload = {
+                            "case_id": case_id,
+                            "ai_label": selected_label or None,
+                            "section": section,
+                            "subsection": subsection,
+                            "username": st.session_state.get("username") or "anonymous",
+                            "severity": form_severity,
+                            "comment": form_text.strip(),
+                        }
+                        _rq.post(f"{backend}/comments", json=payload, timeout=8)
+                        _get_case_comments.clear()
+                        st.success("Added.")
                     except Exception:
                         st.warning("Failed to add comment.")
-            else:
-                                    st.warning("Please enter a comment.")
+                else:
+                    st.warning("Please enter a comment.")
 
         st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
         st.markdown("#### Recorded comments")
