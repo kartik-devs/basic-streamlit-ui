@@ -762,7 +762,8 @@ def main() -> None:
         min-width: 2900px;
         display: grid;
         gap: 0;
-        grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 140px 160px 160px 160px 180px 180px 180px 180px;
+        /* Columns: Generated | Code | GT | AI | Doctor | Input | Output | OCR | Sec2 | Sec3 | Sec4 | Sec9 */
+        grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 160px 160px 140px 180px 180px 180px 180px;
     }
     .history-table > div:nth-child(3) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
     .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
@@ -778,10 +779,9 @@ def main() -> None:
         '<div style="padding:.75rem 1rem;font-weight:700;">Ground Truth</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">AI Generated</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Doctor as LLM</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">OCR Time</div>',
-        '<div style="padding:.75rem 1rem;font-weight:700;">Total Tokens</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Input Tokens</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Output Tokens</div>',
+        '<div style="padding:.75rem 1rem;font-weight:700;">OCR Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 2 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 3 Time</div>',
         '<div style="padding:.75rem 1rem;font-weight:700;">Section 4 Time</div>',
@@ -888,14 +888,19 @@ def main() -> None:
         table_html.append(f'<div style="padding:.5rem .75rem;">{gt_link}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;">{ai_link}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;">{doc_link}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{ocr_duration}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{total_tokens}</div>')
+        def _with_mins(x: str) -> str:
+            try:
+                return (x or '—') + ('' if x == '—' or ':' in x else ' mins')
+            except Exception:
+                return x
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(ocr_duration)}</div>')
+        # total_tokens is hidden; skip appending
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec2dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec3dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec4dur}</div>')
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{sec9dur}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec2dur)}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec3dur)}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec4dur)}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec9dur)}</div>')
         table_html.append('</div>')
     table_html.append('</div>')
     st.markdown("".join(table_html), unsafe_allow_html=True)
