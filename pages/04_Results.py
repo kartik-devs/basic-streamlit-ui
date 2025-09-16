@@ -675,26 +675,25 @@ def main() -> None:
         )
 
     # Build rows
-    def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
-            ocr_start = o.get("ocr_start_time", "—")
-            ocr_end = o.get("ocr_end_time", "—")
-            total_tokens = o.get("total_tokens_used", "—")
-            input_tokens = o.get("total_input_tokens", "—")
-            output_tokens = o.get("total_output_tokens", "—")
-
     def _fmt_num(v):
-            try:
-                return f"{int(v):,}" if v is not None and v != "—" else ("—" if v is None else v)
-            except Exception:
-                return str(v) if v is not None else "—"
+        try:
+            return f"{int(v):,}" if v is not None and v != "—" else ("—" if v is None else v)
+        except Exception:
+            return str(v) if v is not None else "—"
 
-    return (
-        str(ocr_start),
-        str(ocr_end),
-        str(_fmt_num(total_tokens)),
-        str(_fmt_num(input_tokens)),
-        str(_fmt_num(output_tokens)),
-    )
+    def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
+        ocr_start = o.get("ocr_start_time", "—")
+        ocr_end = o.get("ocr_end_time", "—")
+        total_tokens = o.get("total_tokens_used", "—")
+        input_tokens = o.get("total_input_tokens", "—")
+        output_tokens = o.get("total_output_tokens", "—")
+        return (
+            str(ocr_start),
+            str(ocr_end),
+            str(_fmt_num(total_tokens)),
+            str(_fmt_num(input_tokens)),
+            str(_fmt_num(output_tokens)),
+        )
 
     rows: list[tuple[str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
     if outputs:
