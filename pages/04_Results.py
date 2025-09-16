@@ -637,6 +637,25 @@ def main() -> None:
     # Warm metrics cache from outputs first (helps fill table below)
     _probe_metrics_from_outputs(backend, case_id, outputs)
 
+    # Helper: inline PDF via base64 (reliable on Streamlit Cloud)
+    def _render_pdf_base64(proxy_url: str, height_px: int) -> None:
+        try:
+            import base64 as _b64
+            r = requests.get(proxy_url, timeout=45)
+            if r.ok and r.content:
+                data_uri = _b64.b64encode(r.content).decode("utf-8")
+                st.markdown(
+                    f'<iframe src="data:application/pdf;base64,{data_uri}" width="100%" height="{height_px}" style="border:none;border-radius:10px;"></iframe>',
+                    unsafe_allow_html=True,
+                )
+                return
+        except Exception:
+            pass
+        st.markdown(
+            f'<iframe src="{proxy_url}" width="100%" height="{height_px}" style="border:none;border-radius:10px;"></iframe>',
+            unsafe_allow_html=True,
+        )
+
     # Build rows
     def extract_metadata(o: dict) -> tuple[str, str, str, str, str]:
             ocr_start = o.get("ocr_start_time", "—")
@@ -854,49 +873,7 @@ def main() -> None:
         if gt_effective_pdf_url:
             # Use backend proxy to avoid CORS issues
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(gt_effective_pdf_url, safe="")
-            components.html(
-                f"""
-                <div id=\"gt_pdf_container\" style=\"height:{iframe_h}px; overflow:auto; border:1px solid rgba(255,255,255,0.12); border-radius:10px;\"></div>
-                <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
-                <script>
-                  const pdfjsLib = window['pdfjs-dist/build/pdf'];
-                  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                  async function render(url, containerId) {{
-                    const container = document.getElementById(containerId);
-                    container.innerHTML='';
-                    try {{
-                      const res = await fetch(url, {{ method: 'GET', mode: 'cors', headers: {{ 'Accept': 'application/pdf' }} }});
-                      if (!res.ok) throw new Error('HTTP ' + res.status);
-                      const buf = await res.arrayBuffer();
-                      const loadingTask = pdfjsLib.getDocument({{ data: buf }});
-                      const pdf = await loadingTask.promise;
-                      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {{
-                        const page = await pdf.getPage(pageNum);
-                        const viewport = page.getViewport({{ scale: 1 }});
-                        const canvas = document.createElement('canvas');
-                        const context = canvas.getContext('2d');
-                        canvas.style.display = 'block';
-                        canvas.style.width = '100%';
-                        const scale = container.clientWidth / viewport.width;
-                        const scaledViewport = page.getViewport({{ scale }});
-                        canvas.width = Math.floor(scaledViewport.width);
-                        canvas.height = Math.floor(scaledViewport.height);
-                        container.appendChild(canvas);
-                        await page.render({{ canvasContext: context, viewport: scaledViewport }}).promise;
-                      }}
-                    }} catch(e) {{
-                      const div = document.createElement('div');
-                      div.textContent = 'Failed to render PDF.';
-                      div.style.opacity = '0.8';
-                      container.appendChild(div);
-                    }}
-                  }}
-                  render('{proxy_url}', 'gt_pdf_container');
-                  window.addEventListener('resize', () => render('{proxy_url}', 'gt_pdf_container'));
-                </script>
-                """,
-                height=iframe_h + 16,
-            )
+            _render_pdf_base64(proxy_url, iframe_h)
             st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
         elif gt_generic:
                 st.markdown(f"<a href=\"{gt_generic}\" target=\"_blank\" class=\"st-a\">📥 Download Ground Truth</a>", unsafe_allow_html=True)
@@ -950,49 +927,7 @@ def main() -> None:
         if sel_ai and sel_ai.get("ai_url"):
             # Use backend proxy to avoid CORS issues
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['ai_url'], safe="")
-            components.html(
-                f"""
-                <div id=\"ai_pdf_container\" style=\"height:{iframe_h}px; overflow:auto; border:1px solid rgba(255,255,255,0.12); border-radius:10px;\"></div>
-                <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
-                <script>
-                  const pdfjsLib = window['pdfjs-dist/build/pdf'];
-                  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                  async function render(url, containerId) {{
-                    const container = document.getElementById(containerId);
-                    container.innerHTML='';
-                    try {{
-                      const res = await fetch(url, {{ method: 'GET', mode: 'cors', headers: {{ 'Accept': 'application/pdf' }} }});
-                      if (!res.ok) throw new Error('HTTP ' + res.status);
-                      const buf = await res.arrayBuffer();
-                      const loadingTask = pdfjsLib.getDocument({{ data: buf }});
-                      const pdf = await loadingTask.promise;
-                      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {{
-                        const page = await pdf.getPage(pageNum);
-                        const viewport = page.getViewport({{ scale: 1 }});
-                        const canvas = document.createElement('canvas');
-                        const context = canvas.getContext('2d');
-                        canvas.style.display = 'block';
-                        canvas.style.width = '100%';
-                        const scale = container.clientWidth / viewport.width;
-                        const scaledViewport = page.getViewport({{ scale }});
-                        canvas.width = Math.floor(scaledViewport.width);
-                        canvas.height = Math.floor(scaledViewport.height);
-                        container.appendChild(canvas);
-                        await page.render({{ canvasContext: context, viewport: scaledViewport }}).promise;
-                      }}
-                    }} catch(e) {{
-                      const div = document.createElement('div');
-                      div.textContent = 'Failed to render PDF.';
-                      div.style.opacity = '0.8';
-                      container.appendChild(div);
-                    }}
-                  }}
-                  render('{proxy_url}', 'ai_pdf_container');
-                  window.addEventListener('resize', () => render('{proxy_url}', 'ai_pdf_container'));
-                </script>
-                """,
-                height=iframe_h + 16,
-            )
+            _render_pdf_base64(proxy_url, iframe_h)
             st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
             ai_effective_pdf_url = sel_ai["ai_url"]
         else:
@@ -1015,49 +950,7 @@ def main() -> None:
         if sel_ai and sel_ai.get("doctor_url"):
             # Use backend proxy to avoid CORS issues
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['doctor_url'], safe="")
-            components.html(
-                f"""
-                <div id=\"doc_pdf_container\" style=\"height:{iframe_h}px; overflow:auto; border:1px solid rgba(255,255,255,0.12); border-radius:10px;\"></div>
-                <script src=\"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js\"></script>
-                <script>
-                  const pdfjsLib = window['pdfjs-dist/build/pdf'];
-                  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                  async function render(url, containerId) {{
-                    const container = document.getElementById(containerId);
-                    container.innerHTML='';
-                    try {{
-                      const res = await fetch(url, {{ method: 'GET', mode: 'cors', headers: {{ 'Accept': 'application/pdf' }} }});
-                      if (!res.ok) throw new Error('HTTP ' + res.status);
-                      const buf = await res.arrayBuffer();
-                      const loadingTask = pdfjsLib.getDocument({{ data: buf }});
-                      const pdf = await loadingTask.promise;
-                      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {{
-                        const page = await pdf.getPage(pageNum);
-                        const viewport = page.getViewport({{ scale: 1 }});
-                        const canvas = document.createElement('canvas');
-                        const context = canvas.getContext('2d');
-                        canvas.style.display = 'block';
-                        canvas.style.width = '100%';
-                        const scale = container.clientWidth / viewport.width;
-                        const scaledViewport = page.getViewport({{ scale }});
-                        canvas.width = Math.floor(scaledViewport.width);
-                        canvas.height = Math.floor(scaledViewport.height);
-                        container.appendChild(canvas);
-                        await page.render({{ canvasContext: context, viewport: scaledViewport }}).promise;
-                      }}
-                    }} catch(e) {{
-                      const div = document.createElement('div');
-                      div.textContent = 'Failed to render PDF.';
-                      div.style.opacity = '0.8';
-                      container.appendChild(div);
-                    }}
-                  }}
-                  render('{proxy_url}', 'doc_pdf_container');
-                  window.addEventListener('resize', () => render('{proxy_url}', 'doc_pdf_container'));
-                </script>
-                """,
-                height=iframe_h + 16,
-            )
+            _render_pdf_base64(proxy_url, iframe_h)
             st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
             doc_effective_pdf_url = sel_ai["doctor_url"]
         else:

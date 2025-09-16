@@ -306,6 +306,25 @@ def main() -> None:
             st.session_state["pinger_start_time"] = _dt.now()
         except Exception as e:
             st.warning(f"⚠️ Could not start backend pinger: {e}")
+
+    # Helper: inline PDF via base64 (reliable on Streamlit Cloud)
+    def _render_pdf_base64(proxy_url: str, height_px: int) -> None:
+        try:
+            import requests as _rq, base64 as _b64
+            r = _rq.get(proxy_url, timeout=45)
+            if r.ok and r.content:
+                data_uri = _b64.b64encode(r.content).decode("utf-8")
+                st.markdown(
+                    f'<iframe src="data:application/pdf;base64,{data_uri}" width="100%" height="{height_px}" style="border:none;border-radius:10px;"></iframe>',
+                    unsafe_allow_html=True,
+                )
+                return
+        except Exception:
+            pass
+        st.markdown(
+            f'<iframe src="{proxy_url}" width="100%" height="{height_px}" style="border:none;border-radius:10px;"></iframe>',
+            unsafe_allow_html=True,
+        )
     
     # Page-scoped compact buttons and responsive table
     st.markdown(
@@ -1018,9 +1037,9 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         if gt_pdf:
-            # Use backend proxy to avoid CORS issues
+            # Use backend proxy and render via base64 for reliability
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(gt_pdf, safe="")
-            st.markdown(f"<iframe src=\"{proxy_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            _render_pdf_base64(proxy_url, iframe_h)
             st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
             gt_effective_pdf_url = gt_pdf
         elif gt_generic:
@@ -1120,9 +1139,8 @@ def main() -> None:
             sel_ai = next((o for o in _pdf_outputs if (o.get("label") or (o.get("ai_key") or "").split("/")[-1]) == selected_label), None)
         ai_effective_pdf_url = None
         if sel_ai and sel_ai.get("ai_url"):
-            # Use backend proxy to avoid CORS issues
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['ai_url'], safe="")
-            st.markdown(f"<iframe src=\"{proxy_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            _render_pdf_base64(proxy_url, iframe_h)
             st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
             ai_effective_pdf_url = sel_ai["ai_url"]
         else:
@@ -1144,9 +1162,8 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            # Use backend proxy to avoid CORS issues
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['doctor_url'], safe="")
-            st.markdown(f"<iframe src=\"{proxy_url}\" width=\"100%\" height=\"{iframe_h}\" style=\"border:none;border-radius:10px;\"></iframe>", unsafe_allow_html=True)
+            _render_pdf_base64(proxy_url, iframe_h)
             st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
             doc_effective_pdf_url = sel_ai["doctor_url"]
         else:
