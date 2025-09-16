@@ -1047,10 +1047,10 @@ def main() -> None:
                 return (x or '—') + ('' if x == '—' or ':' in x else ' mins')
             except Exception:
                 return x
-        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(ocr_duration)}</div>')
         # total_tokens is hidden; skip appending
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{input_tokens}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{output_tokens}</div>')
+        table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(ocr_duration)}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec2dur)}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec3dur)}</div>')
         table_html.append(f'<div style="padding:.5rem .75rem;opacity:.9;font-size:0.85rem;">{_with_mins(sec4dur)}</div>')
