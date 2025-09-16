@@ -532,9 +532,6 @@ def main() -> None:
             import re
             from urllib.parse import urlparse
             
-            # Debug: print the URL to see what we're working with
-            print(f"DEBUG History: Extracting date from URL: {url}")
-            
             # Look for 12-digit timestamp pattern (YYYYMMDDHHMM) in URL
             match = re.search(r"(\d{12})", str(url))
             if match:
@@ -545,14 +542,11 @@ def main() -> None:
                 day = timestamp[6:8]
                 hour = timestamp[8:10]
                 minute = timestamp[10:12]
-                result = f"{year}-{month}-{day} {hour}:{minute}"
-                print(f"DEBUG History: Found timestamp in URL: {result}")
-                return result
+                return f"{year}-{month}-{day} {hour}:{minute}"
             
             # If no timestamp in URL, try to extract from filename
             parsed_url = urlparse(url)
             filename = parsed_url.path.split("/")[-1]
-            print(f"DEBUG History: Extracted filename: {filename}")
             
             # Look for timestamp in filename
             filename_match = re.search(r"(\d{12})", filename)
@@ -563,9 +557,7 @@ def main() -> None:
                 day = timestamp[6:8]
                 hour = timestamp[8:10]
                 minute = timestamp[10:12]
-                result = f"{year}-{month}-{day} {hour}:{minute}"
-                print(f"DEBUG History: Found timestamp in filename: {result}")
-                return result
+                return f"{year}-{month}-{day} {hour}:{minute}"
             
             # Look for other date patterns in filename (YYYY-MM-DD, YYYYMMDD, etc.)
             date_patterns = [
@@ -589,17 +581,17 @@ def main() -> None:
                             month = date_str[4:6]
                             day = date_str[6:8]
                         
-                        result = f"{year}-{month}-{day}"
-                        print(f"DEBUG History: Found date pattern in filename: {result}")
-                        return result
+                        return f"{year}-{month}-{day}"
                     except:
                         continue
             
+            # For Ground Truth files (reference files), show a static label
+            if "4244_LCP_Natasha" in filename or "ground" in filename.lower() or "reference" in filename.lower():
+                return "Reference"
+            
             # Fallback to filename if no date found
-            print(f"DEBUG History: No date found, using filename: {filename}")
             return filename
-        except Exception as e:
-            print(f"DEBUG History: Error extracting date: {e}")
+        except Exception:
             return url
 
     def calculate_ocr_duration(ocr_start: str, ocr_end: str) -> str:
@@ -1076,9 +1068,7 @@ def main() -> None:
                 return ''
         try:
             _pdf_outputs.sort(key=_ts_key, reverse=True)  # True = latest first (reverse chronological)
-            print(f"DEBUG: History - Sorted {len(_pdf_outputs)} outputs")
-        except Exception as e:
-            print(f"DEBUG: History - Sort error: {e}")
+        except Exception:
             pass
 
         labels = [o.get("label") or (o.get("ai_key") or "").split("/")[-1] for o in _pdf_outputs]
