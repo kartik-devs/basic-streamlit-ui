@@ -115,13 +115,18 @@ def _case_to_patient_map(backend: str, cases: list[str]) -> dict[str, str]:
             r2 = requests.get(f"{backend}/s3/{cid}/latest/assets", timeout=4)
             if r2.ok:
                 assets = r2.json() or {}
-                gt_url = assets.get("ground_truth")
-                if gt_url:
-                    parsed = urllib.parse.urlparse(gt_url)
-                    gt_key = parsed.path.lstrip('/')
-                    bucket_name = parsed.netloc.split('.')[0]
-                    if gt_key.startswith(f'{bucket_name}/'):
-                        gt_key = gt_key[len(bucket_name)+1:]
+                # Prefer explicit S3 key if provided
+                gt_key = assets.get("ground_truth_key")
+                if not gt_key:
+                    # Fallback to any GT URL (pdf or original) and derive key from URL path
+                    gt_url = assets.get("ground_truth") or assets.get("ground_truth_pdf")
+                    if gt_url:
+                        parsed = urllib.parse.urlparse(gt_url)
+                        gt_key = parsed.path.lstrip('/')
+                        bucket_name = parsed.netloc.split('.')[0]
+                        if gt_key.startswith(f'{bucket_name}/'):
+                            gt_key = gt_key[len(bucket_name)+1:]
+                if gt_key:
                     name = _extract_patient_from_strings(cid, gt_key=gt_key)
                     return cid, name
         except Exception:
@@ -403,7 +408,7 @@ def main() -> None:
     # Build display labels and predictive select - only for visible cases
     def _label_for(cid: str) -> str:
         p = cid_to_patient.get(cid)
-        return f"{cid} — {p}" if p else cid
+        return f"{cid} — {p}" if (p and isinstance(p, str) and p.strip()) else cid
 
     # Build labels for all cases so users can select any case (avoid blank table due to slicing)
     visible_cases = cases
