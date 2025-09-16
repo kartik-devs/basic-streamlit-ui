@@ -810,8 +810,39 @@ def main() -> None:
         return str(ocr_start), str(ocr_end), str(total_tokens), str(input_tokens), str(output_tokens)
 
     rows: list[tuple[str, str, str | None, str | None, str | None, str, str, str, str, str]] = []
+    def _is_docx(u: str | None) -> bool:
+        try:
+            return bool(u) and str(u).lower().endswith('.docx')
+        except Exception:
+            return False
+    def _is_pdf(u: str | None) -> bool:
+        try:
+            return bool(u) and str(u).lower().endswith('.pdf')
+        except Exception:
+            return False
     if outputs:
         for o in outputs:
+            # Skip PDF duplicates if a DOCX exists for the same logical version
+            ai_url = o.get("ai_url") or ""
+            dr_url = o.get("doctor_url") or ""
+            if _is_pdf(ai_url) or _is_pdf(dr_url):
+                try:
+                    import re as _re
+                    label = (o.get("label") or "")
+                    m = _re.search(r"(\d{12})", label) or _re.search(r"(\d{12})", ai_url) or _re.search(r"(\d{12})", dr_url)
+                    ts = m.group(1) if m else None
+                    if ts:
+                        has_docx = any(
+                            _is_docx(p.get("ai_url")) or _is_docx(p.get("doctor_url"))
+                            for p in outputs
+                            if p is not o and (
+                                _re.search(r"(\d{12})", (p.get("label") or "")) or _re.search(r"(\d{12})", (p.get("ai_url") or "")) or _re.search(r"(\d{12})", (p.get("doctor_url") or ""))
+                            )
+                        )
+                        if has_docx:
+                            continue
+                except Exception:
+                    pass
             # Use timestamp from S3 metadata instead of fake timestamp
             report_timestamp = o.get("timestamp") or generated_ts
             ocr_start, ocr_end, total_tokens, input_tokens, output_tokens = extract_metadata(o)
@@ -854,7 +885,7 @@ def main() -> None:
         min-width: 2900px;
         display: grid;
         gap: 0;
-        grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 100px 160px 160px 160px 180px 180px 180px 180px;
+        grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 140px 160px 160px 160px 180px 180px 180px 180px;
     }
     
     /* Add visual separation between Ground Truth and AI Generated columns */

@@ -736,7 +736,7 @@ def main() -> None:
         min-width: 2900px;
         display: grid;
         gap: 0;
-        grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 100px 160px 160px 160px 180px 180px 180px 180px;
+        grid-template-columns: 240px 180px 3.6fr 3.6fr 3.6fr 140px 160px 160px 160px 180px 180px 180px 180px;
     }
     .history-table > div:nth-child(3) { border-right: 2px solid rgba(255,255,255,0.25) !important; }
     .history-table > div { border-right: 1px solid rgba(255,255,255,0.12); }
@@ -1012,7 +1012,7 @@ def main() -> None:
             sel_ver = st.selectbox("AI report version (DOCX only)", options=labels_docx, index=0, key=f"editor_ver_{case_id}")
             chosen_url = docx_map.get(sel_ver)
             if chosen_url:
-                # Convert to PDF via backend and render inline (no external viewers)
+                # Convert to PDF via backend and render inline; also offer Office viewer fallback
                 try:
                     import requests as _rq
                     ensure = _rq.get(f"{backend}/s3/ensure-pdf", params={"url": chosen_url}, timeout=30)
@@ -1027,6 +1027,13 @@ def main() -> None:
                 _render_pdf_base64(proxy_pdf, 600)
                 st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_pdf}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
                 st.caption("Preview uses a built-in PDF viewer to avoid third-party script blocks.")
+                # Optional: fallback to Office viewer for direct DOCX preview if needed
+                try:
+                    from urllib.parse import quote as _q
+                    office = f"https://view.officeapps.live.com/op/embed.aspx?src={_q(chosen_url, safe='')}"
+                    st.markdown(f"<div style=\"margin-top:.35rem;opacity:.75;\"><a href=\"{office}\" target=\"_blank\" class=\"st-a\">Open in Office viewer ↗</a></div>", unsafe_allow_html=True)
+                except Exception:
+                    pass
                 
                 st.markdown("### Upload edited DOCX back to S3")
                 up_col1, up_col2 = st.columns([1, 1])
