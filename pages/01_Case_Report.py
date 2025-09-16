@@ -174,6 +174,15 @@ def main() -> None:
     )
 
     # Authentication removed - no login required
+    # Debug tools
+    with st.expander("🧪 Debug tools", expanded=False):
+        st.caption("For demos: map 0000 ➜ another case id and speed up generation.")
+        dbg_alias = st.text_input("When Case ID is 0000, load results from case id", value=st.session_state.get("debug_alias_results_case_id", "9999"))
+        if dbg_alias and dbg_alias.isdigit() and len(dbg_alias) == 4:
+            st.session_state["debug_alias_results_case_id"] = dbg_alias
+            st.caption(f"Current mapping: 0000 ➜ {dbg_alias}")
+        else:
+            st.caption("Enter a 4-digit case id, e.g. 9999")
     
     # Check if generation is already in progress
     if st.session_state.get("generation_in_progress", False):

@@ -223,6 +223,12 @@ def main() -> None:
         or st.session_state.get("current_case_id")
         or "0000"
     )
+    # Debug: when case_id is 0000, load data from alias (default 9999) but keep display as 0000
+    effective_case_id = case_id
+    if str(case_id) == "0000":
+        alias = st.session_state.get("debug_alias_results_case_id") or "9999"
+        if isinstance(alias, str) and alias.isdigit() and len(alias) == 4:
+            effective_case_id = alias
     if case_id == "0000":
         st.info("No active case. Go to Case Report and start a run.")
         return
@@ -261,10 +267,10 @@ def main() -> None:
     # Fetch outputs and assets for this case
     with st.spinner("Loading case data…"):
         try:
-            r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
+            r = requests.get(f"{backend}/s3/{effective_case_id}/outputs", timeout=20)
             outputs = (r.json() or {}).get("items", []) if r.ok else []
             # Also fetch latest assets to get Ground Truth last modified
-            r_assets = requests.get(f"{backend}/s3/{case_id}/latest/assets", timeout=10)
+            r_assets = requests.get(f"{backend}/s3/{effective_case_id}/latest/assets", timeout=10)
             assets = r_assets.json() if r_assets.ok else {}
         except Exception:
             outputs = []
