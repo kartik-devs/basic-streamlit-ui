@@ -218,8 +218,19 @@ def main() -> None:
             st.warning(f"⚠️ Could not start backend pinger: {e}")
     
     # Authentication removed - no login required
+    # Prefer explicit query param ?case= over session to survive refreshes or long runs
+    try:
+        params = st.query_params if hasattr(st, "query_params") else None
+        qp_case = None
+        if params:
+            # st.query_params may return list or str
+            val = params.get("case")
+            qp_case = (val[0] if isinstance(val, list) else val)
+    except Exception:
+        qp_case = None
     case_id = (
-        st.session_state.get("last_case_id")
+        (qp_case and str(qp_case))
+        or st.session_state.get("last_case_id")
         or st.session_state.get("current_case_id")
         or "0000"
     )
@@ -229,13 +240,14 @@ def main() -> None:
         alias = st.session_state.get("debug_alias_results_case_id") or "9999"
         if isinstance(alias, str) and alias.isdigit() and len(alias) == 4:
             effective_case_id = alias
-    if case_id == "0000":
+    # If 0000 with alias configured, proceed; only block when truly no alias and no generation
+    if case_id == "0000" and effective_case_id == "0000":
         st.info("No active case. Go to Case Report and start a run.")
         return
 
     # Check generation status - show progress if running, block access if not complete
-    generation_status = _check_generation_status(case_id)
-    if not generation_status["complete"]:
+    generation_status = _check_generation_status(case_id) if case_id != "0000" else {"complete": True}
+    if case_id != "0000" and not generation_status["complete"]:
         # Check if generation is in progress
         if st.session_state.get("generation_in_progress", False):
             progress = generation_status["progress"]

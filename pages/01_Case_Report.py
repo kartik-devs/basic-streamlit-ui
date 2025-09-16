@@ -320,6 +320,28 @@ def main() -> None:
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("📊 View Results", type="primary", use_container_width=True):
+                    # Persist selected case id for the Results page
+                    cid = st.session_state.get("current_case_id") or st.session_state.get("last_case_id")
+                    if cid:
+                        st.session_state["last_case_id"] = cid
+                        try:
+                            # Prefer new API when available
+                            if hasattr(st, "query_params"):
+                                # Preserve existing params
+                                qp = dict(st.query_params)
+                                qp["case"] = cid
+                                try:
+                                    st.query_params.clear()
+                                except Exception:
+                                    pass
+                                try:
+                                    st.experimental_set_query_params(**qp)
+                                except Exception:
+                                    st.experimental_set_query_params(case=cid)
+                            else:
+                                st.experimental_set_query_params(case=cid)
+                        except Exception:
+                            pass
                     # Try multiple navigation strategies for robustness
                     try:
                         from streamlit_extras.switch_page_button import switch_page
@@ -328,7 +350,6 @@ def main() -> None:
                         except Exception:
                             switch_page("Results")
                     except Exception:
-                        # Fallback: set an intent and rerun; Results reads last/current case_id
                         st.session_state["_goto_results_intent"] = True
                         st.experimental_rerun()
             with c2:
@@ -590,6 +611,25 @@ def main() -> None:
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("📊 View Results", type="primary", use_container_width=True):
+                        cid = st.session_state.get("current_case_id") or st.session_state.get("last_case_id")
+                        if cid:
+                            st.session_state["last_case_id"] = cid
+                            try:
+                                if hasattr(st, "query_params"):
+                                    qp = dict(st.query_params)
+                                    qp["case"] = cid
+                                    try:
+                                        st.query_params.clear()
+                                    except Exception:
+                                        pass
+                                    try:
+                                        st.experimental_set_query_params(**qp)
+                                    except Exception:
+                                        st.experimental_set_query_params(case=cid)
+                                else:
+                                    st.experimental_set_query_params(case=cid)
+                            except Exception:
+                                pass
                         try:
                             switch_page("pages/04_Results")
                         except Exception:
