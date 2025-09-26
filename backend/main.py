@@ -1,12 +1,11 @@
 from __future__ import annotations
-
 import os
 import json
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
-
+from fastapi import Request
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -198,27 +197,25 @@ def save_docx_text(request: Dict[str, Any]):
 def version() -> Dict[str, Any]:
     return {"version": app.version if hasattr(app, "version") else "unknown"}
 
+
+
 @app.post("/n8n/start")
-def api_n8n_start(case_id: str, username: Optional[str] = None):
-    """Start the main n8n workflow and attempt to capture execution id.
-    Returns JSON with { ok: bool, execution_id?: str, started?: bool, error?: str } and
-    uses HTTP 202 for started, 500 for failure.
-    """
+def api_n8n_start(case_id: str, username: Optional[str] = None, batching: Optional[int] = None):
     try:
-        # Ensure we pass the dynamic case_id from the request; never use a default
-        res = n8n_manager.trigger_main_workflow_and_capture_execution(case_id, {"case_id": case_id, "username": username})
+        payload = {"case_id": case_id, "username": username}
+        if batching is not None:
+            payload["batching"] = int(batching)
+        # Critical: pass payload so integration includes batching in JSON body
+        res = n8n_manager.trigger_main_workflow_and_capture_execution(case_id, payload)
         ok = bool(res.get("success") or res.get("started"))
-        # Be lenient: even if we couldn't capture an execution id, treat trigger as accepted
         status = 202 if (ok or res.get("error")) else 500
-        body: Dict[str, Any] = {
-            "ok": ok,
-            "execution_id": res.get("execution_id"),
-            "started": bool(res.get("started")),
-            "error": res.get("error"),
-        }
-        return JSONResponse(content=body, status_code=status)
+        return JSONResponse(
+            content={"ok": ok, "execution_id": res.get("execution_id"), "started": bool(res.get("started")), "error": res.get("error")},
+            status_code=status,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/n8n/execution/{case_id}")
 def api_n8n_get_execution(case_id: str) -> Dict[str, Any]:

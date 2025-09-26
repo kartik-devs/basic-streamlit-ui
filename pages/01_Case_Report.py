@@ -181,7 +181,6 @@ def main() -> None:
         icon="🗂️",
     )
 
-    # Authentication removed - no login required
     # Debug tools
     with st.expander("🧪 Debug tools", expanded=False):
         st.caption("For demos: map 0000 ➜ another case id and speed up generation.")
@@ -205,8 +204,8 @@ def main() -> None:
     # Check if generation is already in progress
     if st.session_state.get("generation_in_progress", False):
         st.markdown("## Case Report Generation")
-        # Show progress bar instead of old card
         case_id = st.session_state.get("current_case_id", "Unknown")
+        
         # Determine simulated target duration
         if str(case_id) == "0000":
             target_seconds = 60
@@ -224,15 +223,14 @@ def main() -> None:
         current_progress = st.session_state.get("generation_progress", 0)
         
         # Always calculate linear progression as fallback (unless we have real progress at 100%)
-        if current_progress < 100:  # Use linear progression unless we have real progress
-            # Debug mode: Complete instantly, otherwise linear progression over 2 hours
+        if current_progress < 100:
             if st.session_state.get("debug_mode", False):
                 # Debug mode: Complete in 5 seconds instead of 2 hours
                 debug_progress = min(5 + (elapsed_time / 5) * 95, 100)
                 st.session_state["generation_progress"] = int(debug_progress)
             else:
                 # Normal mode: Linear progression over target_seconds
-                if elapsed_time < target_seconds:  # Within target window
+                if elapsed_time < target_seconds:
                     linear_progress = min(5 + (elapsed_time / target_seconds) * 95, 100)
                     st.session_state["generation_progress"] = int(linear_progress)
             
@@ -312,10 +310,6 @@ def main() -> None:
         if st.session_state.get("generation_in_progress", False):
             time.sleep(2)
             st.rerun()
-        
-        # Old generation info removed - using progress bar above
-        
-        # Old generate new report section removed - using progress bar above
     
     # Backend base URL
     params = st.query_params if hasattr(st, "query_params") else {}
@@ -338,9 +332,7 @@ def main() -> None:
                     if cid:
                         st.session_state["last_case_id"] = cid
                         try:
-                            # Prefer new API when available
                             if hasattr(st, "query_params"):
-                                # Preserve existing params
                                 qp = dict(st.query_params)
                                 qp["case"] = cid
                                 try:
@@ -355,13 +347,8 @@ def main() -> None:
                                 st.experimental_set_query_params(case=cid)
                         except Exception:
                             pass
-                    # Try multiple navigation strategies for robustness
                     try:
-                        from streamlit_extras.switch_page_button import switch_page
-                        try:
-                            switch_page("pages/04_Results")
-                        except Exception:
-                            switch_page("Results")
+                        switch_page("pages/04_Results")
                     except Exception:
                         st.session_state["_goto_results_intent"] = True
                         st.experimental_rerun()
@@ -385,6 +372,11 @@ def main() -> None:
             case_id_input = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
             case_id = (case_id_input or "").strip()
             
+            # Batching toggle (UI)
+            # ON ➜ send 0, OFF ➜ send 1
+            batching_selected = st.checkbox("Batching", value=False)
+            batch_flag = 0 if batching_selected else 1
+            
             # Real-time validation feedback
             if case_id:
                 if not case_id.isdigit():
@@ -399,13 +391,10 @@ def main() -> None:
                         validation_result = _validate_case_id_exists(case_id)
                     if validation_result.get("exists"):
                         st.success(f"✅ Case ID {case_id} found in database")
-                        # Store validation result for button logic
                         st.session_state["case_id_exists"] = True
                     else:
                         st.error(f"❌ Case ID {case_id} not found in database")
-                        # Store validation result for button logic
                         st.session_state["case_id_exists"] = False
-                        # Show available case IDs from validation result
                         available_cases = validation_result.get("available_cases", [])
                         if available_cases:
                             st.info("💡 Try one of these available case IDs:")
@@ -413,11 +402,8 @@ def main() -> None:
                             st.info(f"Found {len(available_cases)} available case IDs")
                         else:
                             st.info("No cases found in database")
-                        # Add a button to refresh available cases
                         if st.button("🔄 Refresh Available Cases", key="refresh_cases"):
                             st.rerun()
-
-            # Username display removed - no authentication required
 
             # Show available case IDs section
             with st.expander("📋 Available Case IDs", expanded=False):
@@ -429,12 +415,10 @@ def main() -> None:
                         available_cases = data.get("cases", [])
                         if available_cases:
                             st.info(f"Found {len(available_cases)} case IDs in database:")
-                            # Display in a nice grid with copy functionality
                             cols = st.columns(5)
                             for i, case_opt in enumerate(available_cases[:20]):  # Show first 20
                                 with cols[i % 5]:
                                     if st.button(case_opt, key=f"select_case_{case_opt}"):
-                                        # Show the case ID for manual copying
                                         st.success(f"Selected: {case_opt} - Please copy and paste this into the Case ID field above")
                             if len(available_cases) > 20:
                                 st.info(f"... and {len(available_cases) - 20} more case IDs")
@@ -458,6 +442,10 @@ def main() -> None:
 
             if generate:
                 cid = case_id.strip()
+
+                # Quick debug
+                st.write(f"Debug: case_id='{cid}', batching={batch_flag}")
+
                 if not cid or not cid.isdigit() or len(cid) != 4:
                     st.error("Case ID must be exactly 4 digits (0-9).")
                 elif not case_id_exists and cid != "0000":
@@ -467,24 +455,24 @@ def main() -> None:
                     st.session_state["last_case_id"] = cid
                     st.session_state["generation_start"] = datetime.now()
                     st.session_state["generation_in_progress"] = True
-                    st.session_state["generation_progress"] = 1  # Start at 1% immediately
+                    st.session_state["generation_progress"] = 1
                     st.session_state["generation_step"] = 0
                     st.session_state["generation_complete"] = False
-                    
-                    # Store case ID for S3 fetching in results page
+                    st.session_state["last_batching_flag"] = batch_flag
                     st.session_state["current_case_id"] = cid
 
-                    # Trigger n8n workflow (long-running, 2-hour process) with dynamic case_id
+                    # Single backend trigger; backend forwards batching in JSON body to n8n
                     try:
+                        st.write(f"Debug: calling {BACKEND_BASE}/n8n/start with case_id={cid}, username=demo, batching={batch_flag}")
                         n8n_response = requests.post(
                             f"{BACKEND_BASE}/n8n/start",
-                            params={"case_id": cid, "username": "demo"},
-                            timeout=30,  # Give it 30 seconds to start the workflow
+                            params={"case_id": cid, "username": "demo", "batching": batch_flag},
+                            timeout=30,
                         )
+                        st.write(f"Debug: Response status: {n8n_response.status_code}")
                         if n8n_response.ok:
                             st.success("🚀 n8n workflow trigger accepted. Processing will continue in the background (~2 hours).")
                         else:
-                            # Even if execution id capture failed, proceed; backend will keep trying
                             try:
                                 j = n8n_response.json()
                                 msg = j.get("error") or n8n_response.text
@@ -496,21 +484,21 @@ def main() -> None:
                     except Exception as e:
                         st.error(f"❌ Error triggering n8n workflow: {str(e)}")
 
-                    # Create backend cycle for legacy support
+                    # Optional: record a processing cycle
                     try:
                         r = requests.post(
                             f"{BACKEND_BASE}/cycles",
-                            json={"case_id": cid, "status": "processing"},
+                            json={"case_id": cid, "status": "processing", "batching": batch_flag},
                             timeout=8,
                         )
                         if r.ok:
                             st.session_state["current_cycle_id"] = r.json().get("id")
                     except Exception:
                         pass
-                    
+
                     st.rerun()
 
-    # Check if generation is in progress and show progress
+    # Check if generation is in progress and show progress (duplicate progress section)
     if st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
         case_id = st.session_state.get("current_case_id", "Unknown")
         
@@ -522,7 +510,6 @@ def main() -> None:
             elapsed_time = 0
         
         # Calculate progress based on elapsed time
-        # Linear progression over configured target seconds (default 7200)
         target_seconds = int(st.session_state.get("debug_target_seconds", 7200))
         linear_progress = min(1 + (elapsed_time / target_seconds) * 99, 100)
         st.session_state["generation_progress"] = int(linear_progress)
@@ -615,8 +602,6 @@ def main() -> None:
         if st.session_state.get("generation_complete"):
             st.success("✅ Report generation completed successfully!")
             
-            # Stay on this page and offer actions instead of auto-navigation
-
             # Replace input form with actions at the bottom of the page
             st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
             actions = st.container()
@@ -656,7 +641,7 @@ def main() -> None:
                         st.session_state["generation_in_progress"] = False
                         st.session_state["generation_start"] = None
                         st.session_state.pop("navigate_to_results", None)
-                    st.rerun()
+                        st.rerun()
 
     # Subtle info card beneath the form
     with st.container():
@@ -669,10 +654,6 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    # Footer intentionally omitted on Case Report page
-
 
 if __name__ == "__main__":
     main()
-
-
