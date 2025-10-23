@@ -181,26 +181,7 @@ def main() -> None:
         icon="🗂️",
     )
 
-    # Debug tools
-    with st.expander("🧪 Debug tools", expanded=False):
-        st.caption("For demos: map 0000 ➜ another case id and speed up generation.")
-        dbg_alias = st.text_input("When Case ID is 0000, load results from case id", value=st.session_state.get("debug_alias_results_case_id", "9999"))
-        if dbg_alias and dbg_alias.isdigit() and len(dbg_alias) == 4:
-            st.session_state["debug_alias_results_case_id"] = dbg_alias
-            st.caption(f"Current mapping: 0000 ➜ {dbg_alias}")
-        else:
-            st.caption("Enter a 4-digit case id, e.g. 9999")
-        st.markdown("---")
-        dbg_secs = st.number_input(
-            "Override generation duration (seconds) for normal IDs",
-            min_value=5,
-            max_value=7200,
-            value=int(st.session_state.get("debug_target_seconds", 7200)),
-            step=5,
-            help="Applies to all case IDs except special 0000 fast path. Use small values for quick testing.",
-        )
-        st.session_state["debug_target_seconds"] = int(dbg_secs)
-    
+
     # Check if generation is already in progress
     if st.session_state.get("generation_in_progress", False):
         st.markdown("## Case Report Generation")
@@ -368,9 +349,40 @@ def main() -> None:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.caption("Case ID (4 digits)")
-            # Separate session key from local variable to avoid accidental reuse
-            case_id_input = st.text_input("Enter 4-digit Case ID (e.g., 1234)", key="case_id", max_chars=4)
-            case_id = (case_id_input or "").strip()
+            
+            # Fetch available cases dynamically from backend
+            @st.cache_data(ttl=120)
+            def fetch_available_cases():
+                backend = _get_backend_base()
+                try:
+                    res = requests.get(f"{backend}/s3/cases", timeout=5)
+                    if res.ok:
+                        data = res.json()
+                        return data.get("cases", [])
+                except Exception:
+                    pass
+                return []
+            
+            available_cases = fetch_available_cases()
+            
+            # 🔍 Predictive dropdown
+            case_id = st.selectbox(
+                "Select or enter Case ID",
+                options=[""] + available_cases,  # allows manual typing + list
+                index=0,
+                key="case_id",
+                placeholder="Type or select case ID (e.g., 1234)",
+            )
+            
+            # Optional real-time validation
+            if case_id:
+                if not case_id.isdigit() or len(case_id) != 4:
+                    st.error("⚠️ Case ID must be a 4-digit number.")
+                    st.session_state["case_id_exists"] = False
+                else:
+                    st.success(f"✅ Selected Case ID: {case_id}")
+                    st.session_state["case_id_exists"] = True
+            
             
             # Batching toggle (UI)
             # ON ➜ send 0, OFF ➜ send 1
