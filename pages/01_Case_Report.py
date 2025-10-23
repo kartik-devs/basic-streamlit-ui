@@ -349,7 +349,7 @@ def main() -> None:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.caption("Case ID (4 digits)")
-            
+
             # Fetch available cases dynamically from backend
             @st.cache_data(ttl=120)
             def fetch_available_cases():
@@ -362,9 +362,9 @@ def main() -> None:
                 except Exception:
                     pass
                 return []
-            
+
             available_cases = fetch_available_cases()
-            
+
             # 🔍 Predictive dropdown
             case_id = st.selectbox(
                 "Select or enter Case ID",
@@ -373,7 +373,7 @@ def main() -> None:
                 key="case_id",
                 placeholder="Type or select case ID (e.g., 1234)",
             )
-            
+
             # Optional real-time validation
             if case_id:
                 if not case_id.isdigit() or len(case_id) != 4:
@@ -382,7 +382,7 @@ def main() -> None:
                 else:
                     st.success(f"✅ Selected Case ID: {case_id}")
                     st.session_state["case_id_exists"] = True
-            
+
             
             # Batching toggle (UI)
             # ON ➜ send 0, OFF ➜ send 1
@@ -445,12 +445,77 @@ def main() -> None:
             case_id_valid = case_id and case_id.isdigit() and len(case_id) == 4
             case_id_exists = st.session_state.get("case_id_exists", False) or (case_id == "0000")
 
-            generate = st.button(
-                "Generate Report",
-                type="primary",
-                use_container_width=True,
-                disabled=not (case_id_valid and case_id_exists),
-            )
+            # Two side-by-side buttons
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                generate = st.button(
+                    "🧾 Generate Report",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=not (case_id_valid and case_id_exists),
+                )
+            
+            with c2:
+                generate_redacted = st.button(
+                    "🕵️ Generate Redacted Report",
+                    type="secondary",
+                    use_container_width=True,
+                    disabled=not (case_id_valid and case_id_exists),
+                )
+            
+            # Shared logic for both buttons
+            if generate or generate_redacted:
+                cid = case_id.strip()
+                report_type = "redacted" if generate_redacted else "standard"
+            
+                st.success(f"Starting {report_type} report generation for Case ID: {cid}")
+                st.session_state["last_case_id"] = cid
+                st.session_state["generation_start"] = datetime.now()
+                st.session_state["generation_in_progress"] = True
+                st.session_state["generation_progress"] = 1
+                st.session_state["generation_step"] = 0
+                st.session_state["generation_complete"] = False
+                st.session_state["last_batching_flag"] = batch_flag
+                st.session_state["current_case_id"] = cid
+                st.session_state["report_type"] = report_type  # track which one was clicked
+            
+                # 🔹 Send the correct report type to backend
+                try:
+                    st.write(f"Debug: calling {BACKEND_BASE}/n8n/start with case_id={cid}, type={report_type}, batching={batch_flag}")
+                    n8n_response = requests.post(
+                        f"{BACKEND_BASE}/n8n/start",
+                        params={"case_id": cid, "username": "demo", "batching": batch_flag, "report_type": report_type},
+                        timeout=30,
+                    )
+                    st.write(f"Debug: Response status: {n8n_response.status_code}")
+                    if n8n_response.ok:
+                        st.success(f"🚀 {report_type.capitalize()} workflow trigger accepted. Processing will continue in the background (~2 hours).")
+                    else:
+                        try:
+                            j = n8n_response.json()
+                            msg = j.get("error") or n8n_response.text
+                        except Exception:
+                            msg = n8n_response.text
+                        st.info(f"⚠️ Trigger acknowledged without execution id: {msg}")
+                except requests.exceptions.Timeout:
+                    st.success(f"🚀 {report_type.capitalize()} workflow triggered successfully! (Request timed out as expected - workflow is running in background)")
+                except Exception as e:
+                    st.error(f"❌ Error triggering {report_type} workflow: {str(e)}")
+            
+                # Optional: record processing type
+                try:
+                    r = requests.post(
+                        f"{BACKEND_BASE}/cycles",
+                        json={"case_id": cid, "status": "processing", "batching": batch_flag, "type": report_type},
+                        timeout=8,
+                    )
+                    if r.ok:
+                        st.session_state["current_cycle_id"] = r.json().get("id")
+                except Exception:
+                    pass
+            
+                st.rerun()
 
             if generate:
                 cid = case_id.strip()
