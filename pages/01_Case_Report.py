@@ -673,7 +673,7 @@ def main() -> None:
             actions = st.container()
             with actions:
                 col1, col2 = st.columns(2)
-                    with col1:
+                with col1:
                         if st.button("📊 View Results", type="primary", use_container_width=True):
                             cid = st.session_state.get("current_case_id") or st.session_state.get("last_case_id")
 
