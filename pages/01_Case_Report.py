@@ -447,7 +447,7 @@ def main() -> None:
 
            # Two side-by-side buttons
             c1, c2 = st.columns(2)
-            
+
             with c1:
                 generate = st.button(
                     "🧾 Generate Report",
@@ -455,7 +455,7 @@ def main() -> None:
                     use_container_width=True,
                     disabled=not (case_id_valid and case_id_exists),
                 )
-            
+
             with c2:
                 generate_redacted = st.button(
                     "🕵️ Generate Redacted Report",
@@ -463,18 +463,18 @@ def main() -> None:
                     use_container_width=True,
                     disabled=not (case_id_valid and case_id_exists),
                 )
-            
+
             # --- Logic for both buttons ---
             if generate or generate_redacted:
                 cid = case_id.strip()
                 report_type = "redacted" if generate_redacted else "standard"
-                
+
                 # Select correct webhook
                 if report_type == "standard":
-                    webhook_url = "http://3.81.112.43:5678/webhook/mainworkflow/af770afa-01a0-4cda-b95f-4cc94a920691"
+                    webhook_url = "http://3.81.112.43:5678/webhook/mainworkflow"
                 else:
-                    webhook_url = "http://3.81.112.43:5678/webhook/MCPRedacted/af770afa-01a0-4cda-b95f-4cc94a920691"
-                
+                    webhook_url = "http://3.81.112.43:5678/webhook/MCPRedacted"
+
                 st.success(f"🚀 Starting {report_type} report for Case ID: {cid}")
                 st.session_state["last_case_id"] = cid
                 st.session_state["generation_start"] = datetime.now()
@@ -484,7 +484,7 @@ def main() -> None:
                 st.session_state["generation_complete"] = False
                 st.session_state["current_case_id"] = cid
                 st.session_state["report_type"] = report_type
-            
+
                 # --- Trigger N8N Webhook ---
                 try:
                     st.info(f"Calling {webhook_url}")
@@ -493,17 +493,17 @@ def main() -> None:
                         json={"case_id": cid, "username": "demo", "batching": batch_flag},
                         timeout=15
                     )
-            
+
                     if response.ok:
                         st.success(f"✅ {report_type.capitalize()} workflow triggered successfully!")
                     else:
                         st.error(f"⚠️ Workflow failed with status {response.status_code}: {response.text}")
-            
+
                 except requests.exceptions.Timeout:
                     st.success(f"⏱️ {report_type.capitalize()} workflow triggered (timeout expected). It’s running in background.")
                 except Exception as e:
                     st.error(f"❌ Error triggering {report_type} webhook: {str(e)}")
-            
+
                 # Continue normal progress animation
                 st.rerun()
 
