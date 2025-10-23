@@ -470,11 +470,10 @@ def main() -> None:
                 report_type = "redacted" if generate_redacted else "standard"
 
                 # Select correct webhook
-                if report_type == "standard":
-                    webhook_url = "http://3.81.112.43:5678/webhook/mainworkflow"
-                else:
-                    webhook_url = "http://3.81.112.43:5678/webhook/MCPRedacted"
-
+                 if report_type == "standard":
+                     webhook_url = "http://3.81.112.43:5678/webhook/mainworkflow"
+                 else:
+                     webhook_url = "http://3.81.112.43:5678/webhook/MCPRedacted"
                 st.success(f"🚀 Starting {report_type} report for Case ID: {cid}")
                 st.session_state["last_case_id"] = cid
                 st.session_state["generation_start"] = datetime.now()
@@ -674,31 +673,29 @@ def main() -> None:
             actions = st.container()
             with actions:
                 col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("📊 View Results", type="primary", use_container_width=True):
-                        cid = st.session_state.get("current_case_id") or st.session_state.get("last_case_id")
-                        if cid:
-                            st.session_state["last_case_id"] = cid
-                            try:
-                                if hasattr(st, "query_params"):
-                                    qp = dict(st.query_params)
-                                    qp["case"] = cid
-                                    try:
-                                        st.query_params.clear()
-                                    except Exception:
-                                        pass
-                                    try:
-                                        st.experimental_set_query_params(**qp)
-                                    except Exception:
-                                        st.experimental_set_query_params(case=cid)
-                                else:
+                    with col1:
+                        if st.button("📊 View Results", type="primary", use_container_width=True):
+                            cid = st.session_state.get("current_case_id") or st.session_state.get("last_case_id")
+                
+                            if cid:
+                                # ✅ Store case ID for later pages
+                                st.session_state["selected_case_id"] = cid
+                
+                                # ✅ Update URL query params (used by Results page)
+                                try:
                                     st.experimental_set_query_params(case=cid)
-                            except Exception:
-                                pass
-                        try:
-                            switch_page("pages/04_Results")
-                        except Exception:
-                            st.rerun()
+                                except Exception:
+                                    pass
+                
+                                # ✅ Navigate to the Results page (Streamlit auto-maps “04_Results.py” → “Results”)
+                                try:
+                                    switch_page("Results")
+                                except Exception:
+                                    st.session_state["_goto_results_intent"] = True
+                                    st.rerun()
+                            else:
+                                st.warning("⚠️ No Case ID found. Please generate a report first.")
+
                 with col2:
                     if st.button("🔄 Generate New Report", type="secondary", use_container_width=True):
                         # Reset all generation state and show input again

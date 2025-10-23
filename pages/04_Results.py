@@ -223,13 +223,15 @@ def main() -> None:
         params = st.query_params if hasattr(st, "query_params") else None
         qp_case = None
         if params:
-            # st.query_params may return list or str
             val = params.get("case")
             qp_case = (val[0] if isinstance(val, list) else val)
     except Exception:
         qp_case = None
+
+    # ✅ Unified Case ID retrieval
     case_id = (
         (qp_case and str(qp_case))
+        or st.session_state.get("selected_case_id")
         or st.session_state.get("last_case_id")
         or st.session_state.get("current_case_id")
         or "0000"
@@ -257,7 +259,7 @@ def main() -> None:
             # Show estimated time remaining
             if generation_status["start_time"]:
                 elapsed_time = (datetime.now() - generation_status["start_time"]).total_seconds()
-                remaining_time = max(0, 7200 - elapsed_time)  # 2 hours total
+                remaining_time = max(0, 60 - elapsed_time)  # 2 hours total
                 remaining_minutes = int(remaining_time // 60)
                 remaining_seconds = int(remaining_time % 60)
                 st.info(f"⏱️ Estimated time remaining: {remaining_minutes}m {remaining_seconds}s")
