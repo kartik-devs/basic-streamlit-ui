@@ -470,9 +470,9 @@ def main() -> None:
                 report_type = "redacted" if generate_redacted else "standard"
 
                 # Select correct webhook
-                 if report_type == "standard":
+                if report_type == "standard":
                      webhook_url = "http://3.81.112.43:5678/webhook/mainworkflow"
-                 else:
+                else:
                      webhook_url = "http://3.81.112.43:5678/webhook/MCPRedacted"
                 st.success(f"🚀 Starting {report_type} report for Case ID: {cid}")
                 st.session_state["last_case_id"] = cid
@@ -676,17 +676,17 @@ def main() -> None:
                     with col1:
                         if st.button("📊 View Results", type="primary", use_container_width=True):
                             cid = st.session_state.get("current_case_id") or st.session_state.get("last_case_id")
-                
+
                             if cid:
                                 # ✅ Store case ID for later pages
                                 st.session_state["selected_case_id"] = cid
-                
+
                                 # ✅ Update URL query params (used by Results page)
                                 try:
                                     st.experimental_set_query_params(case=cid)
                                 except Exception:
                                     pass
-                
+
                                 # ✅ Navigate to the Results page (Streamlit auto-maps “04_Results.py” → “Results”)
                                 try:
                                     switch_page("Results")
