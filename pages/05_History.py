@@ -1283,7 +1283,11 @@ def main() -> None:
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_pdf_url, safe="")
                 _render_pdf_base64(proxy_url, iframe_h)
                 st.markdown(
-                    f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Downloa
+                    f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.info("Not available.")
 
     # Sync viewer with lock/unlock
     st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
