@@ -1065,7 +1065,8 @@ def main() -> None:
     # Denser layout height
     iframe_h = 480
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
+
 
     # Ground Truth
     with col1:
@@ -1213,6 +1214,76 @@ def main() -> None:
             doc_effective_pdf_url = sel_ai["doctor_url"]
         else:
             st.info("Not available")
+    # 🔹 Redacted Report Viewer
+    with col4:
+        st.markdown(
+            """
+            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
+              <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(250,204,21,0.15);border:1px solid rgba(250,204,21,0.35);color:#facc15;font-size:.8rem;font-weight:700;letter-spacing:.02em;">REDACTED</span>
+              <span style='font-weight:700;'>Redacted Report</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    
+        # Fetch all redacted reports from same output folder as AI reports
+        redacted_outputs = [
+            o for o in outputs
+            if o.get("ai_url") and "redacted" in o.get("ai_url", "").lower() or
+               o.get("doctor_url") and "redacted" in o.get("doctor_url", "").lower()
+        ]
+    
+        # Fallback: try to find any file ending with _redacted.pdf
+        if not redacted_outputs:
+            redacted_outputs = [
+                o for o in outputs
+                if (o.get("ai_url") or "").lower().endswith("_redacted.pdf") or
+                   (o.get("doctor_url") or "").lower().endswith("_redacted.pdf")
+            ]
+    
+        if not redacted_outputs:
+            st.info("No redacted reports found.")
+        else:
+            # Extract readable labels
+            redacted_labels = [
+                o.get("label") or (o.get("ai_url") or "").split("/")[-1]
+                for o in redacted_outputs
+            ]
+            # Sort by latest timestamp (12-digit)
+            import re
+            def _ts_key(item):
+                src = item.get("ai_url") or item.get("doctor_url") or ""
+                m = re.search(r"(\d{12})", src)
+                return m.group(1) if m else "0"
+            redacted_outputs.sort(key=_ts_key, reverse=True)
+    
+            # Maintain selection
+            red_key = f"history_redacted_label_{case_id}"
+            if red_key not in st.session_state:
+                st.session_state[red_key] = redacted_labels[0] if redacted_labels else None
+    
+            selected_redacted = st.selectbox(
+                "Select Redacted Report",
+                options=redacted_labels,
+                index=0,
+                key=f"redacted_dropdown_{case_id}",
+            )
+    
+            sel_red = next(
+                (o for o in redacted_outputs if (o.get("label") or "").strip() == selected_redacted),
+                None,
+            )
+            redacted_pdf_url = (
+                sel_red.get("ai_url")
+                if sel_red and sel_red.get("ai_url") and "redacted" in sel_red.get("ai_url", "").lower()
+                else sel_red.get("doctor_url")
+            )
+    
+            if redacted_pdf_url:
+                proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_pdf_url, safe="")
+                _render_pdf_base64(proxy_url, iframe_h)
+                st.markdown(
+                    f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Downloa
 
     # Sync viewer with lock/unlock
     st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
