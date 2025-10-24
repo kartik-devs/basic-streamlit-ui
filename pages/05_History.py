@@ -1225,7 +1225,7 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-        st.write("🔎 Debug Outputs Preview:", outputs[:3])
+
         # Fetch all redacted reports from same output folder as AI reports
         redacted_outputs = [
             o for o in outputs
@@ -1253,8 +1253,8 @@ def main() -> None:
         if not redacted_outputs:
             from app.s3_utils import get_s3_manager
             s3 = get_s3_manager()
-            case_id = st.session_state.get("selected_case_id") or st.session_state.get("current_case_id")
-        
+            case_id = case_id or st.session_state.get("selected_case_id") or st.session_state.get("current_case_id")
+
             if case_id:
                 try:
                     response = s3.s3_client.list_objects_v2(Bucket=s3.bucket_name, Prefix=f"{case_id}/Output/")
@@ -1267,59 +1267,53 @@ def main() -> None:
                         for obj in response.get("Contents", [])
                         if "redacted" in obj["Key"].lower() and obj["Key"].endswith(".pdf")
                     ]
-        
+
                     if redacted_outputs:
                         st.info(f"📄 Found {len(redacted_outputs)} redacted report(s) directly from S3.")
                 except Exception as e:
                     st.warning(f"⚠️ Could not fetch redacted reports from S3: {e}")
 
         if not redacted_outputs:
-            st.info("No redacted reports found.")
-        else:
-            # Extract readable labels
-            redacted_labels = [
-                o.get("label") or (o.get("ai_url") or "").split("/")[-1]
-                for o in redacted_outputs
-            ]
-            # Sort by latest timestamp (12-digit)
-            import re
-            def _ts_key(item):
-                src = item.get("ai_url") or item.get("doctor_url") or ""
-                m = re.search(r"(\d{12})", src)
-                return m.group(1) if m else "0"
-            redacted_outputs.sort(key=_ts_key, reverse=True)
-    
-            # Maintain selection
-            red_key = f"history_redacted_label_{case_id}"
-            if red_key not in st.session_state:
-                st.session_state[red_key] = redacted_labels[0] if redacted_labels else None
-    
-            selected_redacted = st.selectbox(
-                "Select Redacted Report",
-                options=redacted_labels,
-                index=0,
-                key=f"redacted_dropdown_{case_id}",
-            )
-    
-            sel_red = next(
-                (o for o in redacted_outputs if (o.get("label") or "").strip() == selected_redacted),
-                None,
-            )
-            redacted_pdf_url = (
-                sel_red.get("ai_url")
-                if sel_red and sel_red.get("ai_url") and "redacted" in sel_red.get("ai_url", "").lower()
-                else sel_red.get("doctor_url")
-            )
-    
-            if redacted_pdf_url:
-                proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_pdf_url, safe="")
-                _render_pdf_base64(proxy_url, iframe_h)
-                st.markdown(
-                    f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.info("Not available.")
+            from app.s3_utils import get_s3_manager
+            s3 = get_s3_manager()
+            case_id = case_id or st.session_state.get("selected_case_id") or st.session_state.get("current_case_id")
+        
+            if case_id:
+                try:
+                    response = s3.s3_client.list_objects_v2(Bucket=s3.bucket_name, Prefix=f"{case_id}/Output/")
+                    files = response.get("Contents", [])
+                    
+                    # Prioritize files that have "redacted" in them
+                    redacted_outputs = [
+                        {
+                            "label": obj["Key"].split("/")[-1],
+                            "ai_url": f"https://{s3.bucket_name}.s3.amazonaws.com/{obj['Key']}",
+                            "ai_key": obj["Key"]
+                        }
+                        for obj in files
+                        if "redacted" in obj["Key"].lower() and obj["Key"].lower().endswith(".pdf")
+                    ]
+        
+                    # 🔁 Fallback: show CompleteAI reports if no redacted ones
+                    if not redacted_outputs:
+                        redacted_outputs = [
+                            {
+                                "label": obj["Key"].split("/")[-1],
+                                "ai_url": f"https://{s3.bucket_name}.s3.amazonaws.com/{obj['Key']}",
+                                "ai_key": obj["Key"]
+                            }
+                            for obj in files
+                            if "completeaigeneratedreport" in obj["Key"].lower() and obj["Key"].lower().endswith(".pdf")
+                        ]
+        
+                    if redacted_outputs:
+                        st.success(f"📄 Found {len(redacted_outputs)} report(s) directly from S3.")
+                        for r in redacted_outputs:
+                            print("🟥 Redacted (S3):", r["label"])
+                    else:
+                        st.warning("⚠️ No matching PDF reports found in S3 for this case.")
+                except Exception as e:
+                    st.warning(f"⚠️ Could not fetch reports from S3: {e}")
 
     # Sync viewer with lock/unlock
     st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
