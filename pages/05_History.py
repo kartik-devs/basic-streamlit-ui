@@ -1249,7 +1249,30 @@ def main() -> None:
                 if (o.get("ai_url") or "").lower().endswith("_redacted.pdf") or
                    (o.get("doctor_url") or "").lower().endswith("_redacted.pdf")
             ]
-    
+        # 🧩 Fallback: Fetch redacted files directly from S3 if not already found
+        if not redacted_outputs:
+            from app.s3_utils import get_s3_manager
+            s3 = get_s3_manager()
+            case_id = st.session_state.get("selected_case_id") or st.session_state.get("current_case_id")
+        
+            if case_id:
+                try:
+                    response = s3.s3_client.list_objects_v2(Bucket=s3.bucket_name, Prefix=f"{case_id}/Output/")
+                    redacted_outputs = [
+                        {
+                            "label": obj["Key"].split("/")[-1],
+                            "ai_url": f"https://{s3.bucket_name}.s3.amazonaws.com/{obj['Key']}",
+                            "ai_key": obj["Key"]
+                        }
+                        for obj in response.get("Contents", [])
+                        if "redacted" in obj["Key"].lower() and obj["Key"].endswith(".pdf")
+                    ]
+        
+                    if redacted_outputs:
+                        st.info(f"📄 Found {len(redacted_outputs)} redacted report(s) directly from S3.")
+                except Exception as e:
+                    st.warning(f"⚠️ Could not fetch redacted reports from S3: {e}")
+
         if not redacted_outputs:
             st.info("No redacted reports found.")
         else:
