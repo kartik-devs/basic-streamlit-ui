@@ -10,7 +10,10 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
- 
+
+CLIENT_ID = "1000.87ZHF418DO1F03KJH0KZ83XSKWAHMR"
+CLIENT_SECRET = "b81b57d48981f79e3e69fe73c8fea3f6cb99c5ed20"
+REDIRECT_URI = "https://basic-streamlit-ui.onrender.com/oauth2callback"
 # Load environment from .env if present
 try:
     from dotenv import load_dotenv
@@ -197,7 +200,38 @@ def save_docx_text(request: Dict[str, Any]):
 def version() -> Dict[str, Any]:
     return {"version": app.version if hasattr(app, "version") else "unknown"}
 
+@app.get("/oauth2callback")
+def oauth2callback(request: Request, code: str = None):
+    """Handle Zoho OAuth redirect and exchange code for tokens."""
+    if not code:
+        return {"error": "Missing authorization code"}
 
+    token_url = "https://accounts.zoho.com/oauth/v2/token"
+    data = {
+        "grant_type": "authorization_code",
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "code": code,
+    }
+
+    response = requests.post(token_url, data=data)
+
+    if response.status_code == 200:
+        tokens = response.json()
+        # Optional: store refresh_token securely
+        refresh_token = tokens.get("refresh_token")
+        with open("zoho_token.json", "w") as f:
+            f.write(response.text)
+        return {
+            "message": "✅ Authorization successful!",
+            "tokens": tokens
+        }
+    else:
+        return {
+            "error": "Token exchange failed",
+            "details": response.text
+        }
 
 @app.post("/n8n/start")
 def api_n8n_start(case_id: str, username: Optional[str] = None, batching: Optional[int] = None):
@@ -522,37 +556,56 @@ def proxy_pdf_options():
         }
     )
 
+
 @app.get("/proxy/pdf")
 def proxy_pdf(url: str):
+    """Proxy and stream PDF from S3 or public URL."""
     try:
-        import requests as _req
-        from urllib.parse import unquote
-        target = unquote(url)
-        r = _req.get(target, stream=True, timeout=20)
+        parsed = urlparse(unquote(url))
+        # --- Case 1: S3 URL ---
+        if "amazonaws.com" in parsed.netloc:
+            bucket = parsed.netloc.split(".")[0]
+            key = parsed.path.lstrip("/")
+            try:
+                s3 = boto3.client(
+                    "s3",
+                    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                    region_name=os.getenv("AWS_REGION", "us-east-1"),
+                )
+                pdf_bytes = io.BytesIO()
+                s3.download_fileobj(bucket, key, pdf_bytes)
+                pdf_bytes.seek(0)
+                headers = {
+                    "Content-Type": "application/pdf",
+                    "Access-Control-Allow-Origin": "*",
+                    "X-Frame-Options": "SAMEORIGIN",
+                    "Cache-Control": "private, max-age=60",
+                }
+                return StreamingResponse(pdf_bytes, headers=headers, media_type="application/pdf")
+            except Exception as e:
+                print(f"⚠️ S3 fetch failed: {e}")
+
+        # --- Case 2: Fallback to direct HTTP GET ---
+        r = requests.get(url, stream=True, timeout=20)
         if not r.ok:
             raise HTTPException(status_code=r.status_code, detail="Upstream error")
+
         def _iter():
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     yield chunk
+
         headers = {
             "Content-Type": "application/pdf",
-            # Allow embedding and cross-origin fetch for pdf.js
-            "X-Accel-Buffering": "no",
-            "Cache-Control": "private, max-age=60",
-            "X-Frame-Options": "SAMEORIGIN",
-            "Content-Security-Policy": "frame-ancestors 'self' *",
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Expose-Headers": "*",
-            "Cross-Origin-Resource-Policy": "cross-origin",
-            "Accept-Ranges": "bytes",
+            "X-Frame-Options": "SAMEORIGIN",
+            "Cache-Control": "private, max-age=60",
         }
         return StreamingResponse(_iter(), headers=headers, media_type="application/pdf")
-    except HTTPException:
-        raise
-    except Exception:
+
+    except Exception as e:
+        print(f"❌ Proxy PDF error: {e}")
         raise HTTPException(status_code=502, detail="Failed to fetch PDF")
 
 # --- Stream S3 object by key (avoids presign expiry) ---
