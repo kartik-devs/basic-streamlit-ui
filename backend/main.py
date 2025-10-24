@@ -556,56 +556,37 @@ def proxy_pdf_options():
         }
     )
 
-
 @app.get("/proxy/pdf")
 def proxy_pdf(url: str):
-    """Proxy and stream PDF from S3 or public URL."""
     try:
-        parsed = urlparse(unquote(url))
-        # --- Case 1: S3 URL ---
-        if "amazonaws.com" in parsed.netloc:
-            bucket = parsed.netloc.split(".")[0]
-            key = parsed.path.lstrip("/")
-            try:
-                s3 = boto3.client(
-                    "s3",
-                    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-                    region_name=os.getenv("AWS_REGION", "us-east-1"),
-                )
-                pdf_bytes = io.BytesIO()
-                s3.download_fileobj(bucket, key, pdf_bytes)
-                pdf_bytes.seek(0)
-                headers = {
-                    "Content-Type": "application/pdf",
-                    "Access-Control-Allow-Origin": "*",
-                    "X-Frame-Options": "SAMEORIGIN",
-                    "Cache-Control": "private, max-age=60",
-                }
-                return StreamingResponse(pdf_bytes, headers=headers, media_type="application/pdf")
-            except Exception as e:
-                print(f"⚠️ S3 fetch failed: {e}")
-
-        # --- Case 2: Fallback to direct HTTP GET ---
-        r = requests.get(url, stream=True, timeout=20)
+        import requests as _req
+        from urllib.parse import unquote
+        target = unquote(url)
+        r = _req.get(target, stream=True, timeout=20)
         if not r.ok:
             raise HTTPException(status_code=r.status_code, detail="Upstream error")
-
         def _iter():
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     yield chunk
-
         headers = {
             "Content-Type": "application/pdf",
-            "Access-Control-Allow-Origin": "*",
-            "X-Frame-Options": "SAMEORIGIN",
+            # Allow embedding and cross-origin fetch for pdf.js
+            "X-Accel-Buffering": "no",
             "Cache-Control": "private, max-age=60",
+            "X-Frame-Options": "SAMEORIGIN",
+            "Content-Security-Policy": "frame-ancestors 'self' *",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Expose-Headers": "*",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+            "Accept-Ranges": "bytes",
         }
         return StreamingResponse(_iter(), headers=headers, media_type="application/pdf")
-
-    except Exception as e:
-        print(f"❌ Proxy PDF error: {e}")
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(status_code=502, detail="Failed to fetch PDF")
 
 # --- Stream S3 object by key (avoids presign expiry) ---
