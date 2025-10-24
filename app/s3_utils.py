@@ -87,9 +87,10 @@ class S3Manager:
             
             files = response.get('Contents', [])
             case_files = {
-                'ground_truth': None,
-                'ai_generated_report': None,
-                'doctor_reports': []
+                "ground_truth": None,
+                "ai_generated_report": None,
+                "doctor_reports": [],
+                "redacted_reports": []
             }
             
 
@@ -108,7 +109,15 @@ class S3Manager:
                 # Doctor/LLM Reports (previous versions for comparison)
                 elif 'LLM_As_Doctor' in key and key.endswith('.pdf'):
                     case_files['doctor_reports'].append(key)
-            
+
+            redacted_reports = []
+            for file_obj in files:
+                key = file_obj["Key"]
+                if "redacted" in key.lower() and key.endswith(".pdf"):
+                    redacted_reports.append(key)
+
+            if redacted_reports:
+                case_files["redacted_reports"] = redacted_reports
             return case_files
             
         except ClientError as e:
