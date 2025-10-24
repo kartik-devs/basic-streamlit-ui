@@ -1208,7 +1208,13 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['doctor_url'], safe="")
+            proxy_url = sel["ai_url"]
+            try:
+                _render_pdf_base64(proxy_url, iframe_h)
+            except Exception:
+                st.warning("⚠️ Could not render via direct S3 URL, retrying with proxy…")
+                proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel["ai_url"], safe="")
+                _render_pdf_base64(proxy_url, iframe_h)
             _render_pdf_base64(proxy_url, iframe_h)
             st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
             doc_effective_pdf_url = sel_ai["doctor_url"]
@@ -1226,7 +1232,7 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-    
+
         redacted_outputs = [
             o for o in outputs
             if any(
@@ -1241,18 +1247,18 @@ def main() -> None:
                 if field
             )
         ]
-    
+
         # Fallback: fetch from S3 directly if nothing local
         if not redacted_outputs:
             from app.s3_utils import get_s3_manager
             s3 = get_s3_manager()
             case_id = case_id or st.session_state.get("selected_case_id") or st.session_state.get("current_case_id")
-    
+
             if case_id:
                 try:
                     response = s3.s3_client.list_objects_v2(Bucket=s3.bucket_name, Prefix=f"{case_id}/Output/")
                     files = response.get("Contents", [])
-    
+
                     # Prefer redacted PDFs
                     redacted_outputs = [
                         {
@@ -1263,7 +1269,7 @@ def main() -> None:
                         for obj in files
                         if "redacted" in obj["Key"].lower() and obj["Key"].lower().endswith(".pdf")
                     ]
-    
+
                     # Fallback to CompleteAI PDFs if no redacted found
                     if not redacted_outputs:
                         redacted_outputs = [
@@ -1276,7 +1282,7 @@ def main() -> None:
                             if "completeaigeneratedreport" in obj["Key"].lower()
                             and obj["Key"].lower().endswith(".pdf")
                         ]
-    
+
                     if redacted_outputs:
                         st.success(f"📄 Found {len(redacted_outputs)} report(s) from S3.")
                         for r in redacted_outputs:
@@ -1285,7 +1291,7 @@ def main() -> None:
                         st.warning("⚠️ No PDF reports found in S3 for this case.")
                 except Exception as e:
                     st.warning(f"⚠️ Could not fetch redacted reports: {e}")
-    
+
         # 🧠 If found, render latest or allow dropdown selection
         if redacted_outputs:
             # Sort by timestamp pattern (descending)
@@ -1294,11 +1300,11 @@ def main() -> None:
                 key=lambda x: re.search(r"(\d{12})", x["label"]).group(1) if re.search(r"(\d{12})", x["label"]) else "",
                 reverse=True,
             )
-    
+
             labels = [r["label"] for r in redacted_outputs]
             selected_label = st.selectbox("Select Redacted PDF", labels, key=f"redacted_sel_{case_id}", index=0)
             sel = next((r for r in redacted_outputs if r["label"] == selected_label), None)
-    
+
             if sel:
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel["ai_url"], safe="")
                 _render_pdf_base64(proxy_url, iframe_h)
@@ -1308,7 +1314,7 @@ def main() -> None:
                 )
         else:
             st.info("No redacted reports available for this case.")
-    
+
     # Sync viewer with lock/unlock
     st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
     enable_sync = st.checkbox("Enable synchronized scrolling (Ground Truth ↔ AI Generated)", value=False, key="history_sync")
