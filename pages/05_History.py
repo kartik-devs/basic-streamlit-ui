@@ -1229,8 +1229,17 @@ def main() -> None:
         # Fetch all redacted reports from same output folder as AI reports
         redacted_outputs = [
             o for o in outputs
-            if o.get("ai_url") and "redacted" in o.get("ai_url", "").lower() or
-               o.get("doctor_url") and "redacted" in o.get("doctor_url", "").lower()
+            if any(
+                "redacted" in str(field).lower()
+                for field in [
+                    o.get("ai_url"),
+                    o.get("doctor_url"),
+                    o.get("ai_key"),
+                    o.get("doctor_key"),
+                    o.get("label")
+                ]
+                if field
+            )
         ]
     
         # Fallback: try to find any file ending with _redacted.pdf
