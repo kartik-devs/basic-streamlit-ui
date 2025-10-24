@@ -1225,7 +1225,7 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-    
+        st.write("🔎 Debug Outputs Preview:", outputs[:3])
         # Fetch all redacted reports from same output folder as AI reports
         redacted_outputs = [
             o for o in outputs
