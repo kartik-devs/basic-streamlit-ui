@@ -978,13 +978,6 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
                 "sort_last_modified": sort_lm.isoformat() if sort_lm else None,
             })
 
-    # 🟡 ADD REDACTED REPORTS
-                "timestamp": timestamp,
-                "sort_last_modified": lm.isoformat() if lm else None,
-            })
-
-🔧 Replace it entirely with this improved version:
-
     # 🟡 ADD REDACTED REPORTS (flexible matching across Output/ and Redacted/ folders)
     redacted_prefixes = [f"{case_id}/Output/", f"{case_id}/Redacted/"]
 
@@ -1016,6 +1009,7 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
                     "timestamp": timestamp,
                     "sort_last_modified": lm.isoformat() if lm else None,
                 })
+
 
     # Sort newest first
     from datetime import datetime as _dt
