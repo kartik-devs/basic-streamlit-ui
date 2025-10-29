@@ -1222,6 +1222,7 @@ def main() -> None:
             st.info("Not available")
     # 🔹 Redacted Report Viewer
     # 🔹 Redacted Report Viewer
+     # 🔹 Redacted Report Viewer (Clean, fixed)
     with col4:
         st.markdown(
             """
@@ -1233,45 +1234,58 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-        # Use the same outputs list (from backend)
-        redacted_pdfs = [
+        # ✅ Collect redacted files from backend response
+        redacted_items = [
             o for o in outputs
-            if o.get("ai_url") and "RedactedReport" in (o.get("ai_url") or "").split("/")[-1]
-               and o.get("ai_url").lower().endswith(".pdf")
+            if o.get("redacted_url")  # backend now provides this
+               or ("redactedreport" in (o.get("label") or "").lower())
+               or ("redactedreport" in (o.get("ai_key") or "").lower())
         ]
 
-        # If not found, try fallback detection by label or key
-        if not redacted_pdfs:
-            redacted_pdfs = [
-                o for o in outputs
-                if "redacted" in (o.get("label") or "").lower()
-                or "redacted" in (o.get("ai_key") or "").lower()
-            ]
-
-        if redacted_pdfs:
-            # Sort by timestamp descending
+        # ✅ Only show section if there’s at least one redacted file
+        if redacted_items:
             import re
-            redacted_pdfs.sort(
-                key=lambda x: re.search(r"(\d{12})", x.get("label") or "").group(1)
-                if re.search(r"(\d{12})", x.get("label") or "")
-                else "",
-                reverse=True,
+
+            # Sort by timestamp descending if possible
+            def _ts_key(it: dict) -> str:
+                try:
+                    m = re.search(r"(\d{12})", it.get("label") or it.get("redacted_key") or "")
+                    return m.group(1) if m else ""
+                except Exception:
+                    return ""
+            redacted_items.sort(key=_ts_key, reverse=True)
+
+            # Create dropdown labels
+            redacted_labels = [r.get("label") or r.get("redacted_key") for r in redacted_items]
+
+            # Dropdown for version selection
+            sel_label = st.selectbox(
+                "Select redacted report",
+                redacted_labels,
+                key=f"redacted_sel_{case_id}",
+                index=0
             )
 
-            labels = [r.get("label") or r.get("ai_key") for r in redacted_pdfs]
-            selected_label = st.selectbox("Select Redacted Report", labels, key=f"redacted_sel_{case_id}", index=0)
-            sel = next((r for r in redacted_pdfs if (r.get("label") or r.get("ai_key")) == selected_label), None)
+            chosen = next(
+                (r for r in redacted_items if (r.get("label") or r.get("redacted_key")) == sel_label),
+                None
+            )
 
-            if sel and sel.get("ai_url"):
-                proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel["ai_url"], safe="")
-                _render_pdf_base64(proxy_url, iframe_h)
-                st.markdown(
-                    f"<div style='text-align:center;margin-top:0.5rem;'><a href='{proxy_url}' target='_blank' style='color:#facc15;text-decoration:none;font-size:0.9rem;'>📥 Download PDF</a></div>",
-                    unsafe_allow_html=True,
-                )
+            if chosen:
+                pdf_url = chosen.get("redacted_url") or chosen.get("ai_url")
+                if pdf_url:
+                    proxy_url = f"{backend}/proxy/pdf?url=" + quote(pdf_url, safe="")
+                    _render_pdf_base64(proxy_url, iframe_h)
+                    st.markdown(
+                        f"<div style='text-align:center;margin-top:0.5rem;'><a href='{proxy_url}' target='_blank' style='color:#facc15;text-decoration:none;font-size:0.9rem;'>📥 Download PDF</a></div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.info("Selected redacted report missing PDF URL.")
             else:
-                st.info("Redacted report not available.")
+                st.info("No matching redacted report found for this selection.")
         else:
+            # ✅ Clean fallback when none exist
             st.info("No redacted reports available for this case.")
 
     # Sync viewer with lock/unlock
