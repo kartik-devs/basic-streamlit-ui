@@ -175,20 +175,17 @@ def _get_all_cases(backend: str) -> list[str]:
     return []
 
 
-@st.cache_data(show_spinner=False, ttl=300)  # Cache for 5 minutes
 def _get_case_outputs(backend: str, case_id: str) -> list[dict]:
-    """Fetch outputs for a specific case with caching."""
+    """Fetch outputs for a specific case (live, not cached)."""
     try:
         import requests
         r = requests.get(f"{backend}/s3/{case_id}/outputs", timeout=20)
         if r.ok:
             data = r.json() or {}
-            items = data.get("items", []) or []
-            return items
-        else:
-            return []
-    except Exception:
-        return []
+            return data.get("items", []) or []
+    except Exception as e:
+        print(f"[WARN] Failed to fetch outputs for {case_id}: {e}")
+    return []
 
 
 @st.cache_data(show_spinner=False, ttl=120)  # Cache for 2 minutes
@@ -1236,22 +1233,23 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-    
-        # ✅ Rebuild redacted_items to ensure we capture all
+
+        # 🔍 Recollect outputs live to ensure freshness
+        outputs_live = _get_case_outputs(backend, case_id)
+
+        # ✅ Filter all variants that include "redacted"
         redacted_items = [
-            o for o in outputs
-            if any("redacted" in str(val).lower() for val in o.values())
+            o for o in outputs_live
+            if any("redacted" in str(v).lower() for v in o.values())
         ]
-    
-        # Sort by latest timestamp or label pattern
-        import re
-        def _extract_ts(o):
-            m = re.search(r"(\d{12})", str(o.get("label") or ""))
-            return m.group(1) if m else ""
-        redacted_items.sort(key=_extract_ts, reverse=True)
-    
+
         if redacted_items:
-            # Dropdown to pick which version to preview
+            import re
+            redacted_items.sort(
+                key=lambda o: re.search(r"(\d{12})", str(o.get("label") or "")) or "",
+                reverse=True
+            )
+
             labels = [o.get("label") or o.get("redacted_key") or "Unnamed Redacted Report" for o in redacted_items]
             selected_label = st.selectbox(
                 "Select Redacted Report",
@@ -1259,10 +1257,10 @@ def main() -> None:
                 index=0,
                 key=f"redacted_sel_{case_id}",
             )
-            selected = next((o for o in redacted_items if o.get("label") == selected_label), redacted_items[0])
-    
-            # Pick URL
-            redacted_url = selected.get("redacted_url") or selected.get("ai_url") or selected.get("doctor_url")
+
+            sel = next((o for o in redacted_items if o.get("label") == selected_label), redacted_items[0])
+            redacted_url = sel.get("redacted_url") or sel.get("ai_url") or sel.get("doctor_url")
+
             if redacted_url:
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_url, safe="")
                 try:
@@ -1276,9 +1274,9 @@ def main() -> None:
                     unsafe_allow_html=True,
                 )
             else:
-                st.warning("No valid redacted URL found for this case.")
+                st.warning("No valid URL found for redacted report.")
         else:
-            st.info("No redacted reports available for this case.")
+            st.info("No redacted reports available for this case."))
 
     # Sync viewer with lock/unlock
     st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
