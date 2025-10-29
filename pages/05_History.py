@@ -1233,20 +1233,26 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-        redacted_outputs = [
-            o for o in outputs
-            if any(
-                "redacted" in str(field).lower()
-                for field in [
-                    o.get("ai_url"),
-                    o.get("doctor_url"),
-                    o.get("ai_key"),
-                    o.get("doctor_key"),
-                    o.get("label"),
-                ]
-                if field
-            )
-        ]
+        # Generate presigned URLs for redacted reports
+        from datetime import datetime, timedelta
+        
+        redacted_outputs = []
+        for obj in files:
+            key = obj["Key"]
+            if "redacted" in key.lower() and key.lower().endswith(".pdf"):
+                try:
+                    signed_url = s3.s3_client.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": s3.bucket_name, "Key": key},
+                        ExpiresIn=3600,  # valid for 1 hour
+                    )
+                    redacted_outputs.append({
+                        "label": key.split("/")[-1],
+                        "ai_url": signed_url,
+                        "ai_key": key,
+                    })
+                except Exception as e:
+                    print(f"⚠️ Failed to sign {key}: {e}")
 
         # Fallback: fetch from S3 directly if nothing local
         if not redacted_outputs:
