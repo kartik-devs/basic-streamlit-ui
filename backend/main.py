@@ -877,6 +877,7 @@ def api_s3_validate_case(case_id: str) -> Dict[str, Any]:
     Validate if a case ID exists in S3 database.
     """
     try:
+        
         # Check if case ID exists in S3
         cases = s3_list_cases()
         exists = case_id in cases
@@ -978,41 +979,54 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
                 "sort_last_modified": sort_lm.isoformat() if sort_lm else None,
             })
 
-    # 🟡 ADD REDACTED REPORTS (flexible matching across Output/ and Redacted/ folders)
-    redacted_prefixes = [f"{case_id}/Output/", f"{case_id}/Redacted/"]
+    # 🟣 ADD REDACTED REPORTS (robust detection across Output/ and Redacted/ folders)
+    redacted_prefixes = [
+        f"{case_id}/Output/",
+        f"{case_id}/Redacted/",
+        f"{case_id}/output/",
+        f"{case_id}/redacted/",
+    ]
+
+    redacted_seen = set()
 
     for prefix in redacted_prefixes:
-        paginator = client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
-            for obj in page.get("Contents", []):
-                key = obj.get("Key", "")
-                if not key or not key.lower().endswith(".pdf"):
-                    continue
-                name = key.split("/")[-1]
-                lower = name.lower()
+        try:
+            paginator = client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
+                for obj in page.get("Contents", []):
+                    key = obj.get("Key", "")
+                    if not key or not key.lower().endswith(".pdf"):
+                        continue
 
-                # Match any file containing "redacted"
-                if "redacted" not in lower:
-                    continue
+                    filename = key.split("/")[-1]
+                    lower = filename.lower()
 
-                meta = {
-                    "last_modified": obj.get("LastModified"),
-                    "size": obj.get("Size", 0),
-                }
-                lm = meta["last_modified"]
-                timestamp = lm.strftime("%Y-%m-%d %H:%M UTC") if lm else None
+                    # ✅ Match any variant that includes “redacted”
+                    if not any(k in lower for k in ["redacted", "redactreport", "redactedreport"]):
+                        continue
 
-                items.append({
-                    "label": name,
-                    "redacted_url": s3_presign(key),
-                    "redacted_key": key,
-                    "timestamp": timestamp,
-                    "sort_last_modified": lm.isoformat() if lm else None,
-                })
+                    # Avoid duplicates (S3 can return same keys across prefix loops)
+                    if key in redacted_seen:
+                        continue
+                    redacted_seen.add(key)
 
+                    lm = obj.get("LastModified")
+                    timestamp = lm.strftime("%Y-%m-%d %H:%M UTC") if lm else None
+
+                    items.append({
+                        "label": filename,
+                        "redacted_url": s3_presign(key),
+                        "redacted_key": key,
+                        "timestamp": timestamp,
+                        "sort_last_modified": lm.isoformat() if lm else None,
+                    })
+        except Exception as e:
+            print(f"[WARN] Failed scanning {prefix} for redacted reports: {e}")
+            continue
 
     # Sort newest first
     from datetime import datetime as _dt
+
     def _key_sort(it: dict[str, Any]):
         iso = it.get("sort_last_modified")
         if isinstance(iso, str):
@@ -1024,6 +1038,7 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
 
     items = sorted(items, key=_key_sort, reverse=True)
     return {"case_id": case_id, "items": items}
+
 
 
 # --- Metrics lookup from S3 JSON ({case_id}/Output/{version}.json) ---
