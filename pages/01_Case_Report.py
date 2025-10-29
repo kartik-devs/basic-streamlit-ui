@@ -151,6 +151,20 @@ def _validate_case_id_exists(case_id: str) -> dict:
 
 def main() -> None:
     st.set_page_config(page_title="Case Report", page_icon="📄", layout="wide")
+        # --- Safe session initialization ---
+    defaults = {
+        "generation_in_progress": False,
+        "generation_complete": False,
+        "generation_progress": 0,
+        "generation_step": 0,
+        "current_case_id": None,
+        "generation_start": None,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+
     theme_provider()
     inject_base_styles()
     top_nav()
