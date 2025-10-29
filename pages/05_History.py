@@ -1208,7 +1208,7 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            proxy_url = sel["ai_url"]
+            proxy_url = sel_ai["ai_url"]
             try:
                 _render_pdf_base64(proxy_url, iframe_h)
             except Exception:
@@ -1232,14 +1232,14 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-    
+
         # Use the same outputs list (from backend)
         redacted_pdfs = [
             o for o in outputs
             if o.get("ai_url") and "RedactedReport" in (o.get("ai_url") or "").split("/")[-1]
                and o.get("ai_url").lower().endswith(".pdf")
         ]
-    
+
         # If not found, try fallback detection by label or key
         if not redacted_pdfs:
             redacted_pdfs = [
@@ -1247,7 +1247,7 @@ def main() -> None:
                 if "redacted" in (o.get("label") or "").lower()
                 or "redacted" in (o.get("ai_key") or "").lower()
             ]
-    
+
         if redacted_pdfs:
             # Sort by timestamp descending
             import re
@@ -1257,11 +1257,11 @@ def main() -> None:
                 else "",
                 reverse=True,
             )
-    
+
             labels = [r.get("label") or r.get("ai_key") for r in redacted_pdfs]
             selected_label = st.selectbox("Select Redacted Report", labels, key=f"redacted_sel_{case_id}", index=0)
             sel = next((r for r in redacted_pdfs if (r.get("label") or r.get("ai_key")) == selected_label), None)
-    
+
             if sel and sel.get("ai_url"):
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel["ai_url"], safe="")
                 _render_pdf_base64(proxy_url, iframe_h)
