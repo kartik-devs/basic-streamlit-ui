@@ -1235,59 +1235,65 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-
-        # ✅ Collect redacted files from backend response
+    
+        # ✅ Collect all redacted reports directly from `redacted_url`
         redacted_items = [
             o for o in outputs
-            if o.get("redacted_url")  # backend now provides this
-               or ("redactedreport" in (o.get("label") or "").lower())
-               or ("redactedreport" in (o.get("ai_key") or "").lower())
+            if o.get("redacted_url") and o["redacted_url"].lower().endswith(".pdf")
         ]
-
-        # ✅ Only show section if there’s at least one redacted file
+    
+        # If nothing found, fallback to label search for safety
+        if not redacted_items:
+            redacted_items = [
+                o for o in outputs
+                if "redacted" in (o.get("label") or "").lower()
+                or "redacted" in (o.get("ai_key") or "").lower()
+                or "redacted" in (o.get("ai_url") or "").lower()
+            ]
+    
+        # ✅ Show dropdown and viewer
         if redacted_items:
             import re
-
-            # Sort by timestamp descending if possible
-            def _ts_key(it: dict) -> str:
-                try:
-                    m = re.search(r"(\d{12})", it.get("label") or it.get("redacted_key") or "")
-                    return m.group(1) if m else ""
-                except Exception:
-                    return ""
-            redacted_items.sort(key=_ts_key, reverse=True)
-
-            # Create dropdown labels
-            redacted_labels = [r.get("label") or r.get("redacted_key") for r in redacted_items]
-
-            # Dropdown for version selection
-            sel_label = st.selectbox(
-                "Select redacted report",
-                redacted_labels,
+    
+            # Sort by timestamp (latest first)
+            def _extract_ts(o):
+                m = re.search(r"(\d{12})", o.get("label") or "")
+                return m.group(1) if m else ""
+            redacted_items.sort(key=_extract_ts, reverse=True)
+    
+            # Prepare dropdown labels
+            labels = [
+                o.get("label")
+                or o.get("redacted_key", "").split("/")[-1]
+                for o in redacted_items
+            ]
+    
+            selected_label = st.selectbox(
+                "Select Redacted Report",
+                options=labels,
+                index=0,
                 key=f"redacted_sel_{case_id}",
-                index=0
             )
-
-            chosen = next(
-                (r for r in redacted_items if (r.get("label") or r.get("redacted_key")) == sel_label),
-                None
-            )
-
-            if chosen:
-                pdf_url = chosen.get("redacted_url") or chosen.get("ai_url")
-                if pdf_url:
-                    proxy_url = f"{backend}/proxy/pdf?url=" + quote(pdf_url, safe="")
+    
+            sel = next((o for o in redacted_items if o.get("label") == selected_label), redacted_items[0])
+    
+            # ✅ Always prefer redacted_url
+            redacted_url = sel.get("redacted_url") or sel.get("ai_url")
+            if redacted_url:
+                proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_url, safe="")
+                try:
                     _render_pdf_base64(proxy_url, iframe_h)
-                    st.markdown(
-                        f"<div style='text-align:center;margin-top:0.5rem;'><a href='{proxy_url}' target='_blank' style='color:#facc15;text-decoration:none;font-size:0.9rem;'>📥 Download PDF</a></div>",
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.info("Selected redacted report missing PDF URL.")
+                except Exception:
+                    st.warning("⚠️ Could not render redacted PDF via proxy.")
+                st.markdown(
+                    f"<div style='text-align:center;margin-top:0.5rem;'>"
+                    f"<a href='{proxy_url}' target='_blank' style='color:#facc15;text-decoration:none;font-size:0.9rem;'>📥 Download PDF</a>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
             else:
-                st.info("No matching redacted report found for this selection.")
+                st.warning("No valid URL for selected redacted report.")
         else:
-            # ✅ Clean fallback when none exist
             st.info("No redacted reports available for this case.")
 
     # Sync viewer with lock/unlock
