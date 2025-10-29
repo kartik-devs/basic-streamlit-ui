@@ -979,19 +979,43 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
             })
 
     # 🟡 ADD REDACTED REPORTS
-    for name, key in all_files.items():
-        lower = name.lower()
-        if "redactedreport" in lower:
-            meta = file_metadata.get(name, {})
-            lm = meta.get("last_modified")
-            timestamp = lm.strftime("%Y-%m-%d %H:%M UTC") if lm else None
-            items.append({
-                "label": name,
-                "redacted_url": s3_presign(key),
-                "redacted_key": key,
                 "timestamp": timestamp,
                 "sort_last_modified": lm.isoformat() if lm else None,
             })
+
+🔧 Replace it entirely with this improved version:
+
+    # 🟡 ADD REDACTED REPORTS (flexible matching across Output/ and Redacted/ folders)
+    redacted_prefixes = [f"{case_id}/Output/", f"{case_id}/Redacted/"]
+
+    for prefix in redacted_prefixes:
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj.get("Key", "")
+                if not key or not key.lower().endswith(".pdf"):
+                    continue
+                name = key.split("/")[-1]
+                lower = name.lower()
+
+                # Match any file containing "redacted"
+                if "redacted" not in lower:
+                    continue
+
+                meta = {
+                    "last_modified": obj.get("LastModified"),
+                    "size": obj.get("Size", 0),
+                }
+                lm = meta["last_modified"]
+                timestamp = lm.strftime("%Y-%m-%d %H:%M UTC") if lm else None
+
+                items.append({
+                    "label": name,
+                    "redacted_url": s3_presign(key),
+                    "redacted_key": key,
+                    "timestamp": timestamp,
+                    "sort_last_modified": lm.isoformat() if lm else None,
+                })
 
     # Sort newest first
     from datetime import datetime as _dt
