@@ -1450,23 +1450,23 @@ def api_s3_assets(case_id: str, report_id: str) -> Dict[str, Any]:
         return response
 
     # Alias for latest assets to match frontend contract
-    @app.get("/s3/{case_id}/latest/assets")
-    def api_s3_latest_assets(case_id: str) -> Dict[str, Any]:
-        return api_s3_assets(case_id, "latest")
-
-    @app.get("/s3/{case_id}/{report_id}/comparison/{version}")
-    def api_s3_comparison(case_id: str, report_id: str, version: str) -> Dict[str, Any]:
-        base = f"reports/{case_id}/{report_id}/comparison/{version}"
-        client = s3_client()
-        # Prefer html then pdf
-        for ext in ("html", "pdf"):
-            key = f"{base}.{ext}"
-            try:
-                client.head_object(Bucket=S3_BUCKET, Key=key)
-                return {"url": s3_presign(key), "format": ext}
-            except Exception:
-                continue
-        raise HTTPException(status_code=404, detail="Comparison version not found")
+@app.get("/s3/{case_id}/latest/assets")
+def api_s3_latest_assets(case_id: str) -> Dict[str, Any]:
+    return api_s3_assets(case_id, "latest")
+    
+@app.get("/s3/{case_id}/{report_id}/comparison/{version}")
+def api_s3_comparison(case_id: str, report_id: str, version: str) -> Dict[str, Any]:
+    base = f"reports/{case_id}/{report_id}/comparison/{version}"
+    client = s3_client()
+    # Prefer html then pdf
+    for ext in ("html", "pdf"):
+        key = f"{base}.{ext}"
+        try:
+            client.head_object(Bucket=S3_BUCKET, Key=key)
+            return {"url": s3_presign(key), "format": ext}
+        except Exception:
+            continue
+    raise HTTPException(status_code=404, detail="Comparison version not found")
 
 
     DB_PATH = Path(os.getenv("REPORTS_DB", "reports.db")).resolve()
