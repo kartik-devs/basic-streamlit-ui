@@ -1276,7 +1276,7 @@ def main() -> None:
             else:
                 st.warning("No valid URL found for redacted report.")
         else:
-            st.info("No redacted reports available for this case."))
+            st.info("No redacted reports available for this case.")
 
     # Sync viewer with lock/unlock
     st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
