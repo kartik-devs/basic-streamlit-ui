@@ -1208,16 +1208,18 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            proxy_url = sel_ai["ai_url"]
+            # ✅ Always use the doctor report URL (not AI URL)
+            pdf_url = sel_ai["doctor_url"]
+            proxy_url = f"{backend}/proxy/pdf?url=" + quote(pdf_url, safe="")
             try:
                 _render_pdf_base64(proxy_url, iframe_h)
             except Exception:
-                st.warning("⚠️ Could not render via direct S3 URL, retrying with proxy…")
-                proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel["ai_url"], safe="")
-                _render_pdf_base64(proxy_url, iframe_h)
-            _render_pdf_base64(proxy_url, iframe_h)
-            st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
-            doc_effective_pdf_url = sel_ai["doctor_url"]
+                st.warning("⚠️ Could not render via proxy for Doctor report.")
+            st.markdown(
+                f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>",
+                unsafe_allow_html=True,
+            )
+            doc_effective_pdf_url = pdf_url
         else:
             st.info("Not available")
     # 🔹 Redacted Report Viewer
