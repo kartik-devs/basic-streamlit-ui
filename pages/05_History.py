@@ -1226,9 +1226,6 @@ def main() -> None:
     # 🔹 Redacted Report Viewer
      # 🔹 Redacted Report Viewer (Clean, fixed)
      # 🔍 DEBUG: Check what outputs contain
-    with st.expander("🧩 Debug: outputs content", expanded=False):
-        import json
-        st.json(outputs)
     with col4:
         st.markdown(
             """
@@ -1239,50 +1236,33 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-
-        # ✅ Collect all redacted reports directly from `redacted_url`
+    
+        # ✅ Rebuild redacted_items to ensure we capture all
         redacted_items = [
             o for o in outputs
-            if o.get("redacted_url") and o["redacted_url"].lower().endswith(".pdf")
+            if any("redacted" in str(val).lower() for val in o.values())
         ]
-
-        # If nothing found, fallback to label search for safety
-        if not redacted_items:
-            redacted_items = [
-                o for o in outputs
-                if "redacted" in (o.get("label") or "").lower()
-                or "redacted" in (o.get("ai_key") or "").lower()
-                or "redacted" in (o.get("ai_url") or "").lower()
-            ]
-
-        # ✅ Show dropdown and viewer
+    
+        # Sort by latest timestamp or label pattern
+        import re
+        def _extract_ts(o):
+            m = re.search(r"(\d{12})", str(o.get("label") or ""))
+            return m.group(1) if m else ""
+        redacted_items.sort(key=_extract_ts, reverse=True)
+    
         if redacted_items:
-            import re
-
-            # Sort by timestamp (latest first)
-            def _extract_ts(o):
-                m = re.search(r"(\d{12})", o.get("label") or "")
-                return m.group(1) if m else ""
-            redacted_items.sort(key=_extract_ts, reverse=True)
-
-            # Prepare dropdown labels
-            labels = [
-                o.get("label")
-                or o.get("redacted_key", "").split("/")[-1]
-                for o in redacted_items
-            ]
-
+            # Dropdown to pick which version to preview
+            labels = [o.get("label") or o.get("redacted_key") or "Unnamed Redacted Report" for o in redacted_items]
             selected_label = st.selectbox(
                 "Select Redacted Report",
                 options=labels,
                 index=0,
                 key=f"redacted_sel_{case_id}",
             )
-
-            sel = next((o for o in redacted_items if o.get("label") == selected_label), redacted_items[0])
-
-            # ✅ Always prefer redacted_url
-            redacted_url = sel.get("redacted_url") or sel.get("ai_url")
+            selected = next((o for o in redacted_items if o.get("label") == selected_label), redacted_items[0])
+    
+            # Pick URL
+            redacted_url = selected.get("redacted_url") or selected.get("ai_url") or selected.get("doctor_url")
             if redacted_url:
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_url, safe="")
                 try:
@@ -1296,7 +1276,7 @@ def main() -> None:
                     unsafe_allow_html=True,
                 )
             else:
-                st.warning("No valid URL for selected redacted report.")
+                st.warning("No valid redacted URL found for this case.")
         else:
             st.info("No redacted reports available for this case.")
 
