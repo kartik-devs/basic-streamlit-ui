@@ -7,7 +7,7 @@ import threading
 from datetime import datetime, timedelta
 from app.ui import inject_base_styles, show_header, top_nav, hero_section, feature_grid, footer_section, theme_provider
 from streamlit_extras.switch_page_button import switch_page
-
+import streamlit.runtime.scriptrunner as scriptrunner
 
 def ensure_authenticated() -> bool:
     # Authentication removed - always allow access
@@ -234,7 +234,9 @@ def main() -> None:
             st.session_state["generation_step"] = 4
             st.session_state["generation_complete"] = True
             st.session_state["generation_in_progress"] = False
-            st.rerun()
+            if scriptrunner.get_script_run_ctx():
+                time.sleep(0.3)
+                st.rerun()
 
         # Optional auto-complete for demos (disabled by default). Set AUTO_COMPLETE_SECONDS to enable.
         auto_complete_env = os.getenv("AUTO_COMPLETE_SECONDS")
@@ -415,7 +417,9 @@ def main() -> None:
                         else:
                             st.info("No cases found in database")
                         if st.button("🔄 Refresh Available Cases", key="refresh_cases"):
-                            st.rerun()
+                            if scriptrunner.get_script_run_ctx():
+                                time.sleep(0.3)
+                                st.rerun()
 
             # Show available case IDs section
             with st.expander("📋 Available Case IDs", expanded=False):
@@ -504,7 +508,9 @@ def main() -> None:
                     st.error(f"❌ Error triggering {report_type} webhook: {str(e)}")
 
                 # Continue normal progress animation
-                st.rerun()
+                if scriptrunner.get_script_run_ctx():
+                    time.sleep(0.3)
+                    st.rerun()
 
             if generate:
                 cid = case_id.strip()
@@ -562,7 +568,9 @@ def main() -> None:
                     except Exception:
                         pass
 
-                    st.rerun()
+                    if scriptrunner.get_script_run_ctx():
+                        time.sleep(0.3)
+                        st.rerun()
 
     # Check if generation is in progress and show progress (duplicate progress section)
     if st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
@@ -639,12 +647,16 @@ def main() -> None:
                 st.session_state["generation_in_progress"] = False
                 st.session_state["generation_step"] = 4
                 st.success("🎉 Debug: Report generation completed instantly!")
-                st.rerun()
+                if scriptrunner.get_script_run_ctx():
+                    time.sleep(0.3)
+                    st.rerun()
         
         # Auto-refresh every 2 seconds for real-time updates
         if st.session_state.get("generation_in_progress", False):
             time.sleep(2)
-            st.rerun()
+            if scriptrunner.get_script_run_ctx():
+                time.sleep(0.3)
+                st.rerun()
         
         # Auto-complete after 2 hours to avoid being stuck near 98–99%
         if elapsed_time >= 7200:  # 2 hours = 7200 seconds
@@ -653,7 +665,9 @@ def main() -> None:
             st.session_state["generation_complete"] = True
             st.session_state["generation_in_progress"] = False
             st.session_state["navigate_to_results"] = True
-            st.rerun()
+            if scriptrunner.get_script_run_ctx():
+                time.sleep(0.3)
+                st.rerun()
         
         # Check if we've reached completion
         if progress_value >= 100:
@@ -662,7 +676,9 @@ def main() -> None:
             st.session_state["generation_complete"] = True
             st.session_state["generation_in_progress"] = False
             st.success("🎉 Report generation completed!")
-            st.rerun()
+            if scriptrunner.get_script_run_ctx():
+                time.sleep(0.3)
+                st.rerun()
         
         # Show completion message and navigation
         if st.session_state.get("generation_complete"):
@@ -692,7 +708,9 @@ def main() -> None:
                                     switch_page("Results")
                                 except Exception:
                                     st.session_state["_goto_results_intent"] = True
-                                    st.rerun()
+                                    if scriptrunner.get_script_run_ctx():
+                                        time.sleep(0.3)
+                                        st.rerun()
                             else:
                                 st.warning("⚠️ No Case ID found. Please generate a report first.")
 
@@ -705,7 +723,9 @@ def main() -> None:
                         st.session_state["generation_in_progress"] = False
                         st.session_state["generation_start"] = None
                         st.session_state.pop("navigate_to_results", None)
-                        st.rerun()
+                        if scriptrunner.get_script_run_ctx():
+                            time.sleep(0.3)
+                            st.rerun()
 
     # Subtle info card beneath the form
     with st.container():
