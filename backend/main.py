@@ -905,17 +905,18 @@ def api_s3_validate_case(case_id: str) -> Dict[str, Any]:
 @app.get("/s3/{case_id}/outputs")
 def api_s3_outputs(case_id: str) -> Dict[str, Any]:
     """
-    List all AI Generated outputs under {case_id}/Output/ and pair with Doctor-as-LLM when available.
-    Returns presigned URLs so the frontend can render directly without extra lookups.
+    List all AI Generated outputs, Doctor-as-LLM, and Redacted reports under {case_id}/Output/.
+    Returns presigned URLs so the frontend can render directly.
     """
     client = s3_client()
     prefix = f"{case_id}/Output/"
     items: list[dict[str, str]] = []
-    
-    # First, collect all files to avoid multiple API calls
+
     all_files = {}
     file_metadata = {}
     paginator = client.get_paginator("list_objects_v2")
+
+    # Collect all files under Output/
     for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
         for obj in page.get("Contents", []):
             key = obj.get("Key", "")
@@ -925,49 +926,45 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
             all_files[name] = key
             file_metadata[name] = {
                 "last_modified": obj.get("LastModified"),
-                "size": obj.get("Size", 0)
+                "size": obj.get("Size", 0),
             }
 
-    # Now process AI generated files and match with doctor files
+    # Process AI generated reports
     for name, key in all_files.items():
         lower = name.lower()
-        # Consider files that look like AI generated reports
         if "completeaigenerated" in lower or "ai_generated" in lower:
-            # Attempt to derive a matching doctor report
             base = name
-            for token in ("-CompleteAIGenerated.pdf", "_CompleteAIGenerated.pdf", "-CompleteAIGeneratedReport.pdf", "_CompleteAIGeneratedReport.pdf", "-AI_Generated.pdf", "_AI_Generated.pdf", "-CompleteAIGenerated.docx", "_CompleteAIGenerated.docx", "-CompleteAIGeneratedReport.docx", "_CompleteAIGeneratedReport.docx"):
+            for token in (
+                "-CompleteAIGenerated.pdf",
+                "_CompleteAIGenerated.pdf",
+                "-CompleteAIGeneratedReport.pdf",
+                "_CompleteAIGeneratedReport.pdf",
+                "-AI_Generated.pdf",
+                "_AI_Generated.pdf",
+                "-CompleteAIGenerated.docx",
+                "_CompleteAIGenerated.docx",
+                "-CompleteAIGeneratedReport.docx",
+                "_CompleteAIGeneratedReport.docx",
+            ):
                 if name.endswith(token):
                     base = name[: -len(token)]
                     break
 
-            # Candidate doctor names (try both PDF and DOCX)
+            # Doctor candidates
             doctor_candidates = [
                 f"{base}_LLM_As_Doctor.pdf",
                 f"{base}-LLM_As_Doctor.pdf",
                 f"{base}_LLM_As_Doctor.docx",
                 f"{base}-LLM_As_Doctor.docx",
             ]
-            doctor_key = None
-            for dk in doctor_candidates:
-                if dk in all_files:
-                    doctor_key = all_files[dk]
-                    break
+            doctor_key = next((all_files[dk] for dk in doctor_candidates if dk in all_files), None)
 
-            # Get timestamp from S3 metadata
-            metadata = file_metadata.get(name, {})
-            last_modified = metadata.get("last_modified")
-            timestamp = None
-            if last_modified:
-                # Convert to UTC string format
-                timestamp = last_modified.strftime("%Y-%m-%d %H:%M UTC")
+            meta = file_metadata.get(name, {})
+            lm = meta.get("last_modified")
+            timestamp = lm.strftime("%Y-%m-%d %H:%M UTC") if lm else None
 
-            # Also collect LastModified for doctor file if present
             doc_lm = file_metadata.get(doctor_key.split("/")[-1], {}).get("last_modified") if doctor_key else None
-            # Choose max for sorting
-            sort_lm = None
-            for lm in (last_modified, doc_lm):
-                if lm and (sort_lm is None or lm > sort_lm):
-                    sort_lm = lm
+            sort_lm = max(filter(None, [lm, doc_lm]), default=None)
 
             items.append({
                 "label": name,
@@ -976,12 +973,27 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
                 "ai_key": key,
                 "doctor_key": doctor_key or "",
                 "timestamp": timestamp,
-                "ai_last_modified": (last_modified.isoformat() if last_modified else None),
-                "doctor_last_modified": (doc_lm.isoformat() if doc_lm else None),
-                "sort_last_modified": (sort_lm.isoformat() if sort_lm else None),
+                "ai_last_modified": lm.isoformat() if lm else None,
+                "doctor_last_modified": doc_lm.isoformat() if doc_lm else None,
+                "sort_last_modified": sort_lm.isoformat() if sort_lm else None,
             })
 
-    # Sort newest first by LastModified if available; fallback to ai_key/label
+    # 🟡 ADD REDACTED REPORTS
+    for name, key in all_files.items():
+        lower = name.lower()
+        if "redactedreport" in lower:
+            meta = file_metadata.get(name, {})
+            lm = meta.get("last_modified")
+            timestamp = lm.strftime("%Y-%m-%d %H:%M UTC") if lm else None
+            items.append({
+                "label": name,
+                "redacted_url": s3_presign(key),
+                "redacted_key": key,
+                "timestamp": timestamp,
+                "sort_last_modified": lm.isoformat() if lm else None,
+            })
+
+    # Sort newest first
     from datetime import datetime as _dt
     def _key_sort(it: dict[str, Any]):
         iso = it.get("sort_last_modified")
@@ -990,7 +1002,8 @@ def api_s3_outputs(case_id: str) -> Dict[str, Any]:
                 return _dt.fromisoformat(iso)
             except Exception:
                 pass
-        return it.get("ai_key", it.get("label", ""))
+        return it.get("label", "")
+
     items = sorted(items, key=_key_sort, reverse=True)
     return {"case_id": case_id, "items": items}
 
