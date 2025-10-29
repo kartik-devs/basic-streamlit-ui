@@ -1232,92 +1232,45 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-
-        # Generate presigned URLs for redacted reports
-        from datetime import datetime, timedelta
-        
-        redacted_outputs = []
-        for obj in files:
-            key = obj["Key"]
-            if "redacted" in key.lower() and key.lower().endswith(".pdf"):
-                try:
-                    signed_url = s3.s3_client.generate_presigned_url(
-                        "get_object",
-                        Params={"Bucket": s3.bucket_name, "Key": key},
-                        ExpiresIn=3600,  # valid for 1 hour
-                    )
-                    redacted_outputs.append({
-                        "label": key.split("/")[-1],
-                        "ai_url": signed_url,
-                        "ai_key": key,
-                    })
-                except Exception as e:
-                    print(f"⚠️ Failed to sign {key}: {e}")
-
-        # Fallback: fetch from S3 directly if nothing local
-        if not redacted_outputs:
-            from app.s3_utils import get_s3_manager
-            s3 = get_s3_manager()
-            case_id = case_id or st.session_state.get("selected_case_id") or st.session_state.get("current_case_id")
-
-            if case_id:
-                try:
-                    response = s3.s3_client.list_objects_v2(Bucket=s3.bucket_name, Prefix=f"{case_id}/Output/")
-                    files = response.get("Contents", [])
-
-                    # Prefer redacted PDFs
-                    redacted_outputs = [
-                        {
-                            "label": obj["Key"].split("/")[-1],
-                            "ai_url": f"https://{s3.bucket_name}.s3.amazonaws.com/{obj['Key']}",
-                            "ai_key": obj["Key"],
-                        }
-                        for obj in files
-                        if "redacted" in obj["Key"].lower() and obj["Key"].lower().endswith(".pdf")
-                    ]
-
-                    # Fallback to CompleteAI PDFs if no redacted found
-                    if not redacted_outputs:
-                        redacted_outputs = [
-                            {
-                                "label": obj["Key"].split("/")[-1],
-                                "ai_url": f"https://{s3.bucket_name}.s3.amazonaws.com/{obj['Key']}",
-                                "ai_key": obj["Key"],
-                            }
-                            for obj in files
-                            if "completeaigeneratedreport" in obj["Key"].lower()
-                            and obj["Key"].lower().endswith(".pdf")
-                        ]
-
-                    if redacted_outputs:
-                        st.success(f"📄 Found {len(redacted_outputs)} report(s) from S3.")
-                        for r in redacted_outputs:
-                            print("🟥 Redacted (S3):", r["label"])
-                    else:
-                        st.warning("⚠️ No PDF reports found in S3 for this case.")
-                except Exception as e:
-                    st.warning(f"⚠️ Could not fetch redacted reports: {e}")
-
-        # 🧠 If found, render latest or allow dropdown selection
-        if redacted_outputs:
-            # Sort by timestamp pattern (descending)
+    
+        # Use the same outputs list (from backend)
+        redacted_pdfs = [
+            o for o in outputs
+            if o.get("ai_url") and "RedactedReport" in (o.get("ai_url") or "").split("/")[-1]
+               and o.get("ai_url").lower().endswith(".pdf")
+        ]
+    
+        # If not found, try fallback detection by label or key
+        if not redacted_pdfs:
+            redacted_pdfs = [
+                o for o in outputs
+                if "redacted" in (o.get("label") or "").lower()
+                or "redacted" in (o.get("ai_key") or "").lower()
+            ]
+    
+        if redacted_pdfs:
+            # Sort by timestamp descending
             import re
-            redacted_outputs.sort(
-                key=lambda x: re.search(r"(\d{12})", x["label"]).group(1) if re.search(r"(\d{12})", x["label"]) else "",
+            redacted_pdfs.sort(
+                key=lambda x: re.search(r"(\d{12})", x.get("label") or "").group(1)
+                if re.search(r"(\d{12})", x.get("label") or "")
+                else "",
                 reverse=True,
             )
-
-            labels = [r["label"] for r in redacted_outputs]
-            selected_label = st.selectbox("Select Redacted PDF", labels, key=f"redacted_sel_{case_id}", index=0)
-            sel = next((r for r in redacted_outputs if r["label"] == selected_label), None)
-
-            if sel:
+    
+            labels = [r.get("label") or r.get("ai_key") for r in redacted_pdfs]
+            selected_label = st.selectbox("Select Redacted Report", labels, key=f"redacted_sel_{case_id}", index=0)
+            sel = next((r for r in redacted_pdfs if (r.get("label") or r.get("ai_key")) == selected_label), None)
+    
+            if sel and sel.get("ai_url"):
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel["ai_url"], safe="")
                 _render_pdf_base64(proxy_url, iframe_h)
                 st.markdown(
                     f"<div style='text-align:center;margin-top:0.5rem;'><a href='{proxy_url}' target='_blank' style='color:#facc15;text-decoration:none;font-size:0.9rem;'>📥 Download PDF</a></div>",
                     unsafe_allow_html=True,
                 )
+            else:
+                st.info("Redacted report not available.")
         else:
             st.info("No redacted reports available for this case.")
 
