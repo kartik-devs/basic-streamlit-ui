@@ -1221,7 +1221,7 @@ def main() -> None:
             st.info("Not available")
 
      # 🔍 DEBUG: Check what outputs contain
- with col4:
+    with col4:
         st.markdown(
             """
             <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
