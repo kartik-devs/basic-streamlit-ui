@@ -1232,7 +1232,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         # 🔍 DEBUG: Inspect backend outputs for redacted items
-        st.write("🧩 Debug: Outputs from backend", outputs)
+        st.write("✅ Found Redacted Items:", [o["label"] for o in redacted_items])
         st.write("🔎 Total outputs:", len(outputs))
         redacted_items = [
             o for o in outputs
