@@ -1198,8 +1198,6 @@ def main() -> None:
             _render_pdf_base64(proxy_url, iframe_h)
             st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
             ai_effective_pdf_url = sel_ai["ai_url"]
-        else:
-            st.info("Not available")
 
     # Doctor viewer
     with col3:
