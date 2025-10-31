@@ -1221,7 +1221,11 @@ def main() -> None:
             st.info("Not available")
 
      # 🔍 DEBUG: Check what outputs contain
+        # 🟣 REDACTED REPORT VIEWER (diagnostic)
     with col4:
+        import re
+        from urllib.parse import quote
+    
         st.markdown(
             """
             <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
@@ -1231,46 +1235,37 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-        # 🔍 DEBUG: Inspect backend outputs for redacted items
-        st.write("✅ Found Redacted Items:", [o["label"] for o in redacted_items])
-        st.write("🔎 Total outputs:", len(outputs))
+    
+        # 🧩 Step 1: Show all backend outputs keys
+        st.write("🔍 Keys received from backend:", [list(o.keys()) for o in outputs])
+    
+        # 🧩 Step 2: Filter redacted reports (using flexible key set)
         redacted_items = [
             o for o in outputs
             if o.get("redacted_url") or o.get("redacted_pdf") or o.get("redacted")
         ]
-
+        st.write("🧾 Redacted items found:", [o.get("label") for o in redacted_items])
+    
         if redacted_items:
-            import re
-
             def _extract_timestamp(o):
                 label = str(o.get("label") or "")
                 m = re.search(r"(\d{12})", label)
                 return m.group(1) if m else ""
-
-            # ✅ Correct indentation: this runs after the function
             redacted_items.sort(key=_extract_timestamp, reverse=True)
-
-            labels = [f"{o.get('label')} ({o.get('timestamp')})" for o in redacted_items]
-            selected_label = st.selectbox(
-                "Select Redacted Report",
-                options=labels,
-                index=0,
-                key=f"redacted_sel_{case_id}",
-            )
-
-            sel_item = next(
-                (o for o in redacted_items if f"{o.get('label')} ({o.get('timestamp')})" == selected_label),
-                redacted_items[0],
-            )
-
+    
+            # Just show the first redacted report temporarily
+            sel_item = redacted_items[0]
             redacted_url = (
                 sel_item.get("redacted_url")
                 or sel_item.get("redacted_pdf")
                 or sel_item.get("redacted")
             )
-
+    
+            st.write("🧠 Using redacted URL:", redacted_url)
+    
             if redacted_url:
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_url, safe="")
+                st.write("📦 Proxy URL:", proxy_url)
                 _render_pdf_base64(proxy_url, iframe_h)
                 st.markdown(
                     f"<div style='text-align:center;margin-top:0.5rem;'>"
@@ -1279,9 +1274,10 @@ def main() -> None:
                     unsafe_allow_html=True,
                 )
             else:
-                st.warning("No valid URL found for selected redacted report.")
+                st.warning("No valid redacted URL found.")
         else:
             st.info("No redacted reports available for this case.")
+
 
     # Sync viewer with lock/unlock
     st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
