@@ -1234,7 +1234,10 @@ def main() -> None:
         # 🔍 DEBUG: Inspect backend outputs for redacted items
         st.write("🧩 Debug: Outputs from backend", outputs)
         st.write("🔎 Total outputs:", len(outputs))
-        redacted_items = [o for o in outputs if o.get("redacted_url")]
+        redacted_items = [
+            o for o in outputs
+            if o.get("redacted_url") or o.get("redacted_pdf") or o.get("redacted")
+        ]
 
         if redacted_items:
             import re
@@ -1260,7 +1263,11 @@ def main() -> None:
                 redacted_items[0],
             )
 
-            redacted_url = sel_item.get("redacted_url")
+            redacted_url = (
+                sel_item.get("redacted_url")
+                or sel_item.get("redacted_pdf")
+                or sel_item.get("redacted")
+            )
 
             if redacted_url:
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_url, safe="")
