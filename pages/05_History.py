@@ -1182,22 +1182,32 @@ def main() -> None:
             sel_ai = next((o for o in _pdf_outputs if (o.get("label") or (o.get("ai_key") or "").split("/")[-1]) == selected_label), None)
         ai_effective_pdf_url = None
         proxy_url = None
-        if "sel_ai" in locals() and sel_ai and sel_ai.get("ai_url"):
-            proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['ai_url'], safe="")
-            _render_pdf_base64(proxy_url, iframe_h)
-            st.markdown(
-                f"<div style='margin-top: 0.5rem; text-align: center;'>"
-                f"<a href='{proxy_url}' target='_blank' style='color: #93c5fd; text-decoration: none; font-size: 0.9rem;'>📥 Download PDF</a>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            ai_effective_pdf_url = sel_ai["ai_url"]
+
+        # Safe: only render if sel_ai exists and has an ai_url
+        if sel_ai and isinstance(sel_ai, dict) and sel_ai.get("ai_url"):
+            try:
+                proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai["ai_url"], safe="")
+                _render_pdf_base64(proxy_url, iframe_h)
+                st.markdown(
+                    f"<div style='margin-top: 0.5rem; text-align: center;'>"
+                    f"<a href='{proxy_url}' target='_blank' style='color: #93c5fd; text-decoration: none; font-size: 0.9rem;'>📥 Download PDF</a>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                ai_effective_pdf_url = sel_ai["ai_url"]
+            except Exception as e:
+                # Render fallback message and log the error
+                st.warning("⚠️ Could not render AI PDF preview.")
+                print(f"[WARN] AI preview render failed: {e}")
         else:
+            # No selection or not a PDF — show a friendly, non-crashing message
             st.info("Not available")
-            proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['ai_url'], safe="")
-            _render_pdf_base64(proxy_url, iframe_h)
-            st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
-            ai_effective_pdf_url = sel_ai["ai_url"]
+
+        # Ensure variables exist for later code (avoid UnboundLocalError elsewhere)
+        if proxy_url is None:
+            proxy_url = ""
+        if ai_effective_pdf_url is None:
+            ai_effective_pdf_url = ""
 
     # Doctor viewer
     with col3:
