@@ -1181,7 +1181,19 @@ def main() -> None:
         if selected_label:
             sel_ai = next((o for o in _pdf_outputs if (o.get("label") or (o.get("ai_key") or "").split("/")[-1]) == selected_label), None)
         ai_effective_pdf_url = None
-        if sel_ai and sel_ai.get("ai_url"):
+        proxy_url = None
+        if "sel_ai" in locals() and sel_ai and sel_ai.get("ai_url"):
+            proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['ai_url'], safe="")
+            _render_pdf_base64(proxy_url, iframe_h)
+            st.markdown(
+                f"<div style='margin-top: 0.5rem; text-align: center;'>"
+                f"<a href='{proxy_url}' target='_blank' style='color: #93c5fd; text-decoration: none; font-size: 0.9rem;'>📥 Download PDF</a>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            ai_effective_pdf_url = sel_ai["ai_url"]
+        else:
+            st.info("Not available")
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(sel_ai['ai_url'], safe="")
             _render_pdf_base64(proxy_url, iframe_h)
             st.markdown(f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>", unsafe_allow_html=True)
@@ -1225,7 +1237,7 @@ def main() -> None:
     with col4:
         import re
         from urllib.parse import quote
-    
+
         st.markdown(
             """
             <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
@@ -1235,24 +1247,24 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-    
+
         # 🧩 Step 1: Show all backend outputs keys
         st.write("🔍 Keys received from backend:", [list(o.keys()) for o in outputs])
-    
+
         # 🧩 Step 2: Filter redacted reports (using flexible key set)
         redacted_items = [
             o for o in outputs
             if o.get("redacted_url") or o.get("redacted_pdf") or o.get("redacted")
         ]
         st.write("🧾 Redacted items found:", [o.get("label") for o in redacted_items])
-    
+
         if redacted_items:
             def _extract_timestamp(o):
                 label = str(o.get("label") or "")
                 m = re.search(r"(\d{12})", label)
                 return m.group(1) if m else ""
             redacted_items.sort(key=_extract_timestamp, reverse=True)
-    
+
             # Just show the first redacted report temporarily
             sel_item = redacted_items[0]
             redacted_url = (
@@ -1260,9 +1272,9 @@ def main() -> None:
                 or sel_item.get("redacted_pdf")
                 or sel_item.get("redacted")
             )
-    
+
             st.write("🧠 Using redacted URL:", redacted_url)
-    
+
             if redacted_url:
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_url, safe="")
                 st.write("📦 Proxy URL:", proxy_url)
