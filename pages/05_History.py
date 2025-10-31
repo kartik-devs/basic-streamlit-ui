@@ -1219,9 +1219,7 @@ def main() -> None:
             doc_effective_pdf_url = pdf_url
         else:
             st.info("Not available")
-    # 🔹 Redacted Report Viewer
-    # 🔹 Redacted Report Viewer
-     # 🔹 Redacted Report Viewer (Clean, fixed)
+
      # 🔍 DEBUG: Check what outputs contain
     with col4:
         st.markdown(
@@ -1234,23 +1232,20 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-        # 🔍 Recollect outputs live to ensure freshness
-        outputs_live = _get_case_outputs(backend, case_id)
-
-        # ✅ Filter all variants that include "redacted"
-        redacted_items = [
-            o for o in outputs_live
-            if any("redacted" in str(v).lower() for v in o.values())
-        ]
+        # 🧩 Use backend outputs directly (already cached)
+        redacted_items = [o for o in outputs if o.get("redacted_url")]
 
         if redacted_items:
             import re
-            redacted_items.sort(
-                key=lambda o: re.search(r"(\d{12})", str(o.get("label") or "")) or "",
-                reverse=True
-            )
 
-            labels = [o.get("label") or o.get("redacted_key") or "Unnamed Redacted Report" for o in redacted_items]
+            def _extract_timestamp(o):
+                label = str(o.get("label") or "")
+                m = re.search(r"(\d{12})", label)
+                return m.group(1) if m else ""
+
+            redacted_items.sort(key=_extract_timestamp, reverse=True)
+
+            labels = [f"{o.get('label')} ({o.get('timestamp')})" for o in redacted_items]
             selected_label = st.selectbox(
                 "Select Redacted Report",
                 options=labels,
@@ -1258,15 +1253,16 @@ def main() -> None:
                 key=f"redacted_sel_{case_id}",
             )
 
-            sel = next((o for o in redacted_items if o.get("label") == selected_label), redacted_items[0])
-            redacted_url = sel.get("redacted_url") or sel.get("ai_url") or sel.get("doctor_url")
+            sel_item = next(
+                (o for o in redacted_items if f"{o.get('label')} ({o.get('timestamp')})" == selected_label),
+                redacted_items[0],
+            )
+
+            redacted_url = sel_item.get("redacted_url")
 
             if redacted_url:
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_url, safe="")
-                try:
-                    _render_pdf_base64(proxy_url, iframe_h)
-                except Exception:
-                    st.warning("⚠️ Could not render redacted PDF via proxy.")
+                _render_pdf_base64(proxy_url, iframe_h)
                 st.markdown(
                     f"<div style='text-align:center;margin-top:0.5rem;'>"
                     f"<a href='{proxy_url}' target='_blank' style='color:#facc15;text-decoration:none;font-size:0.9rem;'>📥 Download PDF</a>"
@@ -1274,7 +1270,7 @@ def main() -> None:
                     unsafe_allow_html=True,
                 )
             else:
-                st.warning("No valid URL found for redacted report.")
+                st.warning("No valid URL found for selected redacted report.")
         else:
             st.info("No redacted reports available for this case.")
 
