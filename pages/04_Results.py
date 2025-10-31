@@ -249,25 +249,49 @@ def main() -> None:
 
     # Check generation status - show progress if running, block access if not complete
     generation_status = _check_generation_status(case_id) if case_id != "0000" else {"complete": True}
-    if case_id != "0000" and not generation_status["complete"]:
-        # Check if generation is in progress
-        if st.session_state.get("generation_in_progress", False):
-            progress = generation_status["progress"]
-            st.info(f"🔄 Report is currently being generated... Progress: {progress}%")
-            st.progress(progress / 100)
-            
-            # Show estimated time remaining
-            if generation_status["start_time"]:
-                elapsed_time = (datetime.now() - generation_status["start_time"]).total_seconds()
-                remaining_time = max(0, 60 - elapsed_time)  # 2 hours total
-                remaining_minutes = int(remaining_time // 60)
-                remaining_seconds = int(remaining_time % 60)
-                st.info(f"⏱️ Estimated time remaining: {remaining_minutes}m {remaining_seconds}s")
-            
-            st.info("Please wait for the report to complete before viewing results.")
-        else:
-            st.info("ℹ️ No report generation in progress. Please go to Case Report to start generating a report.")
-        return
+    if not st.session_state.get("generation_in_progress", False) and not st.session_state.get("generation_complete", False):
+        # 💤 No case started
+        st.markdown("""
+        <div style="text-align:center;margin-top:3rem;">
+            <div style="font-size:4rem;">🕵️</div>
+            <h2 style="margin-top:1rem;">No Active Case Found</h2>
+            <p style="opacity:0.8;">Please go to the Case Report page to start generating a report.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+        if st.button("📋 Go to Case Report Page", type="primary", use_container_width=True):
+            from streamlit_extras.switch_page_button import switch_page
+            try:
+                switch_page("Case Report")
+            except Exception:
+                st.warning("Could not navigate. Please click 'Case Report' in the sidebar.")
+        st.stop()
+    
+    elif st.session_state.get("generation_in_progress", False) and not st.session_state.get("generation_complete", False):
+        # ⚙️ Case started but still generating
+        progress = st.session_state.get("generation_progress", 0)
+        st.markdown(f"""
+        <div style="text-align:center;margin-top:3rem;">
+            <div style="font-size:4rem;">☕</div>
+            <h2 style="margin-top:1rem;">Report Generation in Progress</h2>
+            <p style="opacity:0.8;">Your report is still being generated... Grab a coffee and check back soon!</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.progress(progress / 100)
+        st.info(f"Progress: {progress}% complete")
+    
+        if st.button("📋 Go to Case Report Page", type="secondary", use_container_width=True):
+            from streamlit_extras.switch_page_button import switch_page
+            try:
+                switch_page("Case Report")
+            except Exception:
+                st.warning("Could not navigate. Please click 'Case Report' in the sidebar.")
+        st.stop()
+    
+    elif st.session_state.get("generation_complete", False):
+        # ✅ Case completed
+        st.success("🎉 Report generation complete! Displaying results below.")
+        # Continue with rest of Results page (normal rendering)
 
     # Show success message when results are unlocked
     st.success("🎉 Report generation complete! Results are now available.")
