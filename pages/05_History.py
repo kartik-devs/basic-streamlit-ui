@@ -1243,7 +1243,7 @@ def main() -> None:
                 m = re.search(r"(\d{12})", label)
                 return m.group(1) if m else ""
 
-            redacted_items.sort(key=_extract_timestamp, reverse=True)
+ 
 
             labels = [f"{o.get('label')} ({o.get('timestamp')})" for o in redacted_items]
             selected_label = st.selectbox(
