@@ -1231,20 +1231,22 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-    
+        # 🔍 DEBUG: Inspect backend outputs for redacted items
+        st.write("🧩 Debug: Outputs from backend", outputs)
+        st.write("🔎 Total outputs:", len(outputs))
         redacted_items = [o for o in outputs if o.get("redacted_url")]
-    
+
         if redacted_items:
             import re
-    
+
             def _extract_timestamp(o):
                 label = str(o.get("label") or "")
                 m = re.search(r"(\d{12})", label)
                 return m.group(1) if m else ""
-    
+
             # ✅ Correct indentation: this runs after the function
             redacted_items.sort(key=_extract_timestamp, reverse=True)
-    
+
             labels = [f"{o.get('label')} ({o.get('timestamp')})" for o in redacted_items]
             selected_label = st.selectbox(
                 "Select Redacted Report",
@@ -1252,14 +1254,14 @@ def main() -> None:
                 index=0,
                 key=f"redacted_sel_{case_id}",
             )
-    
+
             sel_item = next(
                 (o for o in redacted_items if f"{o.get('label')} ({o.get('timestamp')})" == selected_label),
                 redacted_items[0],
             )
-    
+
             redacted_url = sel_item.get("redacted_url")
-    
+
             if redacted_url:
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_url, safe="")
                 _render_pdf_base64(proxy_url, iframe_h)
