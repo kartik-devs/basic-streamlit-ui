@@ -489,9 +489,9 @@ def main() -> None:
 
                 # Select correct webhook
                 if report_type == "standard":
-                     webhook_url = "http://3.81.112.43:5678/webhook/mainworkflow"
+                     webhook_url = "https://n8n.datakernels.in/webhook/mainworkflow"
                 else:
-                     webhook_url = "http://3.81.112.43:5678/webhook/MCPRedacted"
+                     webhook_url = "https://n8n.datakernels.in/webhook/MCPRedacted"
                 st.success(f"🚀 Starting {report_type} report for Case ID: {cid}")
                 st.session_state["last_case_id"] = cid
                 st.session_state["generation_start"] = datetime.now()
