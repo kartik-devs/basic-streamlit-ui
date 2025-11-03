@@ -1232,15 +1232,13 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         
-        # Identify redacted reports by filename
+        # Identify redacted reports - they have a 'redacted_url' field
         redacted_items = []
         for o in outputs:
-            for key in ["ai_url", "doctor_url", "ai_key", "doctor_key", "label"]:
-                val = str(o.get(key) or "")
-                # Detect any file that has 'RedactedReport' or '-redacted.pdf' in its name
-                if "redactedreport" in val.lower() or val.lower().endswith("-redacted.pdf"):
-                    redacted_items.append(o)
-                    break
+            # Check if this item has a redacted_url field or RedactedReport in the label/keys
+            if o.get("redacted_url") or "redactedreport" in str(o.get("label") or "").lower():
+                redacted_items.append(o)
+        
         if redacted_items:
             import re
             def _extract_timestamp(o):
@@ -1259,8 +1257,8 @@ def main() -> None:
                 (o for o in redacted_items if f"{o.get('label')} ({o.get('timestamp')})" == selected_label),
                 redacted_items[0],
             )
-            # Get the redacted file URL — it’s stored under ai_url or doctor_url
-            redacted_url = sel_item.get("ai_url") or sel_item.get("doctor_url")
+            # Get the redacted file URL — it's stored under 'redacted_url' field
+            redacted_url = sel_item.get("redacted_url")
             if redacted_url:
                 proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_url, safe="")
                 _render_pdf_base64(proxy_url, iframe_h)
