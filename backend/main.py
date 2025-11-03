@@ -2582,3 +2582,56 @@ def api_get_case_documents(case_id: str) -> Dict[str, Any]:
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching documents: {str(e)}")
+
+
+@app.get("/s3/case/{case_id}/report")
+def api_get_case_report(case_id: str) -> Dict[str, Any]:
+    """
+    Fetch the deposition report HTML for a case from S3.
+    Looks for: {case_id}/Output/deposition_report.html or output_{case_id}.html
+    """
+    try:
+        client = s3_client()
+        
+        # Try multiple possible filenames
+        possible_keys = [
+            f"{case_id}/Output/deposition_report.html",
+            f"{case_id}/Output/output_{case_id}.html",
+            f"{case_id}/Output/report.html",
+        ]
+        
+        report_key = None
+        for key in possible_keys:
+            try:
+                client.head_object(Bucket=S3_BUCKET, Key=key)
+                report_key = key
+                break
+            except:
+                continue
+        
+        if not report_key:
+            return {"error": f"No deposition report found for case {case_id}"}
+        
+        # Generate presigned URL (valid for 7 days)
+        presigned_url = client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': S3_BUCKET, 'Key': report_key},
+            ExpiresIn=604800  # 7 days
+        )
+        
+        # Optionally fetch the HTML content
+        try:
+            obj = client.get_object(Bucket=S3_BUCKET, Key=report_key)
+            html_content = obj["Body"].read().decode("utf-8")
+        except:
+            html_content = None
+        
+        return {
+            "case_id": case_id,
+            "report_url": presigned_url,
+            "report_html": html_content,
+            "report_key": report_key
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching report: {str(e)}")

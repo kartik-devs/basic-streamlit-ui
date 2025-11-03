@@ -21,15 +21,15 @@ def _get_backend_base() -> str:
     ).rstrip("/")
 
 
-def get_case_documents(case_id: str) -> Dict[str, Any]:
-    """Fetch all documents for a case from S3"""
+def get_case_report(case_id: str) -> Dict[str, Any]:
+    """Fetch the deposition report HTML for a case from S3"""
     try:
         backend = _get_backend_base()
-        response = requests.get(f"{backend}/s3/case/{case_id}/documents", timeout=30)
+        response = requests.get(f"{backend}/s3/case/{case_id}/report", timeout=30)
         if response.ok:
             return response.json()
         else:
-            return {"error": f"Failed to fetch documents: {response.status_code}"}
+            return {"error": f"Failed to fetch report: {response.status_code}"}
     except Exception as e:
         return {"error": f"Error connecting to backend: {str(e)}"}
 
@@ -58,7 +58,7 @@ def group_documents_by_provider(documents: List[Dict]) -> Dict[str, List[Dict]]:
 
 def main():
     st.set_page_config(
-        page_title="Deposition Documents",
+        page_title="Deposition Report",
         page_icon="📄",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -66,8 +66,8 @@ def main():
     
     inject_base_styles()
     show_header(
-        title="Deposition Documents",
-        subtitle="View and Download Source Documents",
+        title="Deposition Report",
+        subtitle="View Medical Deposition Report with Source Links",
         icon="📄",
     )
     
@@ -82,102 +82,74 @@ def main():
             "Enter Case ID",
             value=default_case_id,
             placeholder="e.g., 4890",
-            help="Enter the 4-digit case ID to view documents"
+            help="Enter the 4-digit case ID to view the deposition report"
         )
     
     with col2:
         st.write("")  # Spacer
         st.write("")  # Spacer
-        load_btn = st.button("🔍 Load Documents", type="primary", use_container_width=True)
+        load_btn = st.button("🔍 Load Report", type="primary", use_container_width=True)
     
     if not case_id:
-        st.info("👆 Enter a Case ID to view documents")
+        st.info("👆 Enter a Case ID to view the deposition report")
         
         # Show example/instructions
         st.markdown("""
         ### 📚 How to Use
         
         1. **Enter Case ID:** Type the 4-digit case ID in the box above
-        2. **Load Documents:** Click the "Load Documents" button
-        3. **Browse:** View documents organized by provider
-        4. **Filter:** Use search and filter options
-        5. **View/Download:** Click on any document to view or download
+        2. **Load Report:** Click the "Load Report" button
+        3. **View Report:** The deposition report will be displayed below
+        4. **Click Source Links:** Click any source citation to view the original document
         
         ---
         
         ### 🎯 Features
         
-        - **Organized View:** Documents grouped by provider
-        - **Search:** Find specific documents quickly
-        - **Direct Access:** All S3 images available with fresh presigned URLs
-        - **Download:** Bulk download or individual files
-        - **Image Viewer:** Built-in image viewer with zoom
+        - **Full Report View:** Complete deposition report with all sections
+        - **Source Links:** Click citations to view original source documents
+        - **Direct S3 Access:** All source files open directly from S3
+        - **Download:** Download the full report or individual sources
         """)
         return
     
     if load_btn or default_case_id:
-        with st.spinner(f"Loading documents for Case {case_id}..."):
-            result = get_case_documents(case_id)
+        with st.spinner(f"Loading report for Case {case_id}..."):
+            result = get_case_report(case_id)
         
         if "error" in result:
             st.error(f"❌ {result['error']}")
+            st.info("Make sure the report HTML is uploaded to S3 at: `{case_id}/Output/deposition_report.html`")
             return
         
-        documents = result.get("documents", [])
+        report_url = result.get("report_url")
+        report_html = result.get("report_html")
         
-        if not documents:
-            st.warning(f"No documents found for Case {case_id}")
+        if not report_url and not report_html:
+            st.warning(f"No deposition report found for Case {case_id}")
+            st.info("Upload the report to S3 at: `{case_id}/Output/deposition_report.html`")
             return
         
         # Success message
-        st.success(f"✅ Found {len(documents)} documents for Case {case_id}")
+        st.success(f"✅ Loaded deposition report for Case {case_id}")
         
-        # Filter and search options
-        col1, col2, col3 = st.columns([2, 2, 1])
-        
+        # Download button
+        col1, col2, col3 = st.columns([1, 1, 4])
         with col1:
-            search_term = st.text_input(
-                "🔍 Search documents",
-                placeholder="Search by filename, provider, or date...",
-                label_visibility="collapsed"
-            )
+            if report_url:
+                st.link_button("⬇️ Download Report", report_url, use_container_width=True)
         
-        with col2:
-            # Get unique providers
-            grouped = group_documents_by_provider(documents)
-            providers = ["All Providers"] + sorted(grouped.keys())
-            selected_provider = st.selectbox(
-                "Filter by Provider",
-                providers,
-                label_visibility="collapsed"
-            )
+        # Display the HTML report
+        st.markdown("---")
         
-        with col3:
-            view_mode = st.radio(
-                "View",
-                ["Grid", "List"],
-                horizontal=True,
-                label_visibility="collapsed"
-            )
-        
-        # Filter documents
-        filtered_docs = documents
-        if search_term:
-            filtered_docs = [
-                doc for doc in documents
-                if search_term.lower() in doc.get("filename", "").lower()
-            ]
-        
-        if selected_provider != "All Providers":
-            filtered_docs = grouped.get(selected_provider, [])
-        
-        st.markdown(f"**Showing {len(filtered_docs)} of {len(documents)} documents**")
-        
-        # Display documents
-        if view_mode == "Grid":
-            display_grid_view(filtered_docs)
-        else:
-            display_list_view(filtered_docs)
+        if report_html:
+            # Display HTML content directly with iframe
+            st.components.v1.html(report_html, height=800, scrolling=True)
+        elif report_url:
+            # Display using iframe with presigned URL
+            st.markdown(f"""
+            <iframe src="{report_url}" width="100%" height="800px" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>
+            """, unsafe_allow_html=True)
 
 
 def display_grid_view(documents: List[Dict]):
