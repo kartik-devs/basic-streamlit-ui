@@ -1228,6 +1228,8 @@ def main() -> None:
               <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(250,204,21,0.15);border:1px solid rgba(250,204,21,0.35);color:#facc15;font-size:.8rem;font-weight:700;letter-spacing:.02em;">REDACTED</span>
               <span style='font-weight:700;'>Redacted Report</span>
             </div>
+            <div style='opacity:.75;margin:.25rem 0 .5rem;'>PHI-redacted version</div>
+            <div style='opacity:.65;margin-top:-6px;margin-bottom:.35rem;'>• Generated via MCP redaction workflow</div>
             """,
             unsafe_allow_html=True,
         )
