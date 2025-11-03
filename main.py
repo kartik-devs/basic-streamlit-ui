@@ -1,6 +1,8 @@
 import streamlit as st
 from streamlit_extras.switch_page_button import switch_page
-
+import os
+from dotenv import load_dotenv
+import requests
 # Local modules
 from app.ui import inject_base_styles, show_header
 
@@ -30,7 +32,7 @@ def main() -> None:
     """, unsafe_allow_html=True)
 
     # Navigation buttons
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         if st.button("📋 Case Report", type="primary", use_container_width=True):
@@ -46,6 +48,19 @@ def main() -> None:
                 st.info("Please use the sidebar to navigate to Case Report.")
     
     with col2:
+        if st.button("📄 Deposition", use_container_width=True):
+            try:
+                from streamlit_extras.switch_page_button import switch_page
+                for name in ["02_Deposition", "Deposition", "02 Deposition", "Deposition Page"]:
+                    try:
+                        switch_page(name)
+                        return
+                    except Exception:
+                        continue
+            except Exception:
+                st.info("Please use the sidebar to navigate to Deposition.")
+    
+    with col3:
         if st.button("📊 Results", use_container_width=True):
             try:
                 from streamlit_extras.switch_page_button import switch_page
@@ -58,7 +73,7 @@ def main() -> None:
             except Exception:
                 st.info("Please use the sidebar to navigate to Results.")
     
-    with col3:
+    with col4:
         if st.button("📚 History", use_container_width=True):
             try:
                 from streamlit_extras.switch_page_button import switch_page
@@ -71,7 +86,7 @@ def main() -> None:
             except Exception:
                 st.info("Please use the sidebar to navigate to History.")
     
-    with col4:
+    with col5:
         if st.button("ℹ️ About", use_container_width=True):
             st.info("CaseTracker Pro - Medical Report Generation System")
 
@@ -83,6 +98,10 @@ def main() -> None:
             <div style="background: rgba(59, 130, 246, 0.1); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2);">
                 <h4 style="color: #3b82f6; margin-bottom: 0.5rem;">📋 Case Report Generation</h4>
                 <p style="color: #6b7280; margin: 0;">Submit case IDs and generate comprehensive medical reports with AI analysis.</p>
+            </div>
+            <div style="background: rgba(139, 92, 246, 0.1); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(139, 92, 246, 0.2);">
+                <h4 style="color: #8b5cf6; margin-bottom: 0.5rem;">📄 Deposition Documents</h4>
+                <p style="color: #6b7280; margin: 0;">Browse and view all source documents with built-in image viewer and download.</p>
             </div>
             <div style="background: rgba(16, 185, 129, 0.1); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.2);">
                 <h4 style="color: #10b981; margin-bottom: 0.5rem;">📊 Real-time Results</h4>

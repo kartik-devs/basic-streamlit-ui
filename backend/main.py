@@ -2530,4 +2530,55 @@ def get_all_progress(case_id: str) -> Dict[str, Any]:
         except Exception:
             pass
         return False
+
+
+@app.get("/s3/case/{case_id}/documents")
+def api_get_case_documents(case_id: str) -> Dict[str, Any]:
+    """
+    List all source documents (Input/pages/*.png) for a case with presigned URLs.
+    Used by the Deposition page to display source images.
+    """
+    try:
+        client = s3_client()
+        prefix = f"{case_id}/Input/pages/"
+        documents = []
+        
+        # List all objects in the Input/pages folder
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                filename = key.split("/")[-1]  # Get just the filename
+                
+                # Only include image files
+                if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.pdf')):
+                    # Generate presigned URL (valid for 7 days)
+                    try:
+                        presigned_url = client.generate_presigned_url(
+                            'get_object',
+                            Params={'Bucket': S3_BUCKET, 'Key': key},
+                            ExpiresIn=604800  # 7 days
+                        )
+                        
+                        documents.append({
+                            "filename": filename,
+                            "key": key,
+                            "url": presigned_url,
+                            "size": obj.get("Size", 0),
+                            "last_modified": obj.get("LastModified").isoformat() if obj.get("LastModified") else None
+                        })
+                    except Exception as e:
+                        print(f"Error generating presigned URL for {key}: {e}")
+                        continue
+        
+        # Sort by filename
+        documents.sort(key=lambda x: x["filename"])
+        
+        return {
+            "case_id": case_id,
+            "documents": documents,
+            "count": len(documents)
+        }
     
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching documents: {str(e)}")
