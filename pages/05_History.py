@@ -1251,7 +1251,6 @@ def main() -> None:
             redacted_items.sort(key=_extract_timestamp, reverse=True)
             labels = [f"{o.get('label')} ({o.get('timestamp')})" for o in redacted_items]
             selected_label = st.selectbox(
-                "Select Redacted Report",
                 options=labels,
                 index=0,
                 key=f"redacted_sel_{case_id}",
