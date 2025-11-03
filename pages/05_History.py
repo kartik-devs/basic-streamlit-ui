@@ -486,7 +486,8 @@ def main() -> None:
             import re as _re
             def _base_name(it: dict) -> str:
                 return (it.get("label") or (it.get("ai_key") or "").split("/")[-1] or "").strip()
-            canon_re = _re.compile(rf"^(\d{{12}})-{case_id}-CompleteAIGeneratedReport\.(pdf|docx)$", _re.IGNORECASE)
+            # Match both CompleteAIGeneratedReport and RedactedReport files
+            canon_re = _re.compile(rf"^(\d{{12}})-{case_id}-(CompleteAIGeneratedReport|RedactedReport)\.(pdf|docx)$", _re.IGNORECASE)
             filtered = [o for o in outputs if canon_re.match(_base_name(o) or "")]
             if filtered:
                 outputs = filtered
