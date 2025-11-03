@@ -457,10 +457,10 @@ def main() -> None:
     # Fetch outputs (AI+Doctor) list under Output/ (cached) - only when case is selected
     if case_id:
         with st.spinner("Loading case data…"):
-            outputs = _get_case_outputs(backend, case_id)
+            outputs_all = _get_case_outputs(backend, case_id)
             # Exclude legacy Edited subfolder entries from display
             try:
-                outputs = [o for o in outputs if not (
+                outputs_all = [o for o in outputs_all if not (
                     (o.get("ai_key") or "").lower().find("/output/edited/") >= 0 or
                     (o.get("doctor_key") or "").lower().find("/output/edited/") >= 0
                 )]
@@ -469,28 +469,30 @@ def main() -> None:
             # Fetch ground truth assets (cached)
             assets = _get_case_assets(backend, case_id)
             # Warm metrics cache based on outputs so summary fills in
-            _probe_metrics_from_outputs(backend, case_id, outputs)
+            _probe_metrics_from_outputs(backend, case_id, outputs_all)
     else:
-        outputs = []
+        outputs_all = []
         assets = {}
     
-    # Optionally show only canonical workflow reports which can have metrics JSON
+    # Optionally show only canonical workflow reports (with metrics) - ONLY affects the table
     st.markdown("<div style='height:.25rem'></div>", unsafe_allow_html=True)
     only_canonical = st.checkbox(
-        "Show only canonical workflow reports (with metrics)",
+        "Show only canonical workflow reports in table (with metrics)",
         value=True,
         key=f"hist_only_canon_{case_id}",
     )
-    if outputs and only_canonical:
+    # Create a separate variable for the table
+    outputs_table = outputs_all.copy() if outputs_all else []
+    if outputs_table and only_canonical:
         try:
             import re as _re
             def _base_name(it: dict) -> str:
                 return (it.get("label") or (it.get("ai_key") or "").split("/")[-1] or "").strip()
             # Match both CompleteAIGeneratedReport and RedactedReport files
             canon_re = _re.compile(rf"^(\d{{12}})-{case_id}-(CompleteAIGeneratedReport|RedactedReport)\.(pdf|docx)$", _re.IGNORECASE)
-            filtered = [o for o in outputs if canon_re.match(_base_name(o) or "")]
+            filtered = [o for o in outputs_table if canon_re.match(_base_name(o) or "")]
             if filtered:
-                outputs = filtered
+                outputs_table = filtered
             else:
                 st.info("No canonical reports found. Showing all outputs.")
         except Exception:
@@ -499,7 +501,7 @@ def main() -> None:
     # Debug panel removed for production cleanliness
     
     # Augment from DB when no S3 outputs exist (helps for mock cases like 9999)
-    if not outputs:
+    if not outputs_all:
         try:
             import requests as _rq
             backend_url = _get_backend_base()
@@ -508,7 +510,7 @@ def main() -> None:
                 p = r.json() or {}
                 run = (p.get("run") if isinstance(p, dict) else None) or {}
                 if run:
-                    outputs = [
+                    outputs_all = [
                         {
                             "label": run.get("document_version") or "—",
                             "timestamp": run.get("created_at"),
@@ -522,6 +524,7 @@ def main() -> None:
                             "total_output_tokens": run.get("total_output_tokens"),
                         }
                     ]
+                    outputs_table = outputs_all.copy()
         except Exception:
             pass
     
@@ -824,7 +827,7 @@ def main() -> None:
             return bool(u) and str(u).lower().endswith('.pdf')
         except Exception:
             return False
-    if outputs:
+    if outputs_table:
         seen_versions: set[str] = set()
         def _version_key(item: dict) -> str | None:
             try:
@@ -838,7 +841,7 @@ def main() -> None:
             except Exception:
                 return None
             return None
-        for o in outputs:
+        for o in outputs_table:
             # New rule: do not allow DOCX rows in the table; only show PDFs/others
             ai_url = o.get("ai_url") or ""
             dr_url = o.get("doctor_url") or ""
@@ -950,7 +953,7 @@ def main() -> None:
             # Fallback: infer from label/ai_key in outputs
             try:
                 # Find source item in outputs to get label/ai_key
-                src = next((it for it in outputs if (it.get('ai_url') == ai_url) or (it.get('doctor_url') == doc_url)), None)
+                src = next((it for it in outputs_table if (it.get('ai_url') == ai_url) or (it.get('doctor_url') == doc_url)), None)
             except Exception:
                 src = None
             if not met:
@@ -1006,8 +1009,6 @@ def main() -> None:
                 sec9dur = _fmt_dur(_s9s, _s9e)
             else:
                 sec2dur = sec3dur = sec4dur = sec9dur = '—'
-        else:
-            sec2dur = sec3dur = sec4dur = sec9dur = '—'
         
         # Calculate OCR duration - use metrics data if available, otherwise use row data
         if met:
@@ -1133,13 +1134,13 @@ def main() -> None:
                 return urlparse(u).path.lower().endswith('.pdf')
             except Exception:
                 return u.lower().endswith('.pdf')
-        _pdf_outputs = [o for o in outputs if _is_pdf(o.get("ai_url"))]
+        _pdf_outputs = [o for o in outputs_all if _is_pdf(o.get("ai_url"))]
         # Fallback: some pipelines attach PDF on doctor_url or rename; include those
         if not _pdf_outputs:
-            _pdf_outputs = [o for o in outputs if _is_pdf(o.get("ai_url")) or _is_pdf(o.get("doctor_url"))]
+            _pdf_outputs = [o for o in outputs_all if _is_pdf(o.get("ai_url")) or _is_pdf(o.get("doctor_url"))]
         # Final fallback: if still empty, show original outputs to avoid a blank dropdown
         if not _pdf_outputs:
-            _pdf_outputs = outputs
+            _pdf_outputs = outputs_all
 
         # Helper to extract 12-digit timestamp for ordering
         def _ts_key(item: dict) -> str:
@@ -1206,13 +1207,13 @@ def main() -> None:
         )
         doc_effective_pdf_url = None
         if sel_ai and sel_ai.get("doctor_url"):
-            # ✅ Always use the doctor report URL (not AI URL)
+            # Always use the doctor report URL (not AI URL)
             pdf_url = sel_ai["doctor_url"]
             proxy_url = f"{backend}/proxy/pdf?url=" + quote(pdf_url, safe="")
             try:
                 _render_pdf_base64(proxy_url, iframe_h)
             except Exception:
-                st.warning("⚠️ Could not render via proxy for Doctor report.")
+                st.warning("Could not render via proxy for Doctor report.")
             st.markdown(
                 f"<div style=\"margin-top: 0.5rem; text-align: center;\"><a href=\"{proxy_url}\" target=\"_blank\" style=\"color: #93c5fd; text-decoration: none; font-size: 0.9rem;\">📥 Download PDF</a></div>",
                 unsafe_allow_html=True,
@@ -1230,14 +1231,13 @@ def main() -> None:
               <span style='font-weight:700;'>Redacted Report</span>
             </div>
             <div style='opacity:.75;margin:.25rem 0 .5rem;'>PHI-redacted version</div>
-            <div style='opacity:.65;margin-top:-6px;margin-bottom:.35rem;'>• Generated via MCP redaction workflow</div>
             """,
             unsafe_allow_html=True,
         )
         
         # Identify redacted reports - they have a 'redacted_url' field
         redacted_items = []
-        for o in outputs:
+        for o in outputs_all:
             # Check if this item has a redacted_url field or RedactedReport in the label/keys
             if o.get("redacted_url") or "redactedreport" in str(o.get("label") or "").lower():
                 redacted_items.append(o)
@@ -1416,7 +1416,7 @@ def main() -> None:
             if _is_docx_url(dr_url) or dr_key.endswith('.docx'):
                 return dr_url or ai_url
             return None
-        docx_map = { (it.get('label') or it.get('ai_key') or it.get('doctor_key') or ''): _docx_url_for_item(it) for it in (outputs or []) }
+        docx_map = { (it.get('label') or it.get('ai_key') or it.get('doctor_key') or ''): _docx_url_for_item(it) for it in (outputs_all or []) }
         docx_map = {k: v for k, v in docx_map.items() if k and v}
         
         if not docx_map:

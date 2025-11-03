@@ -934,9 +934,9 @@ def main() -> None:
     st.markdown("".join(table_html), unsafe_allow_html=True)
     # --- END exact History table block ---
 
-    # Viewers (GT | AI | Doctor)
+    # Viewers (GT | AI | Doctor | Redacted)
     iframe_h = 480
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(
             """
@@ -1035,6 +1035,61 @@ def main() -> None:
             doc_effective_pdf_url = sel_ai["doctor_url"]
         else:
             st.info("Not available")
+
+    # Redacted Report viewer
+    with col4:
+        st.markdown(
+            """
+            <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem;'>
+              <span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;background:rgba(250,204,21,0.15);border:1px solid rgba(250,204,21,0.35);color:#facc15;font-size:.8rem;font-weight:700;letter-spacing:.02em;">REDACTED</span>
+              <span style='font-weight:700;'>Redacted Report</span>
+            </div>
+            <div style='opacity:.75;margin:.25rem 0 .5rem;'>PHI-redacted version</div>
+            <div style='opacity:.65;margin-top:-6px;margin-bottom:.35rem;'>• Generated via MCP redaction workflow</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        
+        # Identify redacted reports - they have a 'redacted_url' field
+        redacted_items = []
+        for o in outputs:
+            # Check if this item has a redacted_url field or RedactedReport in the label/keys
+            if o.get("redacted_url") or "redactedreport" in str(o.get("label") or "").lower():
+                redacted_items.append(o)
+        
+        if redacted_items:
+            import re
+            def _extract_timestamp(o):
+                label = str(o.get("label") or "")
+                m = re.search(r"(\d{12})", label)
+                return m.group(1) if m else ""
+            redacted_items.sort(key=_extract_timestamp, reverse=True)
+            labels = [f"{o.get('label')} ({o.get('timestamp')})" for o in redacted_items]
+            selected_label = st.selectbox(
+                "Select Redacted Report",
+                options=labels,
+                index=0,
+                key=f"redacted_sel_{case_id}",
+            )
+            sel_item = next(
+                (o for o in redacted_items if f"{o.get('label')} ({o.get('timestamp')})" == selected_label),
+                redacted_items[0],
+            )
+            # Get the redacted file URL — it's stored under 'redacted_url' field
+            redacted_url = sel_item.get("redacted_url")
+            if redacted_url:
+                proxy_url = f"{backend}/proxy/pdf?url=" + quote(redacted_url, safe="")
+                _render_pdf_base64(proxy_url, iframe_h)
+                st.markdown(
+                    f"<div style='text-align:center;margin-top:0.5rem;'>"
+                    f"<a href='{proxy_url}' target='_blank' style='color:#facc15;text-decoration:none;font-size:0.9rem;'>📥 Download PDF</a>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.warning("No valid URL found for selected redacted report.")
+        else:
+            st.info("No redacted reports available for this case.")
 
     # Discrepancy tabs (Comments | AI Report Editor) copied from History, bound to current case
     st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
