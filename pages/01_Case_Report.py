@@ -586,6 +586,101 @@ def main() -> None:
                         time.sleep(0.3)
                         st.rerun()
 
+    # ========== SEPARATE SECTION: DEPOSITION DOCUMENT GENERATION ==========
+    if not st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
+        # Visual divider
+        st.markdown("<hr style='margin: 3rem 0; border: none; border-top: 2px solid #e5e7eb;'>", unsafe_allow_html=True)
+        
+        # Section heading
+        st.markdown("""
+        <div style="text-align: center; margin: 2rem 0 1.5rem 0;">
+            <h2 style="color: #1f2937; font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem;">
+                📋 Generate Deposition Document
+            </h2>
+            <p style="color: #6b7280; font-size: 1rem;">
+                Create deposition documents for your case
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Deposition form centered
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.caption("Case ID for Deposition (4 digits)")
+            
+            # Use same available cases
+            dep_case_id = st.selectbox(
+                "Select or enter Case ID for Deposition",
+                options=[""] + available_cases,
+                index=0,
+                key="dep_case_id",
+                placeholder="Type or select case ID (e.g., 1234)",
+            )
+            
+            # Validation
+            dep_case_id_valid = False
+            dep_case_id_exists = False
+            
+            if dep_case_id:
+                if not dep_case_id.isdigit() or len(dep_case_id) != 4:
+                    st.error("⚠️ Case ID must be a 4-digit number.")
+                else:
+                    # Validate existence
+                    with st.spinner("🔍 Validating case ID..."):
+                        validation_result = _validate_case_id_exists(dep_case_id)
+                    
+                    if validation_result.get("exists"):
+                        st.success(f"✅ Case ID {dep_case_id} found in database")
+                        dep_case_id_valid = True
+                        dep_case_id_exists = True
+                    else:
+                        st.error(f"❌ Case ID {dep_case_id} not found in database")
+                        dep_case_id_valid = False
+                        dep_case_id_exists = False
+            
+            # Generate Deposition Document button
+            st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+            generate_deposition = st.button(
+                "📋 Generate Deposition Document",
+                type="primary",
+                use_container_width=True,
+                disabled=not (dep_case_id_valid and dep_case_id_exists),
+            )
+            
+            # Handle deposition generation
+            if generate_deposition:
+                dep_cid = dep_case_id.strip()
+                deposition_webhook_url = "https://n8n.datakernels.in/webhook-test/837c4fff-9b21-46a8-9b0d-4a6c2e8ca663"
+                
+                st.success(f"🚀 Starting deposition document generation for Case ID: {dep_cid}")
+                
+                # Trigger deposition webhook
+                try:
+                    st.info(f"Calling deposition webhook...")
+                    response = requests.post(
+                        deposition_webhook_url,
+                        json={"case_id": dep_cid, "username": "demo"},
+                        timeout=15
+                    )
+                    
+                    if response.ok:
+                        st.success("✅ Deposition document workflow triggered successfully!")
+                        st.info("📄 Your deposition document will be processed in the background.")
+                    else:
+                        st.error(f"⚠️ Workflow failed with status {response.status_code}: {response.text}")
+                
+                except requests.exceptions.Timeout:
+                    st.success("⏱️ Deposition workflow triggered (timeout expected). It's running in background.")
+                except Exception as e:
+                    st.error(f"❌ Error triggering deposition webhook: {str(e)}")
+        
+        # Info note for deposition
+        st.markdown("""
+        <div class="section-bg fade-in" style="max-width:900px;margin:1rem auto 0 auto;text-align:center;">
+            <span style="opacity:.9;">📋 Deposition documents are processed separately from case reports</span>
+        </div>
+        """, unsafe_allow_html=True)
+
     # Check if generation is in progress and show progress (duplicate progress section)
     if st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
         case_id = st.session_state.get("current_case_id", "Unknown")
