@@ -624,7 +624,7 @@ def main() -> None:
         # Handle button actions - Deposition Document
         if generate_deposition:
             cid = case_id_deposition.strip()
-            webhook_url = "https://n8n.datakernels.in/webhook-test/837c4fff-9b21-46a8-9b0d-4a6c2e8ca663"
+            webhook_url = "https://n8n.datakernels.in/webhook/837c4fff-9b21-46a8-9b0d-4a6c2e8ca663"
             
             st.success(f"🚀 Starting deposition document for Case ID: {cid}")
             
