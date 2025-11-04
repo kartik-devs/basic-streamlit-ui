@@ -361,327 +361,307 @@ def main() -> None:
 
     # Show input form only when not generating and not completed
     if not st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
-        # Create centered form with same width as info box below
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.caption("Case ID (4 digits)")
-
-            # Fetch available cases dynamically from backend
-            @st.cache_data(ttl=120)
-            def fetch_available_cases():
-                backend = _get_backend_base()
-                try:
-                    res = requests.get(f"{backend}/s3/cases", timeout=5)
-                    if res.ok:
-                        data = res.json()
-                        return data.get("cases", [])
-                except Exception:
-                    pass
-                return []
-
-            available_cases = fetch_available_cases()
-
-            # 🔍 Predictive dropdown
-            case_id = st.selectbox(
-                "Select or enter Case ID",
-                options=[""] + available_cases,  # allows manual typing + list
-                index=0,
-                key="case_id",
-                placeholder="Type or select case ID (e.g., 1234)",
-            )
-
-            # Optional real-time validation
-            if case_id:
-                if not case_id.isdigit() or len(case_id) != 4:
-                    st.error("⚠️ Case ID must be a 4-digit number.")
-                    st.session_state["case_id_exists"] = False
-                else:
-                    st.success(f"✅ Selected Case ID: {case_id}")
-                    st.session_state["case_id_exists"] = True
-
-            
-            # Batching toggle (UI)
-            # ON ➜ send 0, OFF ➜ send 1
-            batching_selected = st.checkbox("Batching", value=False)
-            batch_flag = 0 if batching_selected else 1
-            
-            # Real-time validation feedback
-            if case_id:
-                if not case_id.isdigit():
-                    st.error("⚠️ Case ID must contain only digits (0-9)")
-                    st.session_state["case_id_exists"] = False
-                elif len(case_id) != 4:
-                    st.warning(f"⚠️ Case ID must be exactly 4 digits (current: {len(case_id)})")
-                    st.session_state["case_id_exists"] = False
-                else:
-                    # Check if case ID exists in S3 database
-                    with st.spinner("🔍 Checking if case exists in database..."):
-                        validation_result = _validate_case_id_exists(case_id)
-                    if validation_result.get("exists"):
-                        st.success(f"✅ Case ID {case_id} found in database")
-                        st.session_state["case_id_exists"] = True
-                    else:
-                        st.error(f"❌ Case ID {case_id} not found in database")
-                        st.session_state["case_id_exists"] = False
-                        available_cases = validation_result.get("available_cases", [])
-                        if available_cases:
-                            st.info("💡 Try one of these available case IDs:")
-                            st.code(" ".join(available_cases[:10]))  # Show first 10
-                            st.info(f"Found {len(available_cases)} available case IDs")
-                        else:
-                            st.info("No cases found in database")
-                        if st.button("🔄 Refresh Available Cases", key="refresh_cases"):
-                            if scriptrunner.get_script_run_ctx():
-                                time.sleep(0.3)
-                                st.rerun()
-
-            # Show available case IDs section
-            with st.expander("📋 Available Case IDs", expanded=False):
-                try:
-                    backend = _get_backend_base()
-                    response = requests.get(f"{backend}/s3/cases", timeout=5)
-                    if response.ok:
-                        data = response.json()
-                        available_cases = data.get("cases", [])
-                        if available_cases:
-                            st.info(f"Found {len(available_cases)} case IDs in database:")
-                            cols = st.columns(5)
-                            for i, case_opt in enumerate(available_cases[:20]):  # Show first 20
-                                with cols[i % 5]:
-                                    if st.button(case_opt, key=f"select_case_{case_opt}"):
-                                        st.success(f"Selected: {case_opt} - Please copy and paste this into the Case ID field above")
-                            if len(available_cases) > 20:
-                                st.info(f"... and {len(available_cases) - 20} more case IDs")
-                        else:
-                            st.info("No case IDs found in database")
-                    else:
-                        st.error(f"Backend error: {response.status_code}")
-                except Exception as e:
-                    st.error(f"Could not fetch available cases: {str(e)}")
-
-            # Check if case ID is valid and exists before enabling button
-            case_id_valid = case_id and case_id.isdigit() and len(case_id) == 4
-            case_id_exists = st.session_state.get("case_id_exists", False) or (case_id == "0000")
-
-           # Two side-by-side buttons
-            c1, c2 = st.columns(2)
-
-            with c1:
-                generate = st.button(
-                    "🧾 Generate Report",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=not (case_id_valid and case_id_exists),
-                )
-
-            with c2:
-                generate_redacted = st.button(
-                    "🕵️ Generate Redacted Report",
-                    type="secondary",
-                    use_container_width=True,
-                    disabled=not (case_id_valid and case_id_exists),
-                )
-
-            # --- Logic for both buttons ---
-            if generate or generate_redacted:
-                cid = case_id.strip()
-                report_type = "redacted" if generate_redacted else "standard"
-
-                # Select correct webhook
-                if report_type == "standard":
-                     webhook_url = "https://n8n.datakernels.in/webhook/mainworkflow"
-                else:
-                     webhook_url = "https://n8n.datakernels.in/webhook/MCPRedacted"
-                st.success(f"🚀 Starting {report_type} report for Case ID: {cid}")
-                st.session_state["last_case_id"] = cid
-                st.session_state["generation_start"] = datetime.now()
-                st.session_state["generation_in_progress"] = True
-                st.session_state["generation_progress"] = 1
-                st.session_state["generation_step"] = 0
-                st.session_state["generation_complete"] = False
-                st.session_state["current_case_id"] = cid
-                st.session_state["report_type"] = report_type
-
-                # --- Trigger N8N Webhook ---
-                try:
-                    st.info(f"Calling {webhook_url}")
-                    response = requests.post(
-                        webhook_url,
-                        json={"case_id": cid, "username": "demo", "batching": batch_flag},
-                        timeout=15
-                    )
-
-                    if response.ok:
-                        st.success(f"✅ {report_type.capitalize()} workflow triggered successfully!")
-                    else:
-                        st.error(f"⚠️ Workflow failed with status {response.status_code}: {response.text}")
-
-                except requests.exceptions.Timeout:
-                    st.success(f"⏱️ {report_type.capitalize()} workflow triggered (timeout expected). It’s running in background.")
-                except Exception as e:
-                    st.error(f"❌ Error triggering {report_type} webhook: {str(e)}")
-
-                # Continue normal progress animation
-                if scriptrunner.get_script_run_ctx():
-                    time.sleep(0.3)
-                    st.rerun()
-
-            if generate:
-                cid = case_id.strip()
-
-                # Quick debug
-                st.write(f"Debug: case_id='{cid}', batching={batch_flag}")
-
-                if not cid or not cid.isdigit() or len(cid) != 4:
-                    st.error("Case ID must be exactly 4 digits (0-9).")
-                elif not case_id_exists and cid != "0000":
-                    st.error("Case ID does not exist in database. Please enter a valid case ID.")
-                else:
-                    st.success(f"Starting report generation for Case ID: {cid}")
-                    st.session_state["last_case_id"] = cid
-                    st.session_state["generation_start"] = datetime.now()
-                    st.session_state["generation_in_progress"] = True
-                    st.session_state["generation_progress"] = 1
-                    st.session_state["generation_step"] = 0
-                    st.session_state["generation_complete"] = False
-                    st.session_state["last_batching_flag"] = batch_flag
-                    st.session_state["current_case_id"] = cid
-
-                    # Single backend trigger; backend forwards batching in JSON body to n8n
-                    try:
-                        st.write(f"Debug: calling {BACKEND_BASE}/n8n/start with case_id={cid}, username=demo, batching={batch_flag}")
-                        n8n_response = requests.post(
-                            f"{BACKEND_BASE}/n8n/start",
-                            params={"case_id": cid, "username": "demo", "batching": batch_flag},
-                            timeout=30,
-                        )
-                        st.write(f"Debug: Response status: {n8n_response.status_code}")
-                        if n8n_response.ok:
-                            st.success("🚀 n8n workflow trigger accepted. Processing will continue in the background (~2 hours).")
-                        else:
-                            try:
-                                j = n8n_response.json()
-                                msg = j.get("error") or n8n_response.text
-                            except Exception:
-                                msg = n8n_response.text
-                            st.info(f"⚠️ Trigger acknowledged without execution id: {msg}")
-                    except requests.exceptions.Timeout:
-                        st.success("🚀 n8n workflow triggered successfully! (Request timed out as expected - workflow is running in background)")
-                    except Exception as e:
-                        st.error(f"❌ Error triggering n8n workflow: {str(e)}")
-
-                    # Optional: record a processing cycle
-                    try:
-                        r = requests.post(
-                            f"{BACKEND_BASE}/cycles",
-                            json={"case_id": cid, "status": "processing", "batching": batch_flag},
-                            timeout=8,
-                        )
-                        if r.ok:
-                            st.session_state["current_cycle_id"] = r.json().get("id")
-                    except Exception:
-                        pass
-
-                    if scriptrunner.get_script_run_ctx():
-                        time.sleep(0.3)
-                        st.rerun()
-
-    # ========== SEPARATE SECTION: DEPOSITION DOCUMENT GENERATION ==========
-    if not st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
-        # Visual divider
-        st.markdown("<hr style='margin: 3rem 0; border: none; border-top: 2px solid #e5e7eb;'>", unsafe_allow_html=True)
         
-        # Section heading
+        # Fetch available cases dynamically from backend
+        @st.cache_data(ttl=120)
+        def fetch_available_cases():
+            backend = _get_backend_base()
+            try:
+                res = requests.get(f"{backend}/s3/cases", timeout=5)
+                if res.ok:
+                    data = res.json()
+                    return data.get("cases", [])
+            except Exception:
+                pass
+            return []
+
+        available_cases = fetch_available_cases()
+        
+        # Modern header with gradient
         st.markdown("""
-        <div style="text-align: center; margin: 2rem 0 1.5rem 0;">
-            <h2 style="color: #1f2937; font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem;">
-                📋 Generate Deposition Document
+        <div style="text-align: center; margin: 2rem 0 2.5rem 0;">
+            <h2 style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                font-size: 2rem;
+                font-weight: 800;
+                margin-bottom: 0.5rem;
+            ">
+                Document Generator
             </h2>
             <p style="color: #6b7280; font-size: 1rem;">
-                Create deposition documents for your case
+                Generate case reports and deposition documents
             </p>
         </div>
         """, unsafe_allow_html=True)
         
-        # Deposition form centered
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.caption("Case ID for Deposition (4 digits)")
-            
-            # Use same available cases
-            dep_case_id = st.selectbox(
-                "Select or enter Case ID for Deposition",
-                options=[""] + available_cases,
-                index=0,
-                key="dep_case_id",
-                placeholder="Type or select case ID (e.g., 1234)",
-            )
-            
-            # Validation
-            dep_case_id_valid = False
-            dep_case_id_exists = False
-            
-            if dep_case_id:
-                if not dep_case_id.isdigit() or len(dep_case_id) != 4:
-                    st.error("⚠️ Case ID must be a 4-digit number.")
-                else:
-                    # Validate existence
-                    with st.spinner("🔍 Validating case ID..."):
-                        validation_result = _validate_case_id_exists(dep_case_id)
-                    
-                    if validation_result.get("exists"):
-                        st.success(f"✅ Case ID {dep_case_id} found in database")
-                        dep_case_id_valid = True
-                        dep_case_id_exists = True
-                    else:
-                        st.error(f"❌ Case ID {dep_case_id} not found in database")
-                        dep_case_id_valid = False
-                        dep_case_id_exists = False
-            
-            # Generate Deposition Document button
-            st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
-            generate_deposition = st.button(
-                "📋 Generate Deposition Document",
-                type="primary",
-                use_container_width=True,
-                disabled=not (dep_case_id_valid and dep_case_id_exists),
-            )
-            
-            # Handle deposition generation
-            if generate_deposition:
-                dep_cid = dep_case_id.strip()
-                deposition_webhook_url = "https://n8n.datakernels.in/webhook-test/837c4fff-9b21-46a8-9b0d-4a6c2e8ca663"
-                
-                st.success(f"🚀 Starting deposition document generation for Case ID: {dep_cid}")
-                
-                # Trigger deposition webhook
-                try:
-                    st.info(f"Calling deposition webhook...")
-                    response = requests.post(
-                        deposition_webhook_url,
-                        json={"case_id": dep_cid, "username": "demo"},
-                        timeout=15
-                    )
-                    
-                    if response.ok:
-                        st.success("✅ Deposition document workflow triggered successfully!")
-                        st.info("📄 Your deposition document will be processed in the background.")
-                    else:
-                        st.error(f"⚠️ Workflow failed with status {response.status_code}: {response.text}")
-                
-                except requests.exceptions.Timeout:
-                    st.success("⏱️ Deposition workflow triggered (timeout expected). It's running in background.")
-                except Exception as e:
-                    st.error(f"❌ Error triggering deposition webhook: {str(e)}")
+        # Modern tabbed interface
+        tab1, tab2, tab3 = st.tabs(["📄 Standard Report", "🔒 Redacted Report", "📋 Deposition Document"])
         
-        # Info note for deposition
+        # ========== TAB 1: STANDARD REPORT ==========
+        with tab1:
+            col1, col2, col3 = st.columns([1, 3, 1])
+            with col2:
+                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                
+                # Case ID input
+                case_id_standard = st.selectbox(
+                    "Case ID",
+                    options=[""] + available_cases,
+                    index=0,
+                    key="case_id_standard",
+                    placeholder="Select or type case ID (4 digits)",
+                    help="Enter a 4-digit case ID to generate a standard report"
+                )
+                
+                # Batching toggle
+                batching_standard = st.toggle("Enable Batching", value=False, key="batching_standard")
+                batch_flag_standard = 0 if batching_standard else 1
+                
+                # Validation
+                case_valid_standard = False
+                if case_id_standard:
+                    if not case_id_standard.isdigit() or len(case_id_standard) != 4:
+                        st.error("⚠️ Case ID must be a 4-digit number")
+                    else:
+                        with st.spinner("Validating..."):
+                            validation = _validate_case_id_exists(case_id_standard)
+                        if validation.get("exists"):
+                            st.success(f"✅ Case {case_id_standard} verified")
+                            case_valid_standard = True
+                        else:
+                            st.error("❌ Case ID not found in database")
+                
+                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                
+                # Generate button
+                generate_standard = st.button(
+                    "🚀 Generate Standard Report",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=not case_valid_standard,
+                    key="btn_standard"
+                )
+        
+        # ========== TAB 2: REDACTED REPORT ==========
+        with tab2:
+            col1, col2, col3 = st.columns([1, 3, 1])
+            with col2:
+                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                
+                # Case ID input
+                case_id_redacted = st.selectbox(
+                    "Case ID",
+                    options=[""] + available_cases,
+                    index=0,
+                    key="case_id_redacted",
+                    placeholder="Select or type case ID (4 digits)",
+                    help="Enter a 4-digit case ID to generate a redacted report"
+                )
+                
+                # Batching toggle
+                batching_redacted = st.toggle("Enable Batching", value=False, key="batching_redacted")
+                batch_flag_redacted = 0 if batching_redacted else 1
+                
+                # Validation
+                case_valid_redacted = False
+                if case_id_redacted:
+                    if not case_id_redacted.isdigit() or len(case_id_redacted) != 4:
+                        st.error("⚠️ Case ID must be a 4-digit number")
+                    else:
+                        with st.spinner("Validating..."):
+                            validation = _validate_case_id_exists(case_id_redacted)
+                        if validation.get("exists"):
+                            st.success(f"✅ Case {case_id_redacted} verified")
+                            case_valid_redacted = True
+                        else:
+                            st.error("❌ Case ID not found in database")
+                
+                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                
+                # Generate button
+                generate_redacted = st.button(
+                    "🔒 Generate Redacted Report",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=not case_valid_redacted,
+                    key="btn_redacted"
+                )
+        
+        # ========== TAB 3: DEPOSITION DOCUMENT ==========
+        with tab3:
+            col1, col2, col3 = st.columns([1, 3, 1])
+            with col2:
+                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                
+                # Case ID input
+                case_id_deposition = st.selectbox(
+                    "Case ID",
+                    options=[""] + available_cases,
+                    index=0,
+                    key="case_id_deposition",
+                    placeholder="Select or type case ID (4 digits)",
+                    help="Enter a 4-digit case ID to generate a deposition document"
+                )
+                
+                # Validation
+                case_valid_deposition = False
+                if case_id_deposition:
+                    if not case_id_deposition.isdigit() or len(case_id_deposition) != 4:
+                        st.error("⚠️ Case ID must be a 4-digit number")
+                    else:
+                        with st.spinner("Validating..."):
+                            validation = _validate_case_id_exists(case_id_deposition)
+                        if validation.get("exists"):
+                            st.success(f"✅ Case {case_id_deposition} verified")
+                            case_valid_deposition = True
+                        else:
+                            st.error("❌ Case ID not found in database")
+                
+                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                
+                # Generate button
+                generate_deposition = st.button(
+                    "📋 Generate Deposition Document",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=not case_valid_deposition,
+                    key="btn_deposition"
+                )
+        
+        # Available cases expander (outside tabs, below)
+        with st.expander("📋 Browse Available Case IDs", expanded=False):
+            try:
+                backend = _get_backend_base()
+                response = requests.get(f"{backend}/s3/cases", timeout=5)
+                if response.ok:
+                    data = response.json()
+                    cases = data.get("cases", [])
+                    if cases:
+                        st.info(f"📊 Found {len(cases)} case IDs in database")
+                        cols = st.columns(6)
+                        for i, case_opt in enumerate(cases[:24]):
+                            with cols[i % 6]:
+                                st.code(case_opt, language=None)
+                        if len(cases) > 24:
+                            st.caption(f"... and {len(cases) - 24} more")
+                    else:
+                        st.warning("No case IDs found")
+                else:
+                    st.error(f"Error: {response.status_code}")
+            except Exception as e:
+                st.error(f"Could not fetch cases: {str(e)}")
+        
+        # Handle button actions - Standard Report
+        if generate_standard:
+            cid = case_id_standard.strip()
+            webhook_url = "https://n8n.datakernels.in/webhook/mainworkflow"
+            
+            st.success(f"🚀 Starting standard report for Case ID: {cid}")
+            st.session_state["last_case_id"] = cid
+            st.session_state["generation_start"] = datetime.now()
+            st.session_state["generation_in_progress"] = True
+            st.session_state["generation_progress"] = 1
+            st.session_state["generation_step"] = 0
+            st.session_state["generation_complete"] = False
+            st.session_state["current_case_id"] = cid
+            st.session_state["report_type"] = "standard"
+            
+            try:
+                response = requests.post(
+                    webhook_url,
+                    json={"case_id": cid, "username": "demo", "batching": batch_flag_standard},
+                    timeout=15
+                )
+                if response.ok:
+                    st.success("✅ Workflow triggered successfully!")
+                else:
+                    st.error(f"⚠️ Workflow failed: {response.status_code}")
+            except requests.exceptions.Timeout:
+                st.success("⏱️ Workflow triggered (running in background)")
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+            
+            if scriptrunner.get_script_run_ctx():
+                time.sleep(0.3)
+                st.rerun()
+        
+        # Handle button actions - Redacted Report
+        if generate_redacted:
+            cid = case_id_redacted.strip()
+            webhook_url = "https://n8n.datakernels.in/webhook/MCPRedacted"
+            
+            st.success(f"🚀 Starting redacted report for Case ID: {cid}")
+            st.session_state["last_case_id"] = cid
+            st.session_state["generation_start"] = datetime.now()
+            st.session_state["generation_in_progress"] = True
+            st.session_state["generation_progress"] = 1
+            st.session_state["generation_step"] = 0
+            st.session_state["generation_complete"] = False
+            st.session_state["current_case_id"] = cid
+            st.session_state["report_type"] = "redacted"
+            
+            try:
+                response = requests.post(
+                    webhook_url,
+                    json={"case_id": cid, "username": "demo", "batching": batch_flag_redacted},
+                    timeout=15
+                )
+                if response.ok:
+                    st.success("✅ Workflow triggered successfully!")
+                else:
+                    st.error(f"⚠️ Workflow failed: {response.status_code}")
+            except requests.exceptions.Timeout:
+                st.success("⏱️ Workflow triggered (running in background)")
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+            
+            if scriptrunner.get_script_run_ctx():
+                time.sleep(0.3)
+                st.rerun()
+        
+        # Handle button actions - Deposition Document
+        if generate_deposition:
+            cid = case_id_deposition.strip()
+            webhook_url = "https://n8n.datakernels.in/webhook-test/837c4fff-9b21-46a8-9b0d-4a6c2e8ca663"
+            
+            st.success(f"🚀 Starting deposition document for Case ID: {cid}")
+            
+            try:
+                response = requests.post(
+                    webhook_url,
+                    json={"case_id": cid, "username": "demo"},
+                    timeout=15
+                )
+                if response.ok:
+                    st.success("✅ Deposition workflow triggered successfully!")
+                    st.info("📄 Your document will be processed in the background")
+                else:
+                    st.error(f"⚠️ Workflow failed: {response.status_code}")
+            except requests.exceptions.Timeout:
+                st.success("⏱️ Deposition workflow triggered (running in background)")
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+        
+        # Info note
         st.markdown("""
-        <div class="section-bg fade-in" style="max-width:900px;margin:1rem auto 0 auto;text-align:center;">
-            <span style="opacity:.9;">📋 Deposition documents are processed separately from case reports</span>
+        <div style="
+            max-width: 600px;
+            margin: 2rem auto;
+            padding: 1rem 1.5rem;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+            border-radius: 12px;
+            border-left: 4px solid #667eea;
+            text-align: center;
+        ">
+            <p style="color: #4b5563; font-size: 0.95rem; margin: 0;">
+                ⏱️ Report generation typically takes <strong>~2 hours</strong> to complete
+            </p>
         </div>
         """, unsafe_allow_html=True)
 
-    # Check if generation is in progress and show progress (duplicate progress section)
+    # Check if generation is in progress and show progress
     if st.session_state.get("generation_in_progress") and not st.session_state.get("generation_complete"):
         case_id = st.session_state.get("current_case_id", "Unknown")
         
@@ -835,17 +815,6 @@ def main() -> None:
                         if scriptrunner.get_script_run_ctx():
                             time.sleep(0.3)
                             st.rerun()
-
-    # Subtle info card beneath the form
-    with st.container():
-        st.markdown(
-            """
-            <div class="section-bg fade-in" style="max-width:900px;margin:0.75rem auto 0 auto;text-align:center;">
-              <span style="opacity:.9;">Report generation takes approximately 2 hours to complete.</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
 
 
 if __name__ == "__main__":
