@@ -396,13 +396,14 @@ def main() -> None:
         </div>
         """, unsafe_allow_html=True)
         
-        # Modern tabbed interface
-        tab1, tab2, tab3 = st.tabs(["📄 Standard Report", "🔒 Redacted Report", "📋 Deposition Document"])
+        # Center tabs to match input width
+        col_left, col_center, col_right = st.columns([1, 3, 1])
+        with col_center:
+            # Modern tabbed interface
+            tab1, tab2, tab3 = st.tabs(["📄 Standard Report", "🔒 Redacted Report", "📋 Deposition Document"])
         
-        # ========== TAB 1: STANDARD REPORT ==========
-        with tab1:
-            col1, col2, col3 = st.columns([1, 3, 1])
-            with col2:
+            # ========== TAB 1: STANDARD REPORT ==========
+            with tab1:
                 st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
                 
                 # Case ID input
@@ -444,10 +445,8 @@ def main() -> None:
                     key="btn_standard"
                 )
         
-        # ========== TAB 2: REDACTED REPORT ==========
-        with tab2:
-            col1, col2, col3 = st.columns([1, 3, 1])
-            with col2:
+            # ========== TAB 2: REDACTED REPORT ==========
+            with tab2:
                 st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
                 
                 # Case ID input
@@ -489,10 +488,8 @@ def main() -> None:
                     key="btn_redacted"
                 )
         
-        # ========== TAB 3: DEPOSITION DOCUMENT ==========
-        with tab3:
-            col1, col2, col3 = st.columns([1, 3, 1])
-            with col2:
+            # ========== TAB 3: DEPOSITION DOCUMENT ==========
+            with tab3:
                 st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
                 
                 # Case ID input
@@ -639,10 +636,16 @@ def main() -> None:
                     st.info("📄 Your document will be processed in the background")
                 else:
                     st.error(f"⚠️ Workflow failed: {response.status_code}")
+                    st.caption(f"URL called: {webhook_url}")
+                    if response.text:
+                        with st.expander("Response details"):
+                            st.code(response.text)
+                    st.info("💡 Please ensure the workflow is active in n8n")
             except requests.exceptions.Timeout:
                 st.success("⏱️ Deposition workflow triggered (running in background)")
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
+                st.caption(f"URL attempted: {webhook_url}")
         
         # Info note
         st.markdown("""
