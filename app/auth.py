@@ -132,25 +132,6 @@ def show_login_page():
             color: #6b7280;
             font-size: 1rem;
         }
-        .credentials-info {
-            background: rgba(59, 130, 246, 0.1);
-            padding: 1rem;
-            border-radius: 8px;
-            border: 1px solid rgba(59, 130, 246, 0.2);
-            margin-top: 2rem;
-            font-size: 0.85rem;
-        }
-        .credentials-info h4 {
-            color: #3b82f6;
-            margin-top: 0;
-            font-size: 0.9rem;
-        }
-        .credentials-info code {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 0.2rem 0.4rem;
-            border-radius: 4px;
-            font-size: 0.8rem;
-        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -177,17 +158,3 @@ def show_login_page():
                 st.rerun()
             else:
                 st.error("❌ Invalid email or password")
-    
-    # Show test credentials (remove in production)
-    st.markdown("""
-    <div class="credentials-info">
-        <h4>🔑 Test Credentials</h4>
-        <p><strong>Admin Account:</strong></p>
-        <p>Email: <code>admin@dk_test01.quagsmo.com</code><br>
-        Password: <code>Qm8Kp#Yx2Nv!</code></p>
-        
-        <p style="margin-top: 1rem;"><strong>Analyst Account:</strong></p>
-        <p>Email: <code>analyst@dk_test01.quagsmo.com</code><br>
-        Password: <code>Tj9Lr$Fw5Bz@</code></p>
-    </div>
-    """, unsafe_allow_html=True)
