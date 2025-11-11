@@ -3,16 +3,15 @@ import os
 import streamlit.components.v1 as components
 from urllib.parse import quote
 from app.ui import inject_base_styles, theme_provider, top_nav
+from app.auth import require_authentication, get_current_user, logout
 import time
 import requests
 import threading
 import random
 from datetime import datetime
 
-
-def ensure_authenticated() -> bool:
-    # Authentication removed - always allow access
-    return True
+# Require authentication for this page
+require_authentication()
 
 
 def _ping_backend(backend_url: str) -> bool:

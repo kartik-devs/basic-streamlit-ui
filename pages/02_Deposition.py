@@ -9,6 +9,10 @@ import re
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app.ui import inject_base_styles, show_header
+from app.auth import require_authentication, get_current_user, logout
+
+# Require authentication for this page
+require_authentication()
 
 
 def _get_backend_base() -> str:

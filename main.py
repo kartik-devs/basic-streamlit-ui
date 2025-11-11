@@ -5,8 +5,14 @@ from dotenv import load_dotenv
 import requests
 # Local modules
 from app.ui import inject_base_styles, show_header
+from app.auth import is_authenticated, show_login_page, get_current_user, logout
 
 def main() -> None:
+    # Check authentication first
+    if not is_authenticated():
+        show_login_page()
+        return
+    
     st.set_page_config(
         page_title="CaseTracker Pro",
         page_icon="📋",
@@ -15,6 +21,18 @@ def main() -> None:
     )
     
     inject_base_styles()
+    
+    # Add logout button in sidebar
+    with st.sidebar:
+        user = get_current_user()
+        if user:
+            st.markdown(f"**👤 {user['name']}**")
+            st.markdown(f"_{user['email']}_")
+            st.markdown("---")
+            if st.button("🚪 Logout", use_container_width=True):
+                logout()
+                st.rerun()
+    
     show_header(
         title="CaseTracker Pro",
         subtitle="Medical Report Generation System",

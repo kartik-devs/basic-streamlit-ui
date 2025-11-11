@@ -6,12 +6,12 @@ import requests
 import threading
 from datetime import datetime, timedelta
 from app.ui import inject_base_styles, show_header, top_nav, hero_section, feature_grid, footer_section, theme_provider
+from app.auth import require_authentication, get_current_user, logout
 from streamlit_extras.switch_page_button import switch_page
 import streamlit.runtime.scriptrunner as scriptrunner
 
-def ensure_authenticated() -> bool:
-    # Authentication removed - always allow access
-    return True
+# Require authentication for this page
+require_authentication()
 
 
 def _get_backend_base() -> str:

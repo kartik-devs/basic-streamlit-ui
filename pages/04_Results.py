@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import datetime
 from app.ui import inject_base_styles, theme_provider, top_nav
+from app.auth import require_authentication, get_current_user, logout
 import os
 import streamlit.components.v1 as components
 from urllib.parse import quote
@@ -8,6 +9,10 @@ import requests
 import threading
 import time
 import random
+
+
+# Require authentication for this page
+require_authentication()
 
 
 def _get_backend_base() -> str:
@@ -34,11 +39,6 @@ def _extract_patient_from_strings(case_id: str, *, gt_key: str | None = None, ai
     except Exception:
         return None
     return None
-
-
-def ensure_authenticated() -> bool:
-    # Authentication removed - always allow access
-        return True
 
 
 def _ping_backend(backend_url: str) -> bool:
