@@ -6,17 +6,15 @@ import streamlit as st
 import hashlib
 from typing import Optional, Dict
 
-# Test credentials: two users with dk_test01.quagsmo.com domain
-# User 1: admin@dk_test01.quagsmo.com, Password: Qm8Kp#Yx2Nv!
-# User 2: analyst@dk_test01.quagsmo.com, Password: Tj9Lr$Fw5Bz@
+
 CREDENTIALS = {
     "admin@dk_test01.quagsmo.com": {
-        "password_hash": "d4e832168d4de1a9186df3c5312ff3a2d21532bacf26c021f80b6f0f01ad0448",  # Qm8Kp#Yx2Nv!
+        "password_hash": "d4e832168d4de1a9186df3c5312ff3a2d21532bacf26c021f80b6f0f01ad0448", 
         "name": "Admin User",
         "role": "admin"
     },
     "analyst@dk_test01.quagsmo.com": {
-        "password_hash": "7565393140a6080c4eb6a7b29f60ca6119e6d61f89e88a6ea9f65a199b4057fc",  # Tj9Lr$Fw5Bz@
+        "password_hash": "7565393140a6080c4eb6a7b29f60ca6119e6d61f89e88a6ea9f65a199b4057fc",  
         "name": "Analyst User",
         "role": "analyst"
     }
@@ -39,6 +37,8 @@ def verify_credentials(email: str, password: str) -> bool:
     Returns:
         True if credentials are valid, False otherwise
     """
+    # normalize email casing and whitespace
+    email = (email or "").strip().lower()
     if email not in CREDENTIALS:
         return False
     
@@ -151,9 +151,20 @@ def show_login_page():
         submit = st.form_submit_button("Login", use_container_width=True, type="primary")
         
         if submit:
-            if not email or not password:
+            # sanitize common rich-text artifacts e.g. "admin[domain](link)"
+            import re
+            raw = (email or "").strip()
+            # If input looks like markdown link artifact such as localpart[domain](...)
+            m = re.match(r"^\s*([^\s\[@]+)\[([A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+)\]\(.*\)\s*$", raw)
+            if m and "@" not in raw:
+                raw = f"{m.group(1)}@{m.group(2)}"
+            cleaned_email = raw.strip().lower()
+
+            if not cleaned_email or not password:
                 st.error("❌ Please enter both email and password")
-            elif login(email, password):
+            elif "@" not in cleaned_email:
+                st.error("❌ Please enter a full email address")
+            elif login(cleaned_email, password):
                 st.success("✅ Login successful! Redirecting...")
                 st.rerun()
             else:
