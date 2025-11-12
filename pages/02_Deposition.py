@@ -37,6 +37,38 @@ def get_case_report(case_id: str) -> Dict[str, Any]:
     except Exception as e:
         return {"error": f"Error connecting to backend: {str(e)}"}
 
+@st.cache_data(ttl=120)
+def fetch_deposition_cases() -> List[str]:
+    backend = _get_backend_base()
+    try:
+        r = requests.get(f"{backend}/s3/cases/deposition", timeout=5)
+        if r.ok:
+            data = r.json() or {}
+            cases = data.get("cases") or data.get("deposition_cases") or []
+            if isinstance(cases, list) and cases:
+                return cases
+    except Exception:
+        pass
+    try:
+        res = requests.get(f"{backend}/s3/cases", timeout=10)
+        if res.ok:
+            data = res.json() or {}
+            all_cases = data.get("cases", []) or []
+            result: List[str] = []
+            for cid in all_cases:
+                try:
+                    rr = requests.get(f"{backend}/s3/case/{cid}/report", timeout=5)
+                    if rr.ok:
+                        j = rr.json() or {}
+                        if j.get("report_url") or j.get("report_html"):
+                            result.append(cid)
+                except Exception:
+                    continue
+            return result
+    except Exception:
+        pass
+    return []
+
 
 def group_documents_by_provider(documents: List[Dict]) -> Dict[str, List[Dict]]:
     """Group documents by provider/source"""
@@ -82,11 +114,17 @@ def main():
     # Case ID input
     col1, col2 = st.columns([3, 1])
     with col1:
-        case_id = st.text_input(
-            "Enter Case ID",
-            value=default_case_id,
-            placeholder="e.g., 4890",
-            help="Enter the 4-digit case ID to view the deposition report"
+        available_cases = fetch_deposition_cases()
+        initial_index = 0
+        if default_case_id and default_case_id in available_cases:
+            initial_index = available_cases.index(default_case_id) + 1
+        case_id = st.selectbox(
+            "Case ID",
+            options=[""] + available_cases,
+            index=initial_index,
+            key="case_id_deposition_page",
+            placeholder="Select or type case ID (4 digits)",
+            help="Enter a 4-digit case ID to view the deposition report"
         )
     
     with col2:
