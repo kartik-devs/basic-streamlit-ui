@@ -378,7 +378,7 @@ class LCPVersionComparator:
         Returns:
             Dict with 'added', 'removed', 'changed' lists
         """
-        # Normalize and split into sentences to reduce false diffs from line wraps
+        # Normalize (preserve newlines) and split into line-aware sentences
         n1 = self._normalize_text(text1)
         n2 = self._normalize_text(text2)
         lines1 = self._split_sentences(n1)
@@ -410,14 +410,33 @@ class LCPVersionComparator:
             
             i += 1
         
+        # Fallback: if nothing detected but texts differ, do a raw line-based diff
+        if not (added or removed or changed) and (n1.strip() != n2.strip()):
+            raw1 = [ln for ln in n1.split('\n') if ln.strip()]
+            raw2 = [ln for ln in n2.split('\n') if ln.strip()]
+            diff2 = list(difflib.Differ().compare(raw1, raw2))
+            i = 0
+            while i < len(diff2):
+                line = diff2[i]
+                if line.startswith('+ '):
+                    added.append(line[2:])
+                elif line.startswith('- '):
+                    if i + 1 < len(diff2) and diff2[i + 1].startswith('+ '):
+                        changed.append({'old': line[2:], 'new': diff2[i + 1][2:]})
+                        i += 1
+                    else:
+                        removed.append(line[2:])
+                i += 1
+
         return {
             'added': added,
             'removed': removed,
-            'changed': changed
+            'changed': changed,
+            # numeric diffs filled below
         }
 
     def _normalize_text(self, text: str) -> str:
-        """Normalize PDF-extracted text to improve diff quality."""
+        """Normalize PDF-extracted text to improve diff quality while preserving line breaks."""
         if not text:
             return ''
         t = text
@@ -427,22 +446,72 @@ class LCPVersionComparator:
         # Normalize quotes/dashes/spaces
         t = t.replace('\u2019', "'").replace('\u2018', "'").replace('\u201c', '"').replace('\u201d', '"')
         t = t.replace('\u2013', '-').replace('\u2014', '-')
-        t = re.sub(r'\s+', ' ', t)
+        # Collapse spaces/tabs but keep newlines (tables rely on line boundaries)
+        t = re.sub(r'[ \t]+', ' ', t)
         # Fix spaced punctuation (e.g., "year -old")
         t = re.sub(r'\s-\s', '-', t)
         # Keep sentence endings clear
         return t.strip()
 
     def _split_sentences(self, text: str) -> List[str]:
-        """Simple sentence splitter; fallback to periods if needed."""
+        """Line-aware sentence splitter: keeps table rows/bullets as units."""
         if not text:
             return []
-        # Split on ., !, ? followed by space and capital, keep separators
-        parts = re.split(r'(?<=[\.\!\?])\s+(?=[A-Z0-9])', text)
-        # If too few parts, fallback to commas/semicolons to reduce long lines
-        if len(parts) < 2:
-            parts = re.split(r'(?<=[\.;:])\s+', text)
-        return [p.strip() for p in parts if p and p.strip()]
+        units: List[str] = []
+        for ln in text.split('\n'):
+            s = ln.strip()
+            if not s:
+                continue
+            # Treat bullets, numbered items, and table-like lines as atomic units
+            if re.match(r'^(?:[-•\*]|\d+\.|\d+\))\s+', s) or \
+               re.search(r'\$\s*\d', s) or \
+               re.match(r'^(?:Table|Start Year|End Year|Years|Frequency Per Year|Cost per Item|Annual Cost|Lifetime Cost|Total)\b', s, re.IGNORECASE):
+                units.append(s)
+                continue
+            # Otherwise split into sentences within the line
+            parts = re.split(r'(?<=[\.!\?])\s+(?=[A-Z0-9])', s)
+            if len(parts) < 2:
+                parts = re.split(r'(?<=[\.;:])\s+', s)
+            for p in parts:
+                p = p.strip()
+                if p:
+                    units.append(p)
+        return units
+
+    def _parse_amount(self, s: str) -> Optional[float]:
+        s2 = s.replace('$', '').replace(',', '').strip()
+        try:
+            return float(s2)
+        except Exception:
+            return None
+
+    def _extract_numeric_map(self, text: str) -> Dict[str, float]:
+        """Extract mapping of row labels -> numeric amount from lines ending with a currency/number.
+        This helps catch changes in tables like Summary Cost Projection Tables.
+        """
+        mapping: Dict[str, float] = {}
+        if not text:
+            return mapping
+        for ln in text.split('\n'):
+            s = ln.strip()
+            if not s:
+                continue
+            m = re.search(r'(\$?\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$', s)
+            if not m:
+                continue
+            amt = self._parse_amount(m.group(1))
+            if amt is None:
+                continue
+            label = re.sub(r'(\$?\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$', '', s).strip()
+            # remove leading table/index tokens
+            label = re.sub(r'^(?:table\s+\d+\s*[:\.]?)\s*', '', label, flags=re.IGNORECASE)
+            label = re.sub(r'^\d+(?:\.\d+)*\s*', '', label)
+            label = re.sub(r'\s{2,}', ' ', label)
+            label = self._norm_heading(label)
+            if not label:
+                continue
+            mapping[label] = amt
+        return mapping
     
     def compare_versions(
         self,
