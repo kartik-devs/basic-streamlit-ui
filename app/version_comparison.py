@@ -428,11 +428,31 @@ class LCPVersionComparator:
                         removed.append(line[2:])
                 i += 1
 
+        # Numeric-aware diff: build label->amount maps and compare
+        num1 = self._extract_numeric_map(n1)
+        num2 = self._extract_numeric_map(n2)
+        num_changed = []
+        num_added = []
+        num_removed = []
+        for label in set(num1.keys()) | set(num2.keys()):
+            v1 = num1.get(label)
+            v2 = num2.get(label)
+            if v1 is None and v2 is not None:
+                num_added.append({'label': label, 'new': v2})
+            elif v2 is None and v1 is not None:
+                num_removed.append({'label': label, 'old': v1})
+            elif v1 is not None and v2 is not None and abs(v1 - v2) > 0.01:
+                num_changed.append({'label': label, 'old': v1, 'new': v2, 'delta': v2 - v1})
+
         return {
             'added': added,
             'removed': removed,
             'changed': changed,
-            # numeric diffs filled below
+            'numeric': {
+                'changed': num_changed,
+                'added': num_added,
+                'removed': num_removed,
+            }
         }
 
     def _normalize_text(self, text: str) -> str:
@@ -641,12 +661,17 @@ class LCPVersionComparator:
                 }
             else:
                 diff = self.compare_texts(text1, text2)
-                if diff['added'] or diff['removed'] or diff['changed']:
-                    comparison[section_name] = {
+                has_num = bool(diff.get('numeric', {}).get('changed') or diff.get('numeric', {}).get('added') or diff.get('numeric', {}).get('removed'))
+                if diff['added'] or diff['removed'] or diff['changed'] or has_num:
+                    entry = {
                         'status': 'modified',
                         'changes': diff,
                         'pages': {'old': pages1.get(section_name), 'new': pages2.get(section_name)}
                     }
+                    if self._is_tables_section(section_name):
+                        entry['old_content'] = text1
+                        entry['new_content'] = text2
+                    comparison[section_name] = entry
                 else:
                     comparison[section_name] = {
                         'status': 'unchanged',
@@ -832,6 +857,21 @@ class LCPVersionComparator:
                 if len(changes['changed']) > 10:
                     html += f"<p><em>... and {len(changes['changed']) - 10} more changes</em></p>"
                 html += '</div>'
+            # Numeric table snapshots for Section 9 (tables)
+            num = changes.get('numeric', {}) if isinstance(changes, dict) else {}
+            if (num.get('changed') or num.get('added') or num.get('removed')) and self._is_tables_section(section_name):
+                old_txt = section_data.get('old_content') or ''
+                new_txt = section_data.get('new_content') or ''
+                old_tables = self._extract_table_blocks(old_txt)
+                new_tables = self._extract_table_blocks(new_txt)
+                def _esc(x: str) -> str:
+                    return x.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+                if old_tables:
+                    html += "<div class='change-item'><div class='change-label'>📄 Old Table Snapshot</div>"
+                    html += f"<pre style='white-space: pre-wrap; background:#f6f8fa; padding:10px; border-radius:6px;'>{_esc('\n'.join(old_tables))}</pre></div>"
+                if new_tables:
+                    html += "<div class='change-item'><div class='change-label'>📄 New Table Snapshot</div>"
+                    html += f"<pre style='white-space: pre-wrap; background:#f6f8fa; padding:10px; border-radius:6px;'>{_esc('\n'.join(new_tables))}</pre></div>"
         
         html += "</div>"
         return html
@@ -844,7 +884,7 @@ class LCPVersionComparator:
             from reportlab.lib.units import inch
             from reportlab.platypus import (
                 SimpleDocTemplate, Paragraph, Spacer, PageBreak, Flowable,
-                ListFlowable, ListItem, Table, TableStyle, KeepTogether
+                ListFlowable, ListItem, Table, TableStyle, KeepTogether, Preformatted
             )
             from reportlab.lib.enums import TA_CENTER
             from reportlab.lib.colors import HexColor
@@ -998,7 +1038,7 @@ class LCPVersionComparator:
     
     def _format_section_pdf(self, section_name: str, section_data: Dict, styles) -> List:
         """Format a single section for PDF with header + pages line and splittable body content."""
-        from reportlab.platypus import Paragraph, Spacer, ListFlowable, ListItem, Table, TableStyle
+        from reportlab.platypus import Paragraph, Spacer, ListFlowable, ListItem, Table, TableStyle, Preformatted
         from reportlab.lib.units import inch
         from reportlab.lib.colors import HexColor
 
@@ -1090,5 +1130,64 @@ class LCPVersionComparator:
         elements.append(Spacer(1, 0.06 * inch))
         # Body flowables directly (allow page splitting)
         elements.extend(body_flow)
+
+        # If tables section with numeric diffs, append old/new table snapshots
+        changes = section_data.get('changes', {}) if status == 'modified' else {}
+        num = changes.get('numeric', {}) if isinstance(changes, dict) else {}
+        has_num = any(num.get(k) for k in ('changed','added','removed'))
+        if has_num and self._is_tables_section(section_name):
+            old_txt = section_data.get('old_content') or ''
+            new_txt = section_data.get('new_content') or ''
+            old_tables = self._extract_table_blocks(old_txt)
+            new_tables = self._extract_table_blocks(new_txt)
+            if old_tables:
+                elements.append(Spacer(1, 0.06 * inch))
+                elements.append(Paragraph('<b>Old Table Snapshot</b>', styles['Normal']))
+                elements.append(Preformatted('\n'.join(old_tables), styles['Mono']))
+            if new_tables:
+                elements.append(Spacer(1, 0.06 * inch))
+                elements.append(Paragraph('<b>New Table Snapshot</b>', styles['Normal']))
+                elements.append(Preformatted('\n'.join(new_tables), styles['Mono']))
         elements.append(Spacer(1, 0.14 * inch))
         return elements
+
+    def _is_tables_section(self, section_name: str) -> bool:
+        # Consider Section 9.* or labels containing 'Summary Cost Projection'
+        name = section_name or ''
+        if re.match(r'^9(\.|\s)', name):
+            return True
+        return 'summary cost projection' in name.lower()
+
+    def _extract_table_blocks(self, text: str) -> List[str]:
+        """Extract contiguous blocks representing the summary tables.
+        Start at a header like 'Table Number' or a line starting with 'Table 1', end at blank/heading.
+        """
+        if not text:
+            return []
+        lines = text.split('\n')
+        blocks: List[str] = []
+        buf: List[str] = []
+        capturing = False
+        for ln in lines:
+            s = (ln or '').rstrip()
+            if not capturing:
+                if re.match(r'^Table\s+Number\b', s, re.IGNORECASE) or re.match(r'^Table\s+\d+\b', s, re.IGNORECASE):
+                    capturing = True
+                    buf = [s]
+                continue
+            else:
+                # stop on empty line or on a new major heading like '9.1' or 'Table Number' again
+                if not s.strip() or re.match(r'^(\d+(?:\.\d+)*)\s', s) or re.match(r'^Table\s+Number\b', s, re.IGNORECASE):
+                    if buf:
+                        blocks.append('\n'.join(buf).strip())
+                        buf = []
+                    capturing = False
+                    # if a new header triggers, restart capture next iteration
+                    if re.match(r'^Table\s+Number\b', s, re.IGNORECASE) or re.match(r'^Table\s+\d+\b', s, re.IGNORECASE):
+                        capturing = True
+                        buf = [s]
+                else:
+                    buf.append(s)
+        if capturing and buf:
+            blocks.append('\n'.join(buf).strip())
+        return blocks
