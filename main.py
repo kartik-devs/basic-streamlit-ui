@@ -50,7 +50,7 @@ def main() -> None:
     """, unsafe_allow_html=True)
 
     # Navigation buttons
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     with col1:
         if st.button("📋 Case Report", type="primary", use_container_width=True):
@@ -105,6 +105,19 @@ def main() -> None:
                 st.info("Please use the sidebar to navigate to History.")
     
     with col5:
+        if st.button("🔄 Version Compare", use_container_width=True):
+            try:
+                from streamlit_extras.switch_page_button import switch_page
+                for name in ["06_Version_Comparison", "Version Comparison", "06 Version Comparison", "Version_Comparison"]:
+                    try:
+                        switch_page(name)
+                        return
+                    except Exception:
+                        continue
+            except Exception:
+                st.info("Please use the sidebar to navigate to Version Comparison.")
+    
+    with col6:
         if st.button("ℹ️ About", use_container_width=True):
             st.info("CaseTracker Pro - Medical Report Generation System")
 
@@ -128,6 +141,10 @@ def main() -> None:
             <div style="background: rgba(245, 158, 11, 0.1); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.2);">
                 <h4 style="color: #f59e0b; margin-bottom: 0.5rem;">📚 History Tracking</h4>
                 <p style="color: #6b7280; margin: 0;">Access your complete report generation history and track progress.</p>
+            </div>
+            <div style="background: rgba(236, 72, 153, 0.1); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(236, 72, 153, 0.2);">
+                <h4 style="color: #ec4899; margin-bottom: 0.5rem;">🔄 Version Comparison</h4>
+                <p style="color: #6b7280; margin: 0;">Compare different versions of LCP documents to track changes section-by-section.</p>
             </div>
         </div>
     </div>

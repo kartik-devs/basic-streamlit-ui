@@ -1,0 +1,131 @@
+UI DEVELOPER - TOP 10 TECHNICAL INTERVIEW QUESTIONS
+
+================================================================================
+
+1. REACT FUNDAMENTALS: STATE VS PROPS
+   Question: What is the difference between state and props in React? When 
+   would you lift state up?
+   
+   Why this matters: Tests core React understanding and component architecture
+
+================================================================================
+
+2. ASYNC OPERATIONS & PROMISES
+   Question: Explain Promises and async/await. How do they differ?
+   
+   Code example - What's the output order?
+   console.log('1');
+   setTimeout(() => console.log('2'), 0);
+   Promise.resolve().then(() => console.log('3'));
+   console.log('4');
+   
+   Why this matters: Critical for API integration and handling asynchronous 
+   operations in UI
+
+================================================================================
+
+3. API INTEGRATION & ERROR HANDLING
+   Question: How do you handle API calls in a frontend application? How do you 
+   handle loading states, errors, and retries?
+   
+   Why this matters: Directly relevant to the challenge - fetching reports from 
+   S3 and triggering n8n workflows
+
+================================================================================
+
+4. REACT HOOKS
+   Question: Explain React hooks. What are useState, useEffect, and useCallback 
+   used for?
+   
+   Code example - What's wrong with this code?
+   function Component() {
+     const [count, setCount] = useState(0);
+     useEffect(() => {
+       setCount(count + 1);
+     }, []);
+   }
+   
+   Why this matters: Modern React development relies heavily on hooks
+
+================================================================================
+
+5. AWS S3 & PRE-SIGNED URLS
+   Question: How would you fetch a file from AWS S3 in a web application? What 
+   are pre-signed URLs and when would you use them?
+   
+   Why this matters: Directly related to the challenge requirement of fetching 
+   reports from S3
+
+================================================================================
+
+6. n8n WORKFLOW INTEGRATION
+   Question: How would you trigger an n8n workflow from a web application? How 
+   would you handle long-running workflow executions in the UI?
+   
+   Expected: Webhooks, HTTP requests, polling, WebSockets, loading states
+   
+   Why this matters: Core requirement of the challenge
+
+================================================================================
+
+7. PERFORMANCE OPTIMIZATION
+   Question: What techniques would you use to optimize the performance of a web 
+   application? Explain debouncing and throttling with use cases.
+   
+   Coding exercise: Implement a simple debounce function
+   function debounce(func, delay) {
+     // Your implementation
+   }
+   
+   Why this matters: Shows understanding of production-ready code
+
+================================================================================
+
+8. RESPONSIVE DESIGN & CSS
+   Question: Explain Flexbox vs Grid. When would you use one over the other? 
+   How do you approach responsive design?
+   
+   Why this matters: Challenge requires responsive UI that works on mobile 
+   and desktop
+
+================================================================================
+
+9. ERROR HANDLING & USER EXPERIENCE
+   Question: How do you handle errors gracefully in a UI? If an n8n workflow 
+   fails or S3 file is not found, how would you display this to the user?
+   
+   Why this matters: Challenge explicitly requires graceful error handling
+
+================================================================================
+
+10. CODING EXERCISE: DATA TRANSFORMATION
+    Question: Given an array of reports from S3, transform it to group by status
+    
+    const reports = [
+      { id: 1, name: 'Report A', status: 'completed', date: '2024-01-01' },
+      { id: 2, name: 'Report B', status: 'pending', date: '2024-01-02' },
+      { id: 3, name: 'Report C', status: 'completed', date: '2024-01-03' },
+      { id: 4, name: 'Report D', status: 'failed', date: '2024-01-04' }
+    ];
+    
+    Expected output:
+    {
+      completed: [{ id: 1, ... }, { id: 3, ... }],
+      pending: [{ id: 2, ... }],
+      failed: [{ id: 4, ... }]
+    }
+    
+    Write a function to transform this data.
+    
+    Why this matters: Practical coding test that relates to displaying report 
+    data in the UI
+
+================================================================================
+
+SCORING GUIDE
+
+Junior Level: Should answer 6-7 questions correctly with guidance
+Mid Level: Should answer 8-9 questions correctly with minimal hints
+Senior Level: Should answer all 10 questions correctly and explain trade-offs
+
+TIME ALLOCATION: 30-40 minutes
