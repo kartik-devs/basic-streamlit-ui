@@ -588,32 +588,35 @@ class LCPVersionComparator:
             story.append(Spacer(1, 0.5 * inch))
             story.append(Paragraph('LCP Version Comparison', title_style))
             story.append(Paragraph('Section-by-Section Change Analysis', subtitle_style))
-            story.append(Spacer(1, 0.25 * inch))
+            story.append(Spacer(1, 0.3 * inch))
 
-            # Tag bar
-            tag_bg = HexColor('#eef2ff')
-            class TagBar(Flowable):
-                def __init__(self, text: str):
-                    super().__init__()
-                    self.text = text
-                def draw(self):
-                    c = self.canv
-                    w = doc.width
-                    c.setFillColor(tag_bg)
-                    c.roundRect(0, 0, w, 18, 4, fill=1, stroke=0)
-                    c.setFillColor(HexColor('#4f46e5'))
-                    c.setFont('Helvetica-Bold', 10)
-                    c.drawString(6, 5, self.text)
+            # Metadata panel (table) with wrapping and bullet list for versions
+            meta_rows = []
+            meta_rows.append([Paragraph('<b>Case ID</b>', body_style), Paragraph(str(results.get('case_id', '—')), body_style)])
+            meta_rows.append([Paragraph('<b>Mode</b>', body_style), Paragraph(str(results.get('mode', '—')).title(), body_style)])
+            meta_rows.append([Paragraph('<b>Generated</b>', body_style), Paragraph(str(results.get('comparison_timestamp', '—')), body_style)])
 
-            meta_items = [
-                f"Case ID: {results.get('case_id', '—')}",
-                f"Mode: {str(results.get('mode', '—')).title()}",
-                f"Generated: {results.get('comparison_timestamp', '—')}",
-                f"Versions: {', '.join(results.get('versions_compared', []))}",
-            ]
-            for m in meta_items:
-                story.append(TagBar(m))
-                story.append(Spacer(1, 0.12 * inch))
+            versions = results.get('versions_compared', []) or []
+            if versions:
+                version_items = [ListItem(Paragraph(v, body_style)) for v in versions]
+                versions_list = ListFlowable(version_items, bulletType='bullet', leftIndent=12)
+            else:
+                versions_list = Paragraph('—', body_style)
+
+            meta_rows.append([Paragraph('<b>Versions</b>', body_style), versions_list])
+
+            meta_tbl = Table(meta_rows, colWidths=[1.3 * inch, doc.width - 1.3 * inch])
+            meta_tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), HexColor('#f8fafc')),
+                ('BOX', (0,0), (-1,-1), 0.8, HexColor('#e5e7eb')),
+                ('INNERGRID', (0,0), (-1,-1), 0.3, HexColor('#e5e7eb')),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('LEFTPADDING', (0,0), (-1,-1), 8),
+                ('RIGHTPADDING', (0,0), (-1,-1), 8),
+                ('TOPPADDING', (0,0), (-1,-1), 6),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ]))
+            story.append(meta_tbl)
 
             # Quick summary counts
             sections = results.get('sections', {})
