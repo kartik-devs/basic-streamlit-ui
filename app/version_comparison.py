@@ -527,14 +527,17 @@ class LCPVersionComparator:
         return html
     
     def _generate_pdf_report(self, results: Dict[str, Any]) -> bytes:
-        """Generate a polished PDF comparison report using ReportLab."""
+        """Generate a polished PDF comparison report using ReportLab with improved readability."""
         try:
             from reportlab.lib.pagesizes import A4
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib.units import inch
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Flowable
+            from reportlab.platypus import (
+                SimpleDocTemplate, Paragraph, Spacer, PageBreak, Flowable,
+                ListFlowable, ListItem, Table, TableStyle, KeepTogether
+            )
             from reportlab.lib.enums import TA_CENTER
-            from reportlab.lib.colors import HexColor, black, white
+            from reportlab.lib.colors import HexColor
             from reportlab.pdfgen import canvas as _canvas
 
             buffer = io.BytesIO()
@@ -559,10 +562,9 @@ class LCPVersionComparator:
                 'Subtitle', parent=styles['Normal'], fontSize=12, leading=16,
                 textColor=HexColor('#6b7280'), alignment=TA_CENTER, spaceAfter=6,
             )
-            h2_style = ParagraphStyle(
-                'H2', parent=styles['Heading2'], textColor=HexColor('#374151'), spaceBefore=6, spaceAfter=6
-            )
+            h2_style = ParagraphStyle('H2', parent=styles['Heading2'], textColor=HexColor('#374151'), spaceBefore=6, spaceAfter=6)
             body_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=10.5, leading=14)
+            mono_style = ParagraphStyle('Mono', parent=styles['Code'], fontName='Courier', fontSize=9.5, leading=12)
 
             # Header/Footer draw functions
             def _header_footer(c: _canvas.Canvas, doc_obj):
@@ -636,6 +638,24 @@ class LCPVersionComparator:
                 body_style,
             ))
 
+            # Legend
+            story.append(Spacer(1, 0.2 * inch))
+            legend = [
+                ('#16a34a', 'Added'),
+                ('#dc2626', 'Removed'),
+                ('#d97706', 'Modified'),
+                ('#0ea5e9', 'Unchanged')
+            ]
+            legend_items = []
+            for color_hex, label in legend:
+                legend_items.append(Paragraph(f"<font color='{color_hex}'>■</font> {label}", body_style))
+            legend_tbl = Table([legend_items])
+            legend_tbl.setStyle(TableStyle([
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ]))
+            story.append(legend_tbl)
+
             # New page for details
             story.append(PageBreak())
 
@@ -657,69 +677,73 @@ class LCPVersionComparator:
             raise ImportError("Please install reportlab: pip install reportlab")
     
     def _format_section_pdf(self, section_name: str, section_data: Dict, styles) -> List:
-        """Format a single section for PDF report with colored status chips and spacing."""
-        from reportlab.platypus import Paragraph, Spacer, Flowable
+        """Format a single section for PDF with card layout and bullet lists for diffs."""
+        from reportlab.platypus import Paragraph, Spacer, ListFlowable, ListItem, Table, TableStyle, KeepTogether
         from reportlab.lib.units import inch
         from reportlab.lib.colors import HexColor
 
         elements = []
         status = section_data.get('status', 'unknown')
 
-        # Status chip
         chip_colors = {
-            'added': ('#16a34a', '#dcfce7'),      # green
-            'removed': ('#dc2626', '#fee2e2'),    # red
-            'modified': ('#d97706', '#fef3c7'),   # amber
-            'unchanged': ('#0ea5e9', '#e0f2fe'),  # sky
+            'added': ('#16a34a', '#dcfce7'),
+            'removed': ('#dc2626', '#fee2e2'),
+            'modified': ('#d97706', '#fef3c7'),
+            'unchanged': ('#0ea5e9', '#e0f2fe'),
         }
         fg, bg = chip_colors.get(status, ('#6b7280', '#f3f4f6'))
 
-        class StatusChip(Flowable):
-            def __init__(self, text: str, fg_hex: str, bg_hex: str):
-                super().__init__()
-                self.text = text
-                self.fg = HexColor(fg_hex)
-                self.bg = HexColor(bg_hex)
-                self.height = 16
-            def draw(self):
-                c = self.canv
-                w = c.stringWidth(self.text, 'Helvetica-Bold', 9) + 12
-                c.setFillColor(self.bg)
-                c.roundRect(0, 0, w, self.height, 6, fill=1, stroke=0)
-                c.setFillColor(self.fg)
-                c.setFont('Helvetica-Bold', 9)
-                c.drawString(6, 4, self.text)
-                self.width = w
+        # Header row: title + status chip drawn as colored label
+        header = [
+            Paragraph(f"<b>{section_name}</b>", styles['Heading3']),
+            Paragraph(f"<font color='{fg}'><b>{status.upper()}</b></font>", styles['Normal'])
+        ]
 
-        # Title + chip
-        elements.append(Paragraph(f"<b>{section_name}</b>", styles['Heading2']))
-        elements.append(StatusChip(status.upper(), fg, bg))
-        elements.append(Spacer(1, 0.06 * inch))
+        # Build body content
+        body_flow = []
+        changes = section_data.get('changes', {}) if status == 'modified' else {}
+
+        def _list(items, prefix):
+            return ListFlowable(
+                [ListItem(Paragraph(f"{prefix} {line}", styles['Normal'])) for line in items],
+                bulletType='bullet', leftIndent=14, bulletFontName='Helvetica'
+            )
 
         if status == 'added':
-            elements.append(Paragraph("Section added in newer version.", styles['Normal']))
+            body_flow.append(Paragraph("Section added in the newer version.", styles['Normal']))
         elif status == 'removed':
-            elements.append(Paragraph("Section removed from newer version.", styles['Normal']))
+            body_flow.append(Paragraph("Section removed from the newer version.", styles['Normal']))
         elif status == 'unchanged':
-            elements.append(Paragraph("No changes detected.", styles['Normal']))
+            body_flow.append(Paragraph("No changes detected.", styles['Normal']))
         elif status == 'modified':
-            changes = section_data.get('changes', {})
             if changes.get('added'):
-                elements.append(Paragraph("<b>Added:</b>", styles['Normal']))
-                for line in changes['added'][:6]:
-                    elements.append(Paragraph(f"+ {line}", styles['Normal']))
-                elements.append(Spacer(1, 0.04 * inch))
+                body_flow.append(Paragraph("<b>Added:</b>", styles['Normal']))
+                body_flow.append(_list(changes['added'][:8], '+'))
             if changes.get('removed'):
-                elements.append(Paragraph("<b>Removed:</b>", styles['Normal']))
-                for line in changes['removed'][:6]:
-                    elements.append(Paragraph(f"- {line}", styles['Normal']))
-                elements.append(Spacer(1, 0.04 * inch))
+                body_flow.append(Spacer(1, 0.04 * inch))
+                body_flow.append(Paragraph("<b>Removed:</b>", styles['Normal']))
+                body_flow.append(_list(changes['removed'][:8], '-'))
             if changes.get('changed'):
-                elements.append(Paragraph("<b>Modified:</b>", styles['Normal']))
-                for ch in changes['changed'][:4]:
-                    elements.append(Paragraph(f"<b>Old:</b> {ch.get('old','')}", styles['Normal']))
-                    elements.append(Paragraph(f"<b>New:</b> {ch.get('new','')}", styles['Normal']))
-                    elements.append(Spacer(1, 0.02 * inch))
+                body_flow.append(Spacer(1, 0.04 * inch))
+                body_flow.append(Paragraph("<b>Modified:</b>", styles['Normal']))
+                # Show pairs as bullets
+                paired = []
+                for ch in changes['changed'][:6]:
+                    old = ch.get('old', '')
+                    new = ch.get('new', '')
+                    paired.append(Paragraph(f"<b>Old:</b> {old}<br/><b>New:</b> {new}", styles['Normal']))
+                body_flow.append(ListFlowable([ListItem(p) for p in paired], bulletType='bullet', leftIndent=14))
 
-        elements.append(Spacer(1, 0.18 * inch))
+        # Compose a card-like table
+        tbl_data = [[header[0], header[1]], [Spacer(1, 0.06 * inch), Spacer(1, 0.06 * inch)], [body_flow, '']]
+        tbl = Table(tbl_data, colWidths=[0.80 * 6.0 * inch, 0.20 * 6.0 * inch])
+        tbl.setStyle(TableStyle([
+            ('SPAN', (0,2), (1,2)),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BACKGROUND', (0,0), (-1,-1), HexColor('#fafafa')),
+            ('BOX', (0,0), (-1,-1), 0.5, HexColor('#e5e7eb')),
+            ('INNERPADDING', (0,0), (-1,-1), 6),
+        ]))
+
+        elements.append(KeepTogether([tbl, Spacer(1, 0.14 * inch)]))
         return elements
