@@ -34,6 +34,15 @@ class LCPVersionComparator:
         ]
         # Precompute normalized labels
         self._toc_norm = [(t['id'], t['label'], self._norm_heading(t['label'])) for t in self.top_toc]
+        # Canonical level-2 ToC (select common sub-sections). This is extensible.
+        self.level2_toc = [
+            { 'id': '1.1', 'top_id': '1', 'label': 'Executive Summary' },
+            { 'id': '1.2', 'top_id': '1', 'label': 'Life Care Planning and Life Care Plans' },
+            { 'id': '2.1', 'top_id': '2', 'label': 'Summary of Medical Records' },
+            { 'id': '6.1', 'top_id': '6', 'label': 'Recent History' },
+            { 'id': '6.2', 'top_id': '6', 'label': 'Review of Systems' },
+        ]
+        self._l2_norm = [(t['id'], t['top_id'], t['label'], self._norm_heading(t['label'])) for t in self.level2_toc]
         
     def get_lcp_versions(self, case_id: str) -> List[Dict[str, Any]]:
         """
@@ -220,7 +229,15 @@ class LCPVersionComparator:
                     # Start new section
                     section_num = match.group(1)
                     section_title = match.group(2).strip()
-                    # Map to canonical top-level ToC; if no good match, skip as non-top-level
+                    # Prefer level-2 mapping when available
+                    l2_mapped = self._map_to_level2(section_title)
+                    if l2_mapped:
+                        l2_id, l2_label, top_id = l2_mapped
+                        current_section = f"{l2_id} {l2_label}"
+                        current_content = []
+                        is_section = True
+                        break
+                    # Otherwise map to canonical top-level ToC; if no good match, skip as non-top-level
                     mapped = self._map_to_top_toc(section_title)
                     if mapped:
                         toc_id, toc_label = mapped
@@ -229,7 +246,7 @@ class LCPVersionComparator:
                         is_section = True
                         break
                     else:
-                        # Not a top-level section; treat as content under current_section (if any)
+                        # Not a recognized section; treat as content under current_section (if any)
                         is_section = False
                         break
             
@@ -268,12 +285,20 @@ class LCPVersionComparator:
                     m = rgx.match(line_s)
                     if m:
                         title = m.group(2).strip()
-                        mapped = self._map_to_top_toc(title)
-                        if mapped:
-                            toc_id, toc_label = mapped
-                            name = f"{toc_id}. {toc_label}"
+                        # Prefer level-2 mapping when available
+                        l2_mapped = self._map_to_level2(title)
+                        if l2_mapped:
+                            l2_id, l2_label, _top = l2_mapped
+                            name = f"{l2_id} {l2_label}"
                             if name not in pages_map:
-                                pages_map[name] = idx + 1  # 1-indexed
+                                pages_map[name] = idx + 1
+                        else:
+                            mapped = self._map_to_top_toc(title)
+                            if mapped:
+                                toc_id, toc_label = mapped
+                                name = f"{toc_id}. {toc_label}"
+                                if name not in pages_map:
+                                    pages_map[name] = idx + 1  # 1-indexed
                         break
         return pages_map
 
@@ -310,6 +335,37 @@ class LCPVersionComparator:
                 best_score = score
                 best_pair = (tid, label)
         return best_pair if best_score >= threshold else None
+
+    def _map_to_level2(self, heading: str, threshold: float = 0.65) -> Optional[Tuple[str, str, str]]:
+        """Map a heading to the closest level-2 ToC entry (returns id, label, top_id)."""
+        from difflib import SequenceMatcher
+        h = self._norm_heading(heading)
+        h_toks = set(self._norm_tokens(heading))
+        best_score = 0.0
+        best = None
+        for l2_id, top_id, label, norm in self._l2_norm:
+            sm = SequenceMatcher(None, h, norm).ratio()
+            l_toks = set(self._norm_tokens(label))
+            inter = len(h_toks & l_toks)
+            union = len(h_toks | l_toks) or 1
+            jacc = inter / union
+            contains = 1.0 if (norm in h or h in norm) else 0.0
+            score = max(sm, jacc, contains)
+            if score > best_score:
+                best_score = score
+                best = (l2_id, label, top_id)
+        return best if best_score >= threshold else None
+
+    def _toc_sort_key(self, key: str) -> Tuple:
+        """Sort by hierarchical numeric id prefix: '1', '1.1', '10', etc."""
+        m = re.match(r'^(\d+(?:\.\d+)*)\s', key)
+        if not m:
+            return (9999,)
+        parts = m.group(1).split('.')
+        try:
+            return tuple(int(p) for p in parts)
+        except Exception:
+            return (9999,)
     
     def compare_texts(self, text1: str, text2: str) -> Dict[str, List[str]]:
         """
@@ -492,14 +548,13 @@ class LCPVersionComparator:
         """Compare two sets of sections and attach page numbers when available."""
         comparison = {}
         
-        # Only compare mapped top-level sections by ToC id/label
+        # Compare canonical keys only (top-level and level-2): "<id[.id] ...> <label>"
         all_sections = set(sections1.keys()) | set(sections2.keys())
-        # Filter to canonical keys only ("<id>. <label>")
         def _is_canonical(k: str) -> bool:
-            return bool(re.match(r'^\d+\.\s', k))
+            return bool(re.match(r'^\d+(?:\.\d+)*\s', k))
         all_sections = {k for k in all_sections if _is_canonical(k)}
         
-        for section_name in sorted(all_sections):
+        for section_name in sorted(all_sections, key=self._toc_sort_key):
             text1 = sections1.get(section_name, '')
             text2 = sections2.get(section_name, '')
             
@@ -636,14 +691,16 @@ class LCPVersionComparator:
         sections = results.get('sections', {})
         
         if isinstance(sections, dict):
-            for section_key, section_data in sections.items():
+            for section_name in sorted(sections.keys(), key=self._toc_sort_key):
+                section_data = sections[section_name]
                 if isinstance(section_data, dict) and 'status' in section_data:
                     # Single comparison
-                    html += self._format_section_html(section_key, section_data)
+                    html += self._format_section_html(section_name, section_data)
                 else:
                     # Multiple comparisons (all mode)
-                    html += f"<h2 style='margin-top: 30px;'>{section_key}</h2>"
-                    for subsection_name, subsection_data in section_data.items():
+                    html += f"<h2 style='margin-top: 30px;'>{section_name}</h2>"
+                    for subsection_name in sorted(section_data.keys(), key=self._toc_sort_key):
+                        subsection_data = section_data[subsection_name]
                         html += self._format_section_html(subsection_name, subsection_data)
         
         html += """
@@ -852,14 +909,16 @@ class LCPVersionComparator:
             story.append(PageBreak())
 
             # Detail sections
-            for section_name, section_data in sections.items():
+            for section_name in sorted(sections.keys(), key=self._toc_sort_key):
+                section_data = sections[section_name]
                 if isinstance(section_data, dict) and 'status' in section_data:
                     story.extend(self._format_section_pdf(section_name, section_data, styles))
                 else:
                     # Group heading for pairwise comparison
                     story.append(Paragraph(section_name, h2_style))
                     story.append(Spacer(1, 0.08 * inch))
-                    for subsection_name, subsection_data in section_data.items():
+                    for subsection_name in sorted(section_data.keys(), key=self._toc_sort_key):
+                        subsection_data = section_data[subsection_name]
                         story.extend(self._format_section_pdf(subsection_name, subsection_data, styles))
 
             doc.build(story, onFirstPage=_header_footer, onLaterPages=_header_footer)
