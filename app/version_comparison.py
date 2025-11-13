@@ -1107,6 +1107,12 @@ class LCPVersionComparator:
             )
 
             styles = getSampleStyleSheet()
+            # Ensure a monospace style exists for Preformatted blocks
+            try:
+                _ = styles['Mono']
+            except KeyError:
+                base_code = styles.byName.get('Code') or styles['Normal']
+                styles.add(ParagraphStyle('Mono', parent=base_code, fontName='Courier', fontSize=9.5, leading=12))
             # Custom styles
             title_style = ParagraphStyle(
                 'TitleXL', parent=styles['Heading1'], fontSize=24, leading=28,
@@ -1118,7 +1124,6 @@ class LCPVersionComparator:
             )
             h2_style = ParagraphStyle('H2', parent=styles['Heading2'], textColor=HexColor('#374151'), spaceBefore=6, spaceAfter=6)
             body_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=10.5, leading=14)
-            mono_style = ParagraphStyle('Mono', parent=styles['Code'], fontName='Courier', fontSize=9.5, leading=12)
 
             # Header/Footer draw functions
             def _header_footer(c: _canvas.Canvas, doc_obj):
