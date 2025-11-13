@@ -111,7 +111,15 @@ def main():
     
     # Step 2: Fetch and display versions
     st.markdown("---")
-    st.markdown("### 📚 Step 2: Select Versions to Compare")
+    st.markdown(
+        """
+        <div style="display:flex;align-items:center;gap:10px;margin: 8px 0 14px 0;">
+            <div style="width:8px;height:24px;border-radius:6px;background:linear-gradient(135deg,#6366f1,#22d3ee)"></div>
+            <div style="font-size:1.25rem;font-weight:800;color:#e5e7eb;">Step 2: Select Versions to Compare</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     
     with st.spinner("Loading available versions..."):
         versions = comparator.get_lcp_versions(case_id)
@@ -121,18 +129,37 @@ def main():
         st.info("Make sure the case has generated LCP reports in the Output folder.")
         return
     
-    # Display version count
-    st.success(f"✅ Found {len(versions)} version(s) for case {case_id}")
+    # Display version count banner
+    st.markdown(
+        f"""
+        <div style="padding:12px 14px;border-radius:10px;border:1px solid rgba(99,102,241,0.25);
+        background:linear-gradient(135deg,rgba(16,185,129,0.12),rgba(99,102,241,0.10));color:#d1fae5;">
+            <span style="font-weight:700;color:#34d399;">Found {len(versions)} version(s)</span>
+            <span style="color:#9ca3af;"> for case </span>
+            <span style="font-weight:700;color:#e5e7eb;">{case_id}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     
     # Comparison mode with tabs
-    st.markdown("#### Comparison Mode")
+    st.markdown(
+        """
+        <div style="margin-top:12px;margin-bottom:6px;font-weight:700;color:#cbd5e1;">Comparison Mode</div>
+        """,
+        unsafe_allow_html=True,
+    )
     tab_selective, tab_overall = st.tabs(["🎯 Selective", "📊 Overall"])
     
     selected_versions = []
     
     with tab_selective:
-        st.markdown("#### Select Versions to Compare")
-        st.caption("Choose at least 2 versions to compare")
+        st.markdown(
+            """
+            <div style="margin-top:6px;margin-bottom:8px;color:#9ca3af;">Choose at least 2 versions to compare</div>
+            """,
+            unsafe_allow_html=True,
+        )
         # Create a grid layout for version cards
         cols_per_row = 3
         for i in range(0, len(versions), cols_per_row):
@@ -143,14 +170,24 @@ def main():
                     version = versions[idx]
                     with col:
                         is_selected = st.checkbox(
-                            f"**{version['filename'][:30]}...**" if len(version['filename']) > 30 else f"**{version['filename']}**",
+                            f"{version['filename'][:34]}..." if len(version['filename']) > 34 else f"{version['filename']}",
                             key=f"version_{idx}",
                             help=f"Full name: {version['filename']}"
                         )
                         if is_selected:
                             selected_versions.append(version['s3_key'])
-                        st.caption(f"📅 {version['timestamp']}")
-                        st.caption(f"📦 {format_file_size(version['size'])}")
+                        st.markdown(
+                            f"""
+                            <div style="border:1px solid #263043;background:linear-gradient(180deg,rgba(30,41,59,0.6),rgba(17,24,39,0.6));
+                                padding:10px 12px;border-radius:10px;margin-top:6px;">
+                                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                    <span style="background:#0f172a;color:#60a5fa;border:1px solid #1f2a44;padding:4px 8px;border-radius:999px;font-size:12px;">📅 {version['timestamp']}</span>
+                                    <span style="background:#0f172a;color:#34d399;border:1px solid #1f2a44;padding:4px 8px;border-radius:999px;font-size:12px;">📦 {format_file_size(version['size'])}</span>
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
                         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         # Update session state for selective mode when valid
         if len(selected_versions) >= 2:
