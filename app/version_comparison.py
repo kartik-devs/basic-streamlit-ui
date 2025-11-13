@@ -19,6 +19,21 @@ class LCPVersionComparator:
     def __init__(self, s3_manager):
         """Initialize with S3 manager for document access."""
         self.s3_manager = s3_manager
+        # Canonical top-level ToC (10 sections). All extraction will be mapped to these.
+        self.top_toc = [
+            { 'id': '1',  'label': 'Overview' },
+            { 'id': '2',  'label': 'Life Care Planning and Life Care Plans' },
+            { 'id': '3',  'label': 'Biography of Medical Expert' },
+            { 'id': '4',  'label': 'Framework: A Life Care Plan for Fatima Dodson' },
+            { 'id': '5',  'label': 'Summary of Records' },
+            { 'id': '6',  'label': 'Interview' },
+            { 'id': '7',  'label': 'Central Opinions' },
+            { 'id': '8',  'label': 'Future Medical Requirements' },
+            { 'id': '9',  'label': 'Cost/Vendor Survey' },
+            { 'id': '10', 'label': 'Overview of Medical Expert' },
+        ]
+        # Precompute normalized labels
+        self._toc_norm = [(t['id'], t['label'], self._norm_heading(t['label'])) for t in self.top_toc]
         
     def get_lcp_versions(self, case_id: str) -> List[Dict[str, Any]]:
         """
@@ -185,6 +200,13 @@ class LCPVersionComparator:
             line = line.strip()
             if not line:
                 continue
+            # Ignore table captions and bullets/numbered list lines that aren't headings
+            if re.match(r'^Table\s+\d+\s*:', line, re.IGNORECASE):
+                continue
+            if re.match(r'^[-•\*]\s+', line):
+                if current_section:
+                    current_content.append(line)
+                continue
             
             # Check if this line is a section header
             is_section = False
@@ -198,10 +220,18 @@ class LCPVersionComparator:
                     # Start new section
                     section_num = match.group(1)
                     section_title = match.group(2).strip()
-                    current_section = f"Section {section_num}: {section_title}"
-                    current_content = []
-                    is_section = True
-                    break
+                    # Map to canonical top-level ToC; if no good match, skip as non-top-level
+                    mapped = self._map_to_top_toc(section_title)
+                    if mapped:
+                        toc_id, toc_label = mapped
+                        current_section = f"{toc_id}. {toc_label}"
+                        current_content = []
+                        is_section = True
+                        break
+                    else:
+                        # Not a top-level section; treat as content under current_section (if any)
+                        is_section = False
+                        break
             
             if not is_section and current_section:
                 current_content.append(line)
@@ -217,7 +247,7 @@ class LCPVersionComparator:
         return sections
 
     def _infer_section_pages(self, page_texts: List[str]) -> Dict[str, int]:
-        """Infer the first page number where each section header appears (1-indexed)."""
+        """Infer first page for each top-level ToC section (1-indexed)."""
         if not page_texts:
             return {}
         pages_map: Dict[str, int] = {}
@@ -231,16 +261,35 @@ class LCPVersionComparator:
                 continue
             for line in page_txt.split('\n'):
                 line_s = line.strip()
+                # Ignore table captions
+                if re.match(r'^Table\s+\d+\s*:', line_s, re.IGNORECASE):
+                    continue
                 for rgx in section_header_regexes:
                     m = rgx.match(line_s)
                     if m:
-                        num = m.group(1)
                         title = m.group(2).strip()
-                        name = f"Section {num}: {title}"
-                        if name not in pages_map:
-                            pages_map[name] = idx + 1  # 1-indexed
+                        mapped = self._map_to_top_toc(title)
+                        if mapped:
+                            toc_id, toc_label = mapped
+                            name = f"{toc_id}. {toc_label}"
+                            if name not in pages_map:
+                                pages_map[name] = idx + 1  # 1-indexed
                         break
         return pages_map
+
+    def _norm_heading(self, s: str) -> str:
+        return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]+', ' ', s.lower())).strip()
+
+    def _map_to_top_toc(self, heading: str, threshold: float = 0.7) -> Optional[Tuple[str, str]]:
+        """Map a heading to the closest top-level ToC entry using similarity."""
+        from difflib import SequenceMatcher
+        h = self._norm_heading(heading)
+        best = (0.0, None)
+        for tid, label, norm in self._toc_norm:
+            score = SequenceMatcher(None, h, norm).ratio()
+            if score > best[0]:
+                best = (score, (tid, label))
+        return best[1] if best[0] >= threshold else None
     
     def compare_texts(self, text1: str, text2: str) -> Dict[str, List[str]]:
         """
@@ -423,8 +472,12 @@ class LCPVersionComparator:
         """Compare two sets of sections and attach page numbers when available."""
         comparison = {}
         
-        # Get all unique section names
+        # Only compare mapped top-level sections by ToC id/label
         all_sections = set(sections1.keys()) | set(sections2.keys())
+        # Filter to canonical keys only ("<id>. <label>")
+        def _is_canonical(k: str) -> bool:
+            return bool(re.match(r'^\d+\.\s', k))
+        all_sections = {k for k in all_sections if _is_canonical(k)}
         
         for section_name in sorted(all_sections):
             text1 = sections1.get(section_name, '')
