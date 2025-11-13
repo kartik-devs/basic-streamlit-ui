@@ -185,11 +185,11 @@ class LCPVersionComparator:
         """
         sections = {}
         
-        # Common section patterns in LCP documents
+        # Common section patterns in LCP documents (support hierarchical and flat numbering)
         section_patterns = [
-            r'(?:Section|SECTION)\s+(\d+)[:\-\s]+([^\n]+)',
-            r'^(\d+)\.\s+([A-Z][^\n]+)',
-            r'(?:Part|PART)\s+([IVX]+)[:\-\s]+([^\n]+)',
+            r'^(?:Section|SECTION)\s+(\d+(?:\.\d+)*)[\s:\-\.\)]*([^\n]+)',
+            r'^(\d+(?:\.\d+)*)(?:[\.)])?\s+([A-Z][^\n]+)',
+            r'^(?:Part|PART)\s+([IVX]+)[\s:\-\.\)]*([^\n]+)',
         ]
         
         lines = text.split('\n')
@@ -252,9 +252,9 @@ class LCPVersionComparator:
             return {}
         pages_map: Dict[str, int] = {}
         section_header_regexes = [
-            re.compile(r'(?:Section|SECTION)\s+(\d+)[:\-\s]+([^\n]+)', re.IGNORECASE),
-            re.compile(r'^(\d+)\.\s+([A-Z][^\n]+)', re.IGNORECASE | re.MULTILINE),
-            re.compile(r'(?:Part|PART)\s+([IVX]+)[:\-\s]+([^\n]+)', re.IGNORECASE),
+            re.compile(r'^(?:Section|SECTION)\s+(\d+(?:\.\d+)*)[\s:\-\.\)]*([^\n]+)', re.IGNORECASE),
+            re.compile(r'^(\d+(?:\.\d+)*)(?:[\.)])?\s+([A-Z][^\n]+)', re.IGNORECASE | re.MULTILINE),
+            re.compile(r'^(?:Part|PART)\s+([IVX]+)[\s:\-\.\)]*([^\n]+)', re.IGNORECASE),
         ]
         for idx, page_txt in enumerate(page_texts):
             if not page_txt:
@@ -278,18 +278,38 @@ class LCPVersionComparator:
         return pages_map
 
     def _norm_heading(self, s: str) -> str:
+        s = s.replace('&', ' and ')
         return re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]+', ' ', s.lower())).strip()
 
-    def _map_to_top_toc(self, heading: str, threshold: float = 0.7) -> Optional[Tuple[str, str]]:
-        """Map a heading to the closest top-level ToC entry using similarity."""
+    def _norm_tokens(self, s: str) -> List[str]:
+        base = self._norm_heading(s)
+        toks = [t for t in base.split(' ') if t]
+        # naive singularization: drop trailing 's' for longer tokens
+        norm = [t[:-1] if len(t) > 4 and t.endswith('s') else t for t in toks]
+        return norm
+
+    def _map_to_top_toc(self, heading: str, threshold: float = 0.6) -> Optional[Tuple[str, str]]:
+        """Map a heading to the closest top-level ToC entry using robust similarity."""
         from difflib import SequenceMatcher
         h = self._norm_heading(heading)
-        best = (0.0, None)
+        h_toks = set(self._norm_tokens(heading))
+        best_score = 0.0
+        best_pair = None
         for tid, label, norm in self._toc_norm:
-            score = SequenceMatcher(None, h, norm).ratio()
-            if score > best[0]:
-                best = (score, (tid, label))
-        return best[1] if best[0] >= threshold else None
+            # string ratio
+            sm = SequenceMatcher(None, h, norm).ratio()
+            # token overlap (Jaccard)
+            l_toks = set(self._norm_tokens(label))
+            inter = len(h_toks & l_toks)
+            union = len(h_toks | l_toks) or 1
+            jacc = inter / union
+            # substring bonus
+            contains = 1.0 if (norm in h or h in norm) else 0.0
+            score = max(sm, jacc, contains)
+            if score > best_score:
+                best_score = score
+                best_pair = (tid, label)
+        return best_pair if best_score >= threshold else None
     
     def compare_texts(self, text1: str, text2: str) -> Dict[str, List[str]]:
         """
