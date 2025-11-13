@@ -169,26 +169,17 @@ def main():
                 if idx < len(versions):
                     version = versions[idx]
                     with col:
-                        is_selected = st.checkbox(
-                            f"{version['filename'][:34]}..." if len(version['filename']) > 34 else f"{version['filename']}",
-                            key=f"version_{idx}",
-                            help=f"Full name: {version['filename']}"
-                        )
-                        if is_selected:
-                            selected_versions.append(version['s3_key'])
-                        st.markdown(
-                            f"""
-                            <div style="border:1px solid #263043;background:linear-gradient(180deg,rgba(30,41,59,0.6),rgba(17,24,39,0.6));
-                                padding:12px 14px;border-radius:10px;margin-top:6px;">
-                                <div style="font-weight:700;color:#e5e7eb;margin-bottom:6px;word-break:break-word;">📄 {version['filename']}</div>
-                                <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                                    <span style="background:#0f172a;color:#60a5fa;border:1px solid #1f2a44;padding:4px 8px;border-radius:999px;font-size:12px;">📅 {version['timestamp']}</span>
-                                    <span style="background:#0f172a;color:#34d399;border:1px solid #1f2a44;padding:4px 8px;border-radius:999px;font-size:12px;">📦 {format_file_size(version['size'])}</span>
-                                </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
+                        # Native bordered container card
+                        with st.container():
+                            is_selected = st.toggle(
+                                f"{version['filename'][:48]}..." if len(version['filename']) > 48 else f"{version['filename']}",
+                                key=f"version_{idx}",
+                                help=f"Full name: {version['filename']}"
+                            )
+                            if is_selected:
+                                selected_versions.append(version['s3_key'])
+                            st.caption(f"📅 {version['timestamp']}")
+                            st.caption(f"📦 {format_file_size(version['size'])}")
                         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         # Update session state for selective mode when valid
         if len(selected_versions) >= 2:
