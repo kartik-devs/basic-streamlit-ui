@@ -20,16 +20,17 @@ class LCPVersionComparator:
         """Initialize with S3 manager for document access."""
         self.s3_manager = s3_manager
         # Canonical top-level ToC (10 sections). All extraction will be mapped to these.
+        # Numbers follow the user's index so Section 9 maps to Summary Cost Projection Tables.
         self.top_toc = [
             { 'id': '1',  'label': 'Overview' },
-            { 'id': '2',  'label': 'Life Care Planning and Life Care Plans' },
-            { 'id': '3',  'label': 'Biography of Medical Expert' },
-            { 'id': '4',  'label': 'Framework: A Life Care Plan for Fatima Dodson' },
-            { 'id': '5',  'label': 'Summary of Records' },
-            { 'id': '6',  'label': 'Interview' },
-            { 'id': '7',  'label': 'Central Opinions' },
-            { 'id': '8',  'label': 'Future Medical Requirements' },
-            { 'id': '9',  'label': 'Cost/Vendor Survey' },
+            { 'id': '2',  'label': 'Summary of Records' },
+            { 'id': '3',  'label': 'Interview' },
+            { 'id': '4',  'label': 'Central Opinions' },
+            { 'id': '5',  'label': 'Future Medical Requirements' },
+            { 'id': '6',  'label': 'Cost/Vendor Survey' },
+            { 'id': '7',  'label': 'Definition & Discussion of Quantitative Methods' },
+            { 'id': '8',  'label': 'Probable Duration of Care' },
+            { 'id': '9',  'label': 'Summary Cost Projection Tables' },
             { 'id': '10', 'label': 'Overview of Medical Expert' },
         ]
         # Precompute normalized labels
@@ -209,9 +210,7 @@ class LCPVersionComparator:
             line = line.strip()
             if not line:
                 continue
-            # Ignore table captions and bullets/numbered list lines that aren't headings
-            if re.match(r'^Table\s+\d+\s*:', line, re.IGNORECASE):
-                continue
+            # Keep table captions in content (used later for table snapshots)
             if re.match(r'^[-•\*]\s+', line):
                 if current_section:
                     current_content.append(line)
@@ -246,9 +245,44 @@ class LCPVersionComparator:
                         is_section = True
                         break
                     else:
-                        # Not a recognized section; treat as content under current_section (if any)
+                        # Not a recognized numeric heading; try label-only mapping as a fallback
+                        l2_mapped_lbl = self._map_to_level2(line, threshold=0.8)
+                        if l2_mapped_lbl:
+                            l2_id, l2_label, _ = l2_mapped_lbl
+                            current_section = f"{l2_id} {l2_label}"
+                            current_content = []
+                            is_section = True
+                            break
+                        mapped_lbl = self._map_to_top_toc(line, threshold=0.8)
+                        if mapped_lbl:
+                            toc_id, toc_label = mapped_lbl
+                            current_section = f"{toc_id}. {toc_label}"
+                            current_content = []
+                            is_section = True
+                            break
+                        # No heading match; treat as content
                         is_section = False
                         break
+            # If no regex matched at all, still try label-only mapping on this line
+            if not is_section:
+                l2_try = self._map_to_level2(line, threshold=0.85)
+                if l2_try:
+                    # Save previous section
+                    if current_section:
+                        sections[current_section] = '\n'.join(current_content)
+                    l2_id, l2_label, _ = l2_try
+                    current_section = f"{l2_id} {l2_label}"
+                    current_content = []
+                    is_section = True
+                else:
+                    top_try = self._map_to_top_toc(line, threshold=0.85)
+                    if top_try:
+                        if current_section:
+                            sections[current_section] = '\n'.join(current_content)
+                        toc_id, toc_label = top_try
+                        current_section = f"{toc_id}. {toc_label}"
+                        current_content = []
+                        is_section = True
             
             if not is_section and current_section:
                 current_content.append(line)
@@ -300,6 +334,21 @@ class LCPVersionComparator:
                                 if name not in pages_map:
                                     pages_map[name] = idx + 1  # 1-indexed
                         break
+                else:
+                    # No numeric pattern matched; try label-only mapping on the whole line
+                    l2_lbl = self._map_to_level2(line_s, threshold=0.85)
+                    if l2_lbl:
+                        l2_id, l2_label, _ = l2_lbl
+                        name = f"{l2_id} {l2_label}"
+                        if name not in pages_map:
+                            pages_map[name] = idx + 1
+                        continue
+                    top_lbl = self._map_to_top_toc(line_s, threshold=0.85)
+                    if top_lbl:
+                        toc_id, toc_label = top_lbl
+                        name = f"{toc_id}. {toc_label}"
+                        if name not in pages_map:
+                            pages_map[name] = idx + 1
         return pages_map
 
     def _norm_heading(self, s: str) -> str:
@@ -578,6 +627,7 @@ class LCPVersionComparator:
                         'sections': sections,
                         'text': text,
                         'section_pages': section_pages,
+                        'page_texts': pages,
                         'dt': dt_val
                     })
                 except Exception as e:
@@ -624,8 +674,49 @@ class LCPVersionComparator:
                 first_version.get('section_pages', {}),
                 last_version.get('section_pages', {})
             )
+
+            # Fallback: ensure Section 9 exists for tables if numeric changes detected across full docs
+            if not any(re.match(r'^9(\.|\s)', k) for k in results['sections'].keys()):
+                synth = self._synthesize_section9(
+                    first_version.get('text',''), last_version.get('text',''),
+                    first_version.get('page_texts',[]) , last_version.get('page_texts',[])
+                )
+                if synth:
+                    results['sections'][synth['name']] = synth['entry']
         
         return results
+
+    def _synthesize_section9(self, old_text: str, new_text: str, old_pages: List[str], new_pages: List[str]) -> Optional[Dict[str, Any]]:
+        """Create a synthetic Section 9 entry by extracting summary tables when missing."""
+        old_blocks = self._extract_table_blocks(old_text)
+        new_blocks = self._extract_table_blocks(new_text)
+        if not old_blocks and not new_blocks:
+            return None
+        old_join = '\n'.join(old_blocks)
+        new_join = '\n'.join(new_blocks)
+        diff = self.compare_texts(old_join, new_join)
+        has_num = bool(diff.get('numeric', {}).get('changed') or diff.get('numeric', {}).get('added') or diff.get('numeric', {}).get('removed'))
+        has_any = bool(diff['added'] or diff['removed'] or diff['changed'])
+        if not (has_num or has_any):
+            return None
+        def find_page(pages: List[str]) -> Optional[int]:
+            for idx, ptxt in enumerate(pages or []):
+                if not ptxt:
+                    continue
+                if re.search(r'Summary\s+Cost\s+Projection\s+Tables', ptxt, re.IGNORECASE) or re.search(r'^Table\s+Number\b', ptxt, re.IGNORECASE | re.MULTILINE):
+                    return idx + 1
+            return None
+        entry = {
+            'name': '9. Summary Cost Projection Tables',
+            'entry': {
+                'status': 'modified',
+                'changes': diff,
+                'old_content': old_join,
+                'new_content': new_join,
+                'pages': {'old': find_page(old_pages), 'new': find_page(new_pages)}
+            }
+        }
+        return entry
     
     def _compare_section_sets(
         self,
