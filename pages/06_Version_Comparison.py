@@ -160,6 +160,24 @@ def main():
             """,
             unsafe_allow_html=True,
         )
+        # Quick actions
+        qa1, qa2, qa3, _sp = st.columns([1.2, 1, 1, 3])
+        with qa1:
+            if st.button("⭐ Select latest two", use_container_width=True):
+                # Set first two true, rest false
+                for idx in range(len(versions)):
+                    st.session_state[f"version_{idx}"] = (idx in [0,1] and idx < len(versions))
+                st.rerun()
+        with qa2:
+            if st.button("✅ Select all", use_container_width=True):
+                for idx in range(len(versions)):
+                    st.session_state[f"version_{idx}"] = True
+                st.rerun()
+        with qa3:
+            if st.button("🧹 Clear all", use_container_width=True):
+                for idx in range(len(versions)):
+                    st.session_state[f"version_{idx}"] = False
+                st.rerun()
         # Minimal card styling for expanders (hide header, add border/background)
         st.markdown(
             """
@@ -183,10 +201,19 @@ def main():
                 idx = i + j
                 if idx < len(versions):
                     version = versions[idx]
+                    # Sanitize filename (remove suffix words and extension)
+                    raw_name = version['filename']
+                    display_name = (
+                        raw_name.replace('CompleteAIGeneratedReport', '')
+                                .replace('CompleteAIGenerated', '')
+                                .replace('.pdf', '')
+                                .strip(' -_')
+                    ) or raw_name
                     with col:
                         with st.expander(label="", expanded=True):
+                            label_txt = display_name if len(display_name) <= 48 else f"{display_name[:48]}..."
                             is_selected = st.toggle(
-                                f"{version['filename'][:48]}..." if len(version['filename']) > 48 else f"{version['filename']}",
+                                label_txt,
                                 key=f"version_{idx}",
                                 help=f"Full name: {version['filename']}"
                             )
