@@ -592,6 +592,12 @@ class LCPVersionComparator:
                 <span class="status-badge {status_class}">{status.upper()}</span>
             </div>
         """
+        # Pages line if available
+        pages = section_data.get('pages') if isinstance(section_data, dict) else None
+        if isinstance(pages, dict):
+            old_p = pages.get('old')
+            new_p = pages.get('new')
+            html += f"<div class='metadata'>Pages: {('old p'+str(old_p)) if old_p else 'old —'} → {('new p'+str(new_p)) if new_p else 'new —'}</div>"
         
         if status == 'unchanged':
             html += "<p>No changes detected in this section.</p>"
@@ -790,8 +796,8 @@ class LCPVersionComparator:
             raise ImportError("Please install reportlab: pip install reportlab")
     
     def _format_section_pdf(self, section_name: str, section_data: Dict, styles) -> List:
-        """Format a single section for PDF with card layout and bullet lists for diffs."""
-        from reportlab.platypus import Paragraph, Spacer, ListFlowable, ListItem, Table, TableStyle, KeepTogether
+        """Format a single section for PDF with header + pages line and splittable body content."""
+        from reportlab.platypus import Paragraph, Spacer, ListFlowable, ListItem, Table, TableStyle
         from reportlab.lib.units import inch
         from reportlab.lib.colors import HexColor
 
@@ -806,7 +812,7 @@ class LCPVersionComparator:
         }
         fg, bg = chip_colors.get(status, ('#6b7280', '#f3f4f6'))
 
-        # Header row: title + status chip drawn as colored label
+        # Header row: title + status chip drawn as colored label (as small table)
         header = [
             Paragraph(f"<b>{section_name}</b>", styles['Heading3']),
             Paragraph(f"<font color='{fg}'><b>{status.upper()}</b></font>", styles['Normal'])
@@ -862,31 +868,26 @@ class LCPVersionComparator:
                 body_flow.append(Paragraph(f"<b>Preview ({len(lines)} lines total):</b>", styles['Normal']))
                 body_flow.append(_list(preview, '•'))
 
-        # Optional pages line under header if available
-        pages = section_data.get('pages') if isinstance(section_data, dict) else None
-        if isinstance(pages, dict):
-            old_p = pages.get('old')
-            new_p = pages.get('new')
-            if old_p or new_p:
-                page_line = Paragraph(
-                    f"<font color='#6b7280'>Pages: {('old p'+str(old_p)) if old_p else 'old —'} → {('new p'+str(new_p)) if new_p else 'new —'}</font>",
-                    styles['Normal']
-                )
-            else:
-                page_line = Spacer(1, 0.01 * inch)
-        else:
-            page_line = Spacer(1, 0.01 * inch)
-
-        # Compose a card-like table
-        tbl_data = [[header[0], header[1]], [page_line, ''], [body_flow, '']]
-        tbl = Table(tbl_data, colWidths=[0.80 * 6.0 * inch, 0.20 * 6.0 * inch])
-        tbl.setStyle(TableStyle([
-            ('SPAN', (0,2), (1,2)),
+        # Build small header table only (splittable content follows outside)
+        header_tbl = Table([header], colWidths=[0.80 * 6.0 * inch, 0.20 * 6.0 * inch])
+        header_tbl.setStyle(TableStyle([
             ('VALIGN', (0,0), (-1,-1), 'TOP'),
             ('BACKGROUND', (0,0), (-1,-1), HexColor('#fafafa')),
             ('BOX', (0,0), (-1,-1), 0.5, HexColor('#e5e7eb')),
             ('INNERPADDING', (0,0), (-1,-1), 6),
         ]))
-
-        elements.append(KeepTogether([tbl, Spacer(1, 0.14 * inch)]))
+        elements.append(header_tbl)
+        # Pages line
+        pages = section_data.get('pages') if isinstance(section_data, dict) else None
+        if isinstance(pages, dict):
+            old_p = pages.get('old')
+            new_p = pages.get('new')
+            elements.append(Paragraph(
+                f"<font color='#6b7280'>Pages: {('old p'+str(old_p)) if old_p else 'old —'} → {('new p'+str(new_p)) if new_p else 'new —'}</font>",
+                styles['Normal']
+            ))
+        elements.append(Spacer(1, 0.06 * inch))
+        # Body flowables directly (allow page splitting)
+        elements.extend(body_flow)
+        elements.append(Spacer(1, 0.14 * inch))
         return elements
