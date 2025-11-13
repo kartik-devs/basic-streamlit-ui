@@ -160,6 +160,21 @@ def main():
             """,
             unsafe_allow_html=True,
         )
+        # Minimal card styling for expanders (hide header, add border/background)
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stExpander"] > details {
+                border: 1px solid #263043 !important;
+                border-radius: 10px !important;
+                background: linear-gradient(180deg, rgba(30,41,59,0.35), rgba(17,24,39,0.35)) !important;
+                padding: 6px 10px !important;
+            }
+            div[data-testid="stExpander"] > details > summary { display: none; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         # Create a grid layout for version cards
         cols_per_row = 3
         for i in range(0, len(versions), cols_per_row):
@@ -169,8 +184,7 @@ def main():
                 if idx < len(versions):
                     version = versions[idx]
                     with col:
-                        # Native bordered container card
-                        with st.container():
+                        with st.expander(label="", expanded=True):
                             is_selected = st.toggle(
                                 f"{version['filename'][:48]}..." if len(version['filename']) > 48 else f"{version['filename']}",
                                 key=f"version_{idx}",
