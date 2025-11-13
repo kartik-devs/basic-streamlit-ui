@@ -253,8 +253,11 @@ class LCPVersionComparator:
         Returns:
             Dict with 'added', 'removed', 'changed' lists
         """
-        lines1 = text1.split('\n')
-        lines2 = text2.split('\n')
+        # Normalize and split into sentences to reduce false diffs from line wraps
+        n1 = self._normalize_text(text1)
+        n2 = self._normalize_text(text2)
+        lines1 = self._split_sentences(n1)
+        lines2 = self._split_sentences(n2)
         
         differ = difflib.Differ()
         diff = list(differ.compare(lines1, lines2))
@@ -287,6 +290,34 @@ class LCPVersionComparator:
             'removed': removed,
             'changed': changed
         }
+
+    def _normalize_text(self, text: str) -> str:
+        """Normalize PDF-extracted text to improve diff quality."""
+        if not text:
+            return ''
+        t = text
+        # Remove common headers/footers
+        t = re.sub(r'^\s*LCP Version Comparison Report\s*$', '', t, flags=re.MULTILINE)
+        t = re.sub(r'^\s*Page\s+\d+\s*$', '', t, flags=re.MULTILINE)
+        # Normalize quotes/dashes/spaces
+        t = t.replace('\u2019', "'").replace('\u2018', "'").replace('\u201c', '"').replace('\u201d', '"')
+        t = t.replace('\u2013', '-').replace('\u2014', '-')
+        t = re.sub(r'\s+', ' ', t)
+        # Fix spaced punctuation (e.g., "year -old")
+        t = re.sub(r'\s-\s', '-', t)
+        # Keep sentence endings clear
+        return t.strip()
+
+    def _split_sentences(self, text: str) -> List[str]:
+        """Simple sentence splitter; fallback to periods if needed."""
+        if not text:
+            return []
+        # Split on ., !, ? followed by space and capital, keep separators
+        parts = re.split(r'(?<=[\.\!\?])\s+(?=[A-Z0-9])', text)
+        # If too few parts, fallback to commas/semicolons to reduce long lines
+        if len(parts) < 2:
+            parts = re.split(r'(?<=[\.;:])\s+', text)
+        return [p.strip() for p in parts if p and p.strip()]
     
     def compare_versions(
         self,
