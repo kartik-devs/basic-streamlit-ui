@@ -132,6 +132,26 @@ class LCPVersionComparator:
                 return '\n'.join(text)
             except ImportError:
                 raise ImportError("Please install PyPDF2 or pdfplumber: pip install PyPDF2 pdfplumber")
+
+    def _extract_page_texts(self, pdf_bytes: bytes) -> List[str]:
+        """Extract text per page for page number inference."""
+        try:
+            import PyPDF2
+            reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+            pages = []
+            for page in reader.pages:
+                pages.append(page.extract_text() or '')
+            return pages
+        except Exception:
+            try:
+                import pdfplumber
+                pages = []
+                with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                    for page in pdf.pages:
+                        pages.append(page.extract_text() or '')
+                return pages
+            except Exception:
+                return []
     
     def extract_sections(self, text: str) -> Dict[str, str]:
         """
@@ -195,6 +215,32 @@ class LCPVersionComparator:
             sections['Full Document'] = text
         
         return sections
+
+    def _infer_section_pages(self, page_texts: List[str]) -> Dict[str, int]:
+        """Infer the first page number where each section header appears (1-indexed)."""
+        if not page_texts:
+            return {}
+        pages_map: Dict[str, int] = {}
+        section_header_regexes = [
+            re.compile(r'(?:Section|SECTION)\s+(\d+)[:\-\s]+([^\n]+)', re.IGNORECASE),
+            re.compile(r'^(\d+)\.\s+([A-Z][^\n]+)', re.IGNORECASE | re.MULTILINE),
+            re.compile(r'(?:Part|PART)\s+([IVX]+)[:\-\s]+([^\n]+)', re.IGNORECASE),
+        ]
+        for idx, page_txt in enumerate(page_texts):
+            if not page_txt:
+                continue
+            for line in page_txt.split('\n'):
+                line_s = line.strip()
+                for rgx in section_header_regexes:
+                    m = rgx.match(line_s)
+                    if m:
+                        num = m.group(1)
+                        title = m.group(2).strip()
+                        name = f"Section {num}: {title}"
+                        if name not in pages_map:
+                            pages_map[name] = idx + 1  # 1-indexed
+                        break
+        return pages_map
     
     def compare_texts(self, text1: str, text2: str) -> Dict[str, List[str]]:
         """
@@ -269,12 +315,25 @@ class LCPVersionComparator:
             if pdf_bytes:
                 try:
                     text = self.extract_text_from_pdf(pdf_bytes)
+                    pages = self._extract_page_texts(pdf_bytes)
                     sections = self.extract_sections(text)
+                    section_pages = self._infer_section_pages(pages)
+                    # Try to parse timestamp from filename to establish chronological order
+                    fname = key.split('/')[-1]
+                    dt_val = None
+                    ts_match = re.search(r'(\d{12})', fname)
+                    if ts_match:
+                        try:
+                            dt_val = datetime.strptime(ts_match.group(1), '%Y%m%d%H%M')
+                        except Exception:
+                            dt_val = None
                     versions_data.append({
                         'key': key,
-                        'filename': key.split('/')[-1],
+                        'filename': fname,
                         'sections': sections,
-                        'text': text
+                        'text': text,
+                        'section_pages': section_pages,
+                        'dt': dt_val
                     })
                 except Exception as e:
                     print(f"Error processing {key}: {e}")
@@ -282,6 +341,11 @@ class LCPVersionComparator:
         if len(versions_data) < 2:
             return {'error': 'Need at least 2 valid versions to compare'}
         
+        # Sort by time ascending (older -> newer) when timestamps are available
+        def _sort_key(v):
+            return v.get('dt') or datetime.min
+        versions_data.sort(key=_sort_key)
+
         # Perform comparison
         results = {
             'case_id': case_id,
@@ -292,7 +356,7 @@ class LCPVersionComparator:
         }
         
         if mode == 'all':
-            # Compare each version with the previous one
+            # Compare each version with the next newer one (chronological order)
             for i in range(1, len(versions_data)):
                 prev_version = versions_data[i - 1]
                 curr_version = versions_data[i]
@@ -300,16 +364,20 @@ class LCPVersionComparator:
                 comparison_key = f"{prev_version['filename']} → {curr_version['filename']}"
                 results['sections'][comparison_key] = self._compare_section_sets(
                     prev_version['sections'],
-                    curr_version['sections']
+                    curr_version['sections'],
+                    prev_version.get('section_pages', {}),
+                    curr_version.get('section_pages', {})
                 )
         else:
-            # Selective: compare first with last
-            first_version = versions_data[0]
-            last_version = versions_data[-1]
+            # Selective: compare oldest with newest
+            first_version = versions_data[0]  # oldest
+            last_version = versions_data[-1]  # newest
             
             results['sections'] = self._compare_section_sets(
                 first_version['sections'],
-                last_version['sections']
+                last_version['sections'],
+                first_version.get('section_pages', {}),
+                last_version.get('section_pages', {})
             )
         
         return results
@@ -317,9 +385,11 @@ class LCPVersionComparator:
     def _compare_section_sets(
         self,
         sections1: Dict[str, str],
-        sections2: Dict[str, str]
+        sections2: Dict[str, str],
+        pages1: Dict[str, int],
+        pages2: Dict[str, int],
     ) -> Dict[str, Any]:
-        """Compare two sets of sections."""
+        """Compare two sets of sections and attach page numbers when available."""
         comparison = {}
         
         # Get all unique section names
@@ -332,23 +402,27 @@ class LCPVersionComparator:
             if not text1:
                 comparison[section_name] = {
                     'status': 'added',
-                    'content': text2
+                    'content': text2,
+                    'pages': {'old': None, 'new': pages2.get(section_name)}
                 }
             elif not text2:
                 comparison[section_name] = {
                     'status': 'removed',
-                    'content': text1
+                    'content': text1,
+                    'pages': {'old': pages1.get(section_name), 'new': None}
                 }
             else:
                 diff = self.compare_texts(text1, text2)
                 if diff['added'] or diff['removed'] or diff['changed']:
                     comparison[section_name] = {
                         'status': 'modified',
-                        'changes': diff
+                        'changes': diff,
+                        'pages': {'old': pages1.get(section_name), 'new': pages2.get(section_name)}
                     }
                 else:
                     comparison[section_name] = {
-                        'status': 'unchanged'
+                        'status': 'unchanged',
+                        'pages': {'old': pages1.get(section_name), 'new': pages2.get(section_name)}
                     }
         
         return comparison
@@ -593,10 +667,15 @@ class LCPVersionComparator:
             # Metadata panel (table) with wrapping and bullet list for versions
             meta_rows = []
             meta_rows.append([Paragraph('<b>Case ID</b>', body_style), Paragraph(str(results.get('case_id', '—')), body_style)])
-            meta_rows.append([Paragraph('<b>Mode</b>', body_style), Paragraph(str(results.get('mode', '—')).title(), body_style)])
+            mode_val = str(results.get('mode', '—')).title()
+            meta_rows.append([Paragraph('<b>Mode</b>', body_style), Paragraph(mode_val, body_style)])
             meta_rows.append([Paragraph('<b>Generated</b>', body_style), Paragraph(str(results.get('comparison_timestamp', '—')), body_style)])
 
             versions = results.get('versions_compared', []) or []
+            # Comparing row for clarity
+            if mode_val.lower() == 'selective' and versions and len(versions) >= 2:
+                meta_rows.append([Paragraph('<b>Comparing</b>', body_style), Paragraph(f"{versions[0]} → {versions[-1]}", body_style)])
+
             if versions:
                 version_items = [ListItem(Paragraph(v, body_style)) for v in versions]
                 versions_list = ListFlowable(version_items, bulletType='bullet', leftIndent=12)
@@ -715,30 +794,60 @@ class LCPVersionComparator:
         if status == 'added':
             body_flow.append(Paragraph("Section added in the newer version.", styles['Normal']))
         elif status == 'removed':
-            body_flow.append(Paragraph("Section removed from the newer version.", styles['Normal']))
+            body_flow.append(Paragraph("Present only in the older version (missing in newer).", styles['Normal']))
         elif status == 'unchanged':
-            body_flow.append(Paragraph("No changes detected.", styles['Normal']))
+            body_flow.append(Paragraph("No differences between the two compared versions.", styles['Normal']))
         elif status == 'modified':
+            # Summary counts line
+            add_n = len(changes.get('added', []))
+            rem_n = len(changes.get('removed', []))
+            chg_n = len(changes.get('changed', []))
+            body_flow.append(Paragraph(f"<b>Change summary:</b> +{add_n} / -{rem_n} / ↔︎ {chg_n}", styles['Normal']))
             if changes.get('added'):
-                body_flow.append(Paragraph("<b>Added:</b>", styles['Normal']))
-                body_flow.append(_list(changes['added'][:8], '+'))
+                body_flow.append(Spacer(1, 0.04 * inch))
+                body_flow.append(Paragraph("<b>New lines (examples):</b>", styles['Normal']))
+                body_flow.append(_list(changes['added'][:6], '+'))
             if changes.get('removed'):
                 body_flow.append(Spacer(1, 0.04 * inch))
-                body_flow.append(Paragraph("<b>Removed:</b>", styles['Normal']))
-                body_flow.append(_list(changes['removed'][:8], '-'))
+                body_flow.append(Paragraph("<b>Removed lines (examples):</b>", styles['Normal']))
+                body_flow.append(_list(changes['removed'][:6], '-'))
             if changes.get('changed'):
                 body_flow.append(Spacer(1, 0.04 * inch))
-                body_flow.append(Paragraph("<b>Modified:</b>", styles['Normal']))
-                # Show pairs as bullets
+                body_flow.append(Paragraph("<b>Modified pairs (examples):</b>", styles['Normal']))
                 paired = []
-                for ch in changes['changed'][:6]:
+                for ch in changes['changed'][:4]:
                     old = ch.get('old', '')
                     new = ch.get('new', '')
                     paired.append(Paragraph(f"<b>Old:</b> {old}<br/><b>New:</b> {new}", styles['Normal']))
                 body_flow.append(ListFlowable([ListItem(p) for p in paired], bulletType='bullet', leftIndent=14))
 
+        # For added/removed, show a short snippet preview and counts if content is available
+        if status in ('added','removed') and isinstance(section_data.get('content'), str):
+            text = section_data.get('content') or ''
+            lines = [ln for ln in (text.split('\n') if text else []) if ln.strip()]
+            if lines:
+                preview = lines[:5]
+                body_flow.append(Spacer(1, 0.04 * inch))
+                body_flow.append(Paragraph(f"<b>Preview ({len(lines)} lines total):</b>", styles['Normal']))
+                body_flow.append(_list(preview, '•'))
+
+        # Optional pages line under header if available
+        pages = section_data.get('pages') if isinstance(section_data, dict) else None
+        if isinstance(pages, dict):
+            old_p = pages.get('old')
+            new_p = pages.get('new')
+            if old_p or new_p:
+                page_line = Paragraph(
+                    f"<font color='#6b7280'>Pages: {('old p'+str(old_p)) if old_p else 'old —'} → {('new p'+str(new_p)) if new_p else 'new —'}</font>",
+                    styles['Normal']
+                )
+            else:
+                page_line = Spacer(1, 0.01 * inch)
+        else:
+            page_line = Spacer(1, 0.01 * inch)
+
         # Compose a card-like table
-        tbl_data = [[header[0], header[1]], [Spacer(1, 0.06 * inch), Spacer(1, 0.06 * inch)], [body_flow, '']]
+        tbl_data = [[header[0], header[1]], [page_line, ''], [body_flow, '']]
         tbl = Table(tbl_data, colWidths=[0.80 * 6.0 * inch, 0.20 * 6.0 * inch])
         tbl.setStyle(TableStyle([
             ('SPAN', (0,2), (1,2)),
