@@ -65,29 +65,23 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Get available cases
-        available_cases = s3_manager.list_available_cases()
-        
-        if available_cases:
-            case_id = st.selectbox(
-                "Select Case ID",
-                options=available_cases,
-                help="Choose a case to compare its LCP document versions"
-            )
-        else:
-            case_id = st.text_input(
-                "Enter Case ID",
-                placeholder="e.g., 3424",
-                help="Enter a 4-digit case ID"
-            )
+        # Get available cases (dropdown)
+        available_cases = s3_manager.list_available_cases() or []
+        case_id = st.selectbox(
+            "Case ID",
+            options=[""] + available_cases,
+            index=0,
+            placeholder="Select or type case ID (4 digits)",
+            help="Choose a case to compare its LCP document versions"
+        )
     
     with col2:
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-        if st.button("🔍 Load Versions", type="primary", use_container_width=True):
-            if case_id:
-                st.session_state['selected_case_id'] = case_id
-                st.session_state['versions_loaded'] = True
-                st.rerun()
+        load_disabled = not bool(case_id)
+        if st.button("🔍 Load Versions", type="primary", use_container_width=True, disabled=load_disabled):
+            st.session_state['selected_case_id'] = case_id
+            st.session_state['versions_loaded'] = True
+            st.rerun()
     
     if not case_id:
         st.info("👆 Please enter or select a case ID to begin")
