@@ -963,6 +963,13 @@ class LCPVersionComparator:
                 if new_tables:
                     html += "<div class='change-item'><div class='change-label'>📄 New Table Snapshot</div>"
                     html += f"<pre style='white-space: pre-wrap; background:#f6f8fa; padding:10px; border-radius:6px;'>{_esc('\n'.join(new_tables))}</pre></div>"
+
+                # Additionally, render a side-by-side diff for the Summary Cost Projection table
+                diff9 = self._diff_summary_cost_tables(old_txt, new_txt)
+                if diff9 and (diff9.get('rows')):
+                    html += "<div class='change-item'><div class='change-label'>🔎 Summary Cost Projection (Side-by-side)</div>"
+                    html += self._render_summary_cost_html(diff9)
+                    html += "</div>"
         
         html += "</div>"
         return html
@@ -1282,3 +1289,140 @@ class LCPVersionComparator:
         if capturing and buf:
             blocks.append('\n'.join(buf).strip())
         return blocks
+
+    def _extract_summary_rows(self, text: str) -> List[Dict[str, Any]]:
+        """Parse 'Summary Cost Projection Tables' rows into structured records.
+        Accepts lines like:
+        - 'Table 1  Routine Medical Evaluation   $25,409.85'
+        - '1  Routine Medical Evaluations  $0.00'
+        Ignores the header 'Table Number Table Title Total Cost Projection'.
+        """
+        rows: List[Dict[str, Any]] = []
+        if not text:
+            return rows
+        for ln in text.split('\n'):
+            s = (ln or '').strip()
+            if not s:
+                continue
+            if re.search(r'^table\s+number\b', s, re.IGNORECASE):
+                continue
+            m = re.match(r'^(?:table\s*)?(?P<num>\d+)\s*[:\.)-]?\s+(?P<title>.+?)\s+(?P<amt>\$?\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$', s, re.IGNORECASE)
+            if not m:
+                # Sometimes the amount is separated on next token due to spacing; try last token numeric
+                m2 = re.match(r'^(?:table\s*)?(?P<num>\d+)\s*[:\.)-]?\s+(?P<title>.+?)\s*$', s, re.IGNORECASE)
+                if m2:
+                    # If trailing numeric is missing here, skip (handled by next line)
+                    continue
+                # Or a line with only 'Total Cost Projection $X' — capture as summary row 0
+                m3 = re.match(r'^total\s+cost\s+projection\s+(?P<amt>\$?\d{1,3}(?:,\d{3})*(?:\.\d{2})?)$', self._norm_heading(s), re.IGNORECASE)
+                if m3:
+                    rows.append({'num': 'total', 'title': 'Total Cost Projection', 'amount': self._parse_amount(m3.group('amt'))})
+                continue
+            num = m.group('num')
+            title = m.group('title').strip()
+            amt = self._parse_amount(m.group('amt'))
+            if amt is None:
+                continue
+            rows.append({'num': num, 'title': title, 'amount': amt})
+        return rows
+
+    def _diff_summary_cost_tables(self, old_text: str, new_text: str) -> Dict[str, Any]:
+        """Align rows by table number (fallback to normalized title) and diff totals."""
+        old_rows = self._extract_summary_rows(old_text)
+        new_rows = self._extract_summary_rows(new_text)
+        if not old_rows and not new_rows:
+            return {}
+        def key(r):
+            return (r.get('num') or '', self._norm_heading(r.get('title','')))
+        idx_old = {key(r): r for r in old_rows}
+        idx_new = {key(r): r for r in new_rows}
+        keys = sorted(set(idx_old.keys()) | set(idx_new.keys()), key=lambda k: (k[0] if k[0] != 'total' else '999'))
+        out_rows = []
+        for k in keys:
+            ro = idx_old.get(k)
+            rn = idx_new.get(k)
+            if ro and rn:
+                changed = (abs((ro['amount'] or 0) - (rn['amount'] or 0)) > 0.01) or (self._norm_heading(ro['title']) != self._norm_heading(rn['title']))
+                out_rows.append({
+                    'num': ro.get('num') or rn.get('num'),
+                    'title_old': ro.get('title'),
+                    'title_new': rn.get('title'),
+                    'total_old': ro.get('amount'),
+                    'total_new': rn.get('amount'),
+                    'delta': (rn.get('amount') or 0) - (ro.get('amount') or 0),
+                    'status': 'modified' if changed else 'unchanged'
+                })
+            elif ro and not rn:
+                out_rows.append({
+                    'num': ro.get('num'), 'title_old': ro.get('title'), 'title_new': None,
+                    'total_old': ro.get('amount'), 'total_new': None, 'delta': None, 'status': 'removed'
+                })
+            elif rn and not ro:
+                out_rows.append({
+                    'num': rn.get('num'), 'title_old': None, 'title_new': rn.get('title'),
+                    'total_old': None, 'total_new': rn.get('amount'), 'delta': None, 'status': 'added'
+                })
+        total_old = sum([r['amount'] for r in old_rows if isinstance(r.get('amount'), (int, float))])
+        total_new = sum([r['amount'] for r in new_rows if isinstance(r.get('amount'), (int, float))])
+        return {
+            'rows': out_rows,
+            'grand_old': total_old,
+            'grand_new': total_new,
+            'grand_delta': total_new - total_old
+        }
+
+    def _render_summary_cost_html(self, diff: Dict[str, Any]) -> str:
+        """Render side-by-side summary cost table diff as HTML."""
+        if not diff or not diff.get('rows'):
+            return ""
+        def fmt_money(v):
+            return '-' if v is None else f"${v:,.2f}"
+        head = """
+        <style>
+            .s9tbl { width:100%; border-collapse: collapse; font-size: 0.92em; }
+            .s9tbl th, .s9tbl td { border:1px solid #e5e7eb; padding:6px 8px; }
+            .s9tbl th { background:#f8fafc; text-align:left; }
+            .s9chg { background:#fff7ed; }
+            .s9add { background:#ecfdf5; }
+            .s9rem { background:#fef2f2; }
+            .right { text-align:right; white-space:nowrap; }
+        </style>
+        <table class="s9tbl">
+            <thead>
+                <tr>
+                    <th style="width:80px;">Table #</th>
+                    <th>Title (Old)</th>
+                    <th>Title (New)</th>
+                    <th class="right">Total (Old)</th>
+                    <th class="right">Total (New)</th>
+                    <th class="right">Δ</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        rows_html = []
+        for r in diff['rows']:
+            cls = 's9chg' if r['status']=='modified' else ('s9add' if r['status']=='added' else ('s9rem' if r['status']=='removed' else ''))
+            rows_html.append(
+                f"<tr class='{cls}'>"
+                f"<td>{r.get('num','')}</td>"
+                f"<td>{(r.get('title_old') or '')}</td>"
+                f"<td>{(r.get('title_new') or '')}</td>"
+                f"<td class='right'>{fmt_money(r.get('total_old'))}</td>"
+                f"<td class='right'>{fmt_money(r.get('total_new'))}</td>"
+                f"<td class='right'>{fmt_money(r.get('delta')) if r.get('delta') is not None else '-'}</td>"
+                f"</tr>"
+            )
+        foot = f"""
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th colspan="3" class="right">Grand Total</th>
+                    <th class="right">{fmt_money(diff.get('grand_old'))}</th>
+                    <th class="right">{fmt_money(diff.get('grand_new'))}</th>
+                    <th class="right">{fmt_money(diff.get('grand_delta'))}</th>
+                </tr>
+            </tfoot>
+        </table>
+        """
+        return head + "".join(rows_html) + foot
