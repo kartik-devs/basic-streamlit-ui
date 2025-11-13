@@ -45,7 +45,13 @@ class LCPVersionComparator:
         self.level2_toc = [
             { 'id': '1.1', 'top_id': '1', 'label': 'Executive Summary' },
             { 'id': '1.2', 'top_id': '1', 'label': 'Life Care Planning and Life Care Plans' },
+            { 'id': '1.2.1', 'top_id': '1', 'label': 'Life Care Planning' },
+            { 'id': '1.2.2', 'top_id': '1', 'label': 'Life Care Plans' },
             { 'id': '2.1', 'top_id': '2', 'label': 'Summary of Medical Records' },
+            { 'id': '2.1.1', 'top_id': '2', 'label': 'Sources' },
+            { 'id': '2.1.2', 'top_id': '2', 'label': 'Chronological Synopsis of Medical Records' },
+            { 'id': '2.3', 'top_id': '2', 'label': 'Diagnostics' },
+            { 'id': '2.4', 'top_id': '2', 'label': 'Procedure Performed' },
             # Section 3: Interview subsections
             { 'id': '3.1', 'top_id': '3', 'label': 'Recent History' },
             { 'id': '3.1.1', 'top_id': '3', 'label': 'History of Present Injury/Illness' },
@@ -83,6 +89,40 @@ class LCPVersionComparator:
             { 'id': '3.20', 'top_id': '3', 'label': 'Residential Situation' },
             { 'id': '3.21', 'top_id': '3', 'label': 'Transportation' },
             { 'id': '3.22', 'top_id': '3', 'label': 'Household Responsibilities' },
+            # Section 4: Central Opinions
+            { 'id': '4.1', 'top_id': '4', 'label': 'Diagnostic Conditions' },
+            { 'id': '4.2', 'top_id': '4', 'label': 'Consequent Circumstances' },
+            { 'id': '4.2.1', 'top_id': '4', 'label': 'Disabilities' },
+            { 'id': '4.2.2', 'top_id': '4', 'label': 'Probable Duration of Care' },
+            { 'id': '4.2.3', 'top_id': '4', 'label': 'Average Residual Years' },
+            { 'id': '4.2.4', 'top_id': '4', 'label': 'Life Expectancy' },
+            { 'id': '4.2.5', 'top_id': '4', 'label': 'Adjustments to Life Expectancy' },
+            { 'id': '4.2.6', 'top_id': '4', 'label': 'Probable Duration of Care' },
+            # Section 5: Future Medical Requirements
+            { 'id': '5.1', 'top_id': '5', 'label': 'Physician Services' },
+            { 'id': '5.2', 'top_id': '5', 'label': 'Routine Diagnostics' },
+            { 'id': '5.3', 'top_id': '5', 'label': 'Medications' },
+            { 'id': '5.4', 'top_id': '5', 'label': 'Laboratory Studies' },
+            { 'id': '5.5', 'top_id': '5', 'label': 'Rehabilitation Services' },
+            { 'id': '5.6', 'top_id': '5', 'label': 'Equipment & Supplies' },
+            { 'id': '5.7', 'top_id': '5', 'label': 'Environmental Modifications & Essential Services' },
+            { 'id': '5.8', 'top_id': '5', 'label': 'Acute Care Services' },
+            # Section 6: Cost/Vendor Survey
+            { 'id': '6.1', 'top_id': '6', 'label': 'Methods, Definitions, and Discussion' },
+            { 'id': '6.1.1', 'top_id': '6', 'label': 'Survey Methodology' },
+            { 'id': '6.1.2', 'top_id': '6', 'label': 'Definitions and Discussion' },
+            # Section 7: Definition & Discussion of Quantitative Methods
+            { 'id': '7.1', 'top_id': '7', 'label': 'Nominal Value' },
+            { 'id': '7.2', 'top_id': '7', 'label': 'Accounting Methods' },
+            { 'id': '7.3', 'top_id': '7', 'label': 'Variables' },
+            { 'id': '7.3.1', 'top_id': '7', 'label': 'Independent Variables' },
+            { 'id': '7.3.2', 'top_id': '7', 'label': 'Dependent Variables' },
+            { 'id': '7.4', 'top_id': '7', 'label': 'Unit Costs' },
+            { 'id': '7.5', 'top_id': '7', 'label': 'Counts & Conventions' },
+            # Section 8: Probable Duration of Care
+            { 'id': '8.1', 'top_id': '8', 'label': 'Probable Duration of Care Metrics' },
+            # Section 9: Summary Cost Projection Tables
+            { 'id': '9.1', 'top_id': '9', 'label': 'Detailed Cost Projection Tables' },
         ]
         self._l2_norm = [(t['id'], t['top_id'], t['label'], self._norm_heading(t['label'])) for t in self.level2_toc]
         
