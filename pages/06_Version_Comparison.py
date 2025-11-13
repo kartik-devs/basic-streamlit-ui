@@ -162,15 +162,34 @@ def main():
     
     with tab_overall:
         st.markdown("#### Compare All Versions")
-        st.info(f"This will compare all {len(versions)} versions sequentially (newest to oldest).")
-        # Prepare all versions list
+        # Modern active container
+        st.markdown(f"""
+        <div style="
+            padding: 16px 18px; 
+            border-radius: 10px; 
+            border: 1px solid #e5e7eb; 
+            background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(59,130,246,0.06));
+            display: flex; align-items: center; gap: 12px;">
+            <div style="
+                background:#eef2ff; color:#4f46e5; 
+                padding: 6px 10px; border-radius: 999px; 
+                font-weight: 700; font-size: 12px;">
+                OVERALL MODE
+            </div>
+            <div style="color:#374151; font-weight:600;">All versions will be compared sequentially (newest to oldest).</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Auto-activate overall mode without a checkbox, but do not override a valid selective selection
         all_version_keys = [v['s3_key'] for v in versions]
-        # Provide an explicit toggle to activate overall mode
-        use_overall = st.checkbox("Use overall comparison (all versions)", key="use_overall_mode")
-        if use_overall:
+        has_valid_selective = (
+            st.session_state.get('comparison_mode') == 'selective' and 
+            isinstance(st.session_state.get('selected_versions'), list) and 
+            len(st.session_state.get('selected_versions')) >= 2
+        )
+        if not has_valid_selective:
             st.session_state['selected_versions'] = all_version_keys
             st.session_state['comparison_mode'] = 'all'
-            st.success("✅ Overall mode active")
     
     # Step 3: Run comparison
     st.markdown("---")
@@ -311,13 +330,13 @@ def main():
             # Display HTML in iframe
             import base64
             b64 = base64.b64encode(report_bytes).decode()
-            iframe_html = f'<iframe src="data:text/html;base64,{b64}" width="100%" height="800" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
+            iframe_html = f'<iframe src="data:text/html;base64,{b64}" width="100%" height="1100" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
             st.markdown(iframe_html, unsafe_allow_html=True)
         else:
             # Display PDF
             import base64
             b64 = base64.b64encode(report_bytes).decode()
-            iframe_pdf = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="800" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
+            iframe_pdf = f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="1100" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
             st.markdown(iframe_pdf, unsafe_allow_html=True)
     
     # Footer
