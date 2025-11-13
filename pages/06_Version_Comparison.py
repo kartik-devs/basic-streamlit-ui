@@ -7,6 +7,7 @@ Compare different versions of LCP documents for a case.
 import streamlit as st
 import os
 from datetime import datetime
+import requests
 from app.ui import inject_base_styles, theme_provider, top_nav
 from app.auth import require_authentication, get_current_user
 from app.s3_utils import get_s3_manager
@@ -64,9 +65,26 @@ def main():
     
     col1, col2 = st.columns([2, 1])
     
+    # Cached fetch of available cases using backend like Case Report, with S3 fallback
+    @st.cache_data(ttl=120)
+    def fetch_available_cases_cached() -> list[str]:
+        backend = (os.getenv("BACKEND_BASE") or "http://localhost:8000").rstrip("/")
+        try:
+            res = requests.get(f"{backend}/s3/cases", timeout=6)
+            if res.ok:
+                data = res.json() or {}
+                cases = data.get("cases", []) or []
+                return cases
+        except Exception:
+            pass
+        # Fallback to direct S3 listing
+        try:
+            return s3_manager.list_available_cases() or []
+        except Exception:
+            return []
+
     with col1:
-        # Get available cases (dropdown)
-        available_cases = s3_manager.list_available_cases() or []
+        available_cases = fetch_available_cases_cached()
         case_id = st.selectbox(
             "Case ID",
             options=[""] + available_cases,
