@@ -7,6 +7,7 @@ providing detailed section-by-section analysis of changes.
 
 import io
 import re
+import hashlib
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import difflib
@@ -19,6 +20,11 @@ class LCPVersionComparator:
     def __init__(self, s3_manager):
         """Initialize with S3 manager for document access."""
         self.s3_manager = s3_manager
+        # Simple in-process cache for extracted text/pages keyed by PDF hash
+        self._extract_cache: Dict[str, Dict[str, Any]] = {
+            'text': {},  # md5 -> text
+            'pages': {}  # md5 -> List[str]
+        }
         # Canonical top-level ToC (10 sections). All extraction will be mapped to these.
         # Numbers follow the user's index so Section 9 maps to Summary Cost Projection Tables.
         self.top_toc = [
@@ -135,18 +141,36 @@ class LCPVersionComparator:
         Returns:
             Extracted text content
         """
+        # Cache by md5 of bytes
+        h = hashlib.md5(pdf_bytes).hexdigest()
+        cached = self._extract_cache['text'].get(h)
+        if cached is not None:
+            return cached
+        # Try PyMuPDF first for better layout fidelity
+        try:
+            import fitz  # PyMuPDF
+            doc = fitz.open(stream=pdf_bytes, filetype='pdf')
+            text = []
+            for page in doc:
+                text.append(page.get_text("text"))
+            out = '\n'.join(text)
+            self._extract_cache['text'][h] = out
+            return out
+        except Exception:
+            pass
+        # Fallback to PyPDF2
         try:
             import PyPDF2
             pdf_file = io.BytesIO(pdf_bytes)
             pdf_reader = PyPDF2.PdfReader(pdf_file)
-            
             text = []
             for page in pdf_reader.pages:
-                text.append(page.extract_text())
-            
-            return '\n'.join(text)
-        except ImportError:
-            # Fallback to pdfplumber if PyPDF2 not available
+                text.append(page.extract_text() or '')
+            out = '\n'.join(text)
+            self._extract_cache['text'][h] = out
+            return out
+        except Exception:
+            # Fallback to pdfplumber
             try:
                 import pdfplumber
                 pdf_file = io.BytesIO(pdf_bytes)
@@ -154,26 +178,41 @@ class LCPVersionComparator:
                 with pdfplumber.open(pdf_file) as pdf:
                     for page in pdf.pages:
                         text.append(page.extract_text() or '')
-                return '\n'.join(text)
-            except ImportError:
-                raise ImportError("Please install PyPDF2 or pdfplumber: pip install PyPDF2 pdfplumber")
+                out = '\n'.join(text)
+                self._extract_cache['text'][h] = out
+                return out
+            except Exception:
+                raise ImportError("Please install PyMuPDF (PyMuPDF) or PyPDF2/pdfplumber for PDF text extraction")
 
     def _extract_page_texts(self, pdf_bytes: bytes) -> List[str]:
         """Extract text per page for page number inference."""
+        h = hashlib.md5(pdf_bytes).hexdigest()
+        cached = self._extract_cache['pages'].get(h)
+        if cached is not None:
+            return cached
+        # Try PyMuPDF first
+        try:
+            import fitz
+            doc = fitz.open(stream=pdf_bytes, filetype='pdf')
+            pages = [p.get_text("text") or '' for p in doc]
+            self._extract_cache['pages'][h] = pages
+            return pages
+        except Exception:
+            pass
+        # Fallback PyPDF2
         try:
             import PyPDF2
             reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
-            pages = []
-            for page in reader.pages:
-                pages.append(page.extract_text() or '')
+            pages = [page.extract_text() or '' for page in reader.pages]
+            self._extract_cache['pages'][h] = pages
             return pages
         except Exception:
+            # Fallback pdfplumber
             try:
                 import pdfplumber
-                pages = []
                 with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-                    for page in pdf.pages:
-                        pages.append(page.extract_text() or '')
+                    pages = [page.extract_text() or '' for page in pdf.pages]
+                self._extract_cache['pages'][h] = pages
                 return pages
             except Exception:
                 return []
@@ -942,34 +981,26 @@ class LCPVersionComparator:
             if changes.get('changed'):
                 html += '<div class="change-item changed"><div class="change-label">🔄 Modified Lines:</div>'
                 for change in changes['changed'][:10]:
-                    html += f"<p><strong>Old:</strong> {change.get('old', '')}</p>"
-                    html += f"<p><strong>New:</strong> {change.get('new', '')}</p>"
+                    old_line = self._html_escape(change.get('old',''))
+                    new_line = self._html_escape(change.get('new',''))
+                    old_markup, new_markup = self._word_diff_html(old_line, new_line)
+                    html += f"<p><strong>Old:</strong> {old_markup}</p>"
+                    html += f"<p><strong>New:</strong> {new_markup}</p>"
                     html += "<hr style='margin: 10px 0; border: none; border-top: 1px solid #ddd;'>"
                 if len(changes['changed']) > 10:
                     html += f"<p><em>... and {len(changes['changed']) - 10} more changes</em></p>"
                 html += '</div>'
-            # Numeric table snapshots for Section 9 (tables)
+            # Simplified table handling for Section 9: show notice + latest table only
             num = changes.get('numeric', {}) if isinstance(changes, dict) else {}
             if (num.get('changed') or num.get('added') or num.get('removed')) and self._is_tables_section(section_name):
-                old_txt = section_data.get('old_content') or ''
                 new_txt = section_data.get('new_content') or ''
-                old_tables = self._extract_table_blocks(old_txt)
                 new_tables = self._extract_table_blocks(new_txt)
                 def _esc(x: str) -> str:
                     return x.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
-                if old_tables:
-                    html += "<div class='change-item'><div class='change-label'>📄 Old Table Snapshot</div>"
-                    html += f"<pre style='white-space: pre-wrap; background:#f6f8fa; padding:10px; border-radius:6px;'>{_esc('\n'.join(old_tables))}</pre></div>"
+                html += "<div class='change-item changed'><div class='change-label'>📌 Summary cost table changed (showing latest)</div>"
                 if new_tables:
-                    html += "<div class='change-item'><div class='change-label'>📄 New Table Snapshot</div>"
-                    html += f"<pre style='white-space: pre-wrap; background:#f6f8fa; padding:10px; border-radius:6px;'>{_esc('\n'.join(new_tables))}</pre></div>"
-
-                # Additionally, render a side-by-side diff for the Summary Cost Projection table
-                diff9 = self._diff_summary_cost_tables(old_txt, new_txt)
-                if diff9 and (diff9.get('rows')):
-                    html += "<div class='change-item'><div class='change-label'>🔎 Summary Cost Projection (Side-by-side)</div>"
-                    html += self._render_summary_cost_html(diff9)
-                    html += "</div>"
+                    html += f"<pre style='white-space: pre-wrap; background:#f6f8fa; padding:10px; border-radius:6px;'>{_esc('\n'.join(new_tables))}</pre>"
+                html += "</div>"
         
         html += "</div>"
         return html
@@ -1229,22 +1260,16 @@ class LCPVersionComparator:
         # Body flowables directly (allow page splitting)
         elements.extend(body_flow)
 
-        # If tables section with numeric diffs, append old/new table snapshots
+        # If tables section with numeric diffs, append only latest (new) table block
         changes = section_data.get('changes', {}) if status == 'modified' else {}
         num = changes.get('numeric', {}) if isinstance(changes, dict) else {}
         has_num = any(num.get(k) for k in ('changed','added','removed'))
         if has_num and self._is_tables_section(section_name):
-            old_txt = section_data.get('old_content') or ''
             new_txt = section_data.get('new_content') or ''
-            old_tables = self._extract_table_blocks(old_txt)
             new_tables = self._extract_table_blocks(new_txt)
-            if old_tables:
-                elements.append(Spacer(1, 0.06 * inch))
-                elements.append(Paragraph('<b>Old Table Snapshot</b>', styles['Normal']))
-                elements.append(Preformatted('\n'.join(old_tables), styles['Mono']))
             if new_tables:
                 elements.append(Spacer(1, 0.06 * inch))
-                elements.append(Paragraph('<b>New Table Snapshot</b>', styles['Normal']))
+                elements.append(Paragraph('<b>Summary cost table changed (latest)</b>', styles['Normal']))
                 elements.append(Preformatted('\n'.join(new_tables), styles['Mono']))
         elements.append(Spacer(1, 0.14 * inch))
         return elements
@@ -1426,3 +1451,33 @@ class LCPVersionComparator:
         </table>
         """
         return head + "".join(rows_html) + foot
+
+    def _html_escape(self, s: str) -> str:
+        return s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+
+    def _word_diff_html(self, old: str, new: str) -> Tuple[str, str]:
+        """Return HTML-marked old/new strings with inline deletions/insertions highlighted."""
+        # Tokenize by words, keep punctuation
+        def split_words(x: str) -> List[str]:
+            return re.findall(r"\w+|\s+|[^\w\s]", x)
+        a = split_words(old)
+        b = split_words(new)
+        sm = difflib.SequenceMatcher(None, a, b)
+        old_out: List[str] = []
+        new_out: List[str] = []
+        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+            if tag == 'equal':
+                old_out.extend(a[i1:i2])
+                new_out.extend(b[j1:j2])
+            elif tag == 'delete':
+                seg = ''.join(a[i1:i2])
+                old_out.append(f"<span style='background:#fee2e2'>{seg}</span>")
+            elif tag == 'insert':
+                seg = ''.join(b[j1:j2])
+                new_out.append(f"<span style='background:#dcfce7'>{seg}</span>")
+            elif tag == 'replace':
+                seg_old = ''.join(a[i1:i2])
+                seg_new = ''.join(b[j1:j2])
+                old_out.append(f"<span style='background:#fee2e2'>{seg_old}</span>")
+                new_out.append(f"<span style='background:#dcfce7'>{seg_new}</span>")
+        return ''.join(old_out), ''.join(new_out)
