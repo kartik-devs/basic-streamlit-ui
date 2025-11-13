@@ -527,80 +527,199 @@ class LCPVersionComparator:
         return html
     
     def _generate_pdf_report(self, results: Dict[str, Any]) -> bytes:
-        """Generate PDF comparison report using ReportLab."""
+        """Generate a polished PDF comparison report using ReportLab."""
         try:
-            from reportlab.lib.pagesizes import letter, A4
+            from reportlab.lib.pagesizes import A4
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib.units import inch
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
-            from reportlab.lib.enums import TA_LEFT, TA_CENTER
-            from reportlab.lib.colors import HexColor
-            
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Flowable
+            from reportlab.lib.enums import TA_CENTER
+            from reportlab.lib.colors import HexColor, black, white
+            from reportlab.pdfgen import canvas as _canvas
+
             buffer = io.BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=A4)
-            styles = getSampleStyleSheet()
-            story = []
-            
-            # Title
-            title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
-                fontSize=24,
-                textColor=HexColor('#667eea'),
-                spaceAfter=30,
-                alignment=TA_CENTER
+
+            # Margins and document
+            doc = SimpleDocTemplate(
+                buffer,
+                pagesize=A4,
+                leftMargin=0.75 * inch,
+                rightMargin=0.75 * inch,
+                topMargin=0.9 * inch,
+                bottomMargin=0.9 * inch,
             )
-            story.append(Paragraph("LCP Version Comparison Report", title_style))
-            story.append(Spacer(1, 0.2 * inch))
-            
-            # Metadata
-            meta_style = styles['Normal']
-            story.append(Paragraph(f"<b>Case ID:</b> {results.get('case_id', 'Unknown')}", meta_style))
-            story.append(Paragraph(f"<b>Mode:</b> {results.get('mode', 'Unknown').title()}", meta_style))
-            story.append(Paragraph(f"<b>Generated:</b> {results.get('comparison_timestamp', 'Unknown')}", meta_style))
-            story.append(Paragraph(f"<b>Versions:</b> {', '.join(results.get('versions_compared', []))}", meta_style))
+
+            styles = getSampleStyleSheet()
+            # Custom styles
+            title_style = ParagraphStyle(
+                'TitleXL', parent=styles['Heading1'], fontSize=24, leading=28,
+                textColor=HexColor('#1f2937'), alignment=TA_CENTER, spaceAfter=10,
+            )
+            subtitle_style = ParagraphStyle(
+                'Subtitle', parent=styles['Normal'], fontSize=12, leading=16,
+                textColor=HexColor('#6b7280'), alignment=TA_CENTER, spaceAfter=6,
+            )
+            h2_style = ParagraphStyle(
+                'H2', parent=styles['Heading2'], textColor=HexColor('#374151'), spaceBefore=6, spaceAfter=6
+            )
+            body_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=10.5, leading=14)
+
+            # Header/Footer draw functions
+            def _header_footer(c: _canvas.Canvas, doc_obj):
+                w, h = A4
+                # Header line and title
+                c.setStrokeColor(HexColor('#e5e7eb'))
+                c.line(0.75 * inch, h - 0.8 * inch, w - 0.75 * inch, h - 0.8 * inch)
+                c.setFont('Helvetica', 9)
+                c.setFillColor(HexColor('#6b7280'))
+                c.drawString(0.75 * inch, h - 0.65 * inch, 'LCP Version Comparison Report')
+                # Footer line and page number
+                c.setStrokeColor(HexColor('#e5e7eb'))
+                c.line(0.75 * inch, 0.8 * inch, w - 0.75 * inch, 0.8 * inch)
+                c.setFont('Helvetica', 9)
+                c.setFillColor(HexColor('#6b7280'))
+                c.drawRightString(w - 0.75 * inch, 0.55 * inch, f"Page {doc_obj.page}")
+
+            story = []
+
+            # Cover page
             story.append(Spacer(1, 0.5 * inch))
-            
-            # Sections
+            story.append(Paragraph('LCP Version Comparison', title_style))
+            story.append(Paragraph('Section-by-Section Change Analysis', subtitle_style))
+            story.append(Spacer(1, 0.25 * inch))
+
+            # Tag bar
+            tag_bg = HexColor('#eef2ff')
+            class TagBar(Flowable):
+                def __init__(self, text: str):
+                    super().__init__()
+                    self.text = text
+                def draw(self):
+                    c = self.canv
+                    w = doc.width
+                    c.setFillColor(tag_bg)
+                    c.roundRect(0, 0, w, 18, 4, fill=1, stroke=0)
+                    c.setFillColor(HexColor('#4f46e5'))
+                    c.setFont('Helvetica-Bold', 10)
+                    c.drawString(6, 5, self.text)
+
+            meta_items = [
+                f"Case ID: {results.get('case_id', '—')}",
+                f"Mode: {str(results.get('mode', '—')).title()}",
+                f"Generated: {results.get('comparison_timestamp', '—')}",
+                f"Versions: {', '.join(results.get('versions_compared', []))}",
+            ]
+            for m in meta_items:
+                story.append(TagBar(m))
+                story.append(Spacer(1, 0.12 * inch))
+
+            # Quick summary counts
             sections = results.get('sections', {})
+            def _count(section_data):
+                totals = {'total': 0, 'added': 0, 'removed': 0, 'modified': 0}
+                def walk(d):
+                    if isinstance(d, dict):
+                        if 'status' in d:
+                            totals['total'] += 1
+                            s = d.get('status')
+                            if s in totals:
+                                totals[s] += 1
+                        else:
+                            for v in d.values():
+                                walk(v)
+                walk(section_data)
+                return totals
+            counts = _count(sections)
+            story.append(Spacer(1, 0.15 * inch))
+            story.append(Paragraph(
+                f"<b>Summary:</b> Total Sections: {counts['total']} · Added: {counts['added']} · Removed: {counts['removed']} · Modified: {counts['modified']}",
+                body_style,
+            ))
+
+            # New page for details
+            story.append(PageBreak())
+
+            # Detail sections
             for section_name, section_data in sections.items():
                 if isinstance(section_data, dict) and 'status' in section_data:
                     story.extend(self._format_section_pdf(section_name, section_data, styles))
                 else:
-                    # Multiple comparisons
+                    # Group heading for pairwise comparison
+                    story.append(Paragraph(section_name, h2_style))
+                    story.append(Spacer(1, 0.08 * inch))
                     for subsection_name, subsection_data in section_data.items():
                         story.extend(self._format_section_pdf(subsection_name, subsection_data, styles))
-            
-            doc.build(story)
+
+            doc.build(story, onFirstPage=_header_footer, onLaterPages=_header_footer)
             return buffer.getvalue()
-            
+
         except ImportError:
             raise ImportError("Please install reportlab: pip install reportlab")
     
     def _format_section_pdf(self, section_name: str, section_data: Dict, styles) -> List:
-        """Format a single section for PDF report."""
-        from reportlab.platypus import Paragraph, Spacer
+        """Format a single section for PDF report with colored status chips and spacing."""
+        from reportlab.platypus import Paragraph, Spacer, Flowable
         from reportlab.lib.units import inch
-        
+        from reportlab.lib.colors import HexColor
+
         elements = []
         status = section_data.get('status', 'unknown')
-        
-        # Section title
-        elements.append(Paragraph(f"<b>{section_name}</b> [{status.upper()}]", styles['Heading2']))
-        elements.append(Spacer(1, 0.1 * inch))
-        
-        if status == 'modified':
+
+        # Status chip
+        chip_colors = {
+            'added': ('#16a34a', '#dcfce7'),      # green
+            'removed': ('#dc2626', '#fee2e2'),    # red
+            'modified': ('#d97706', '#fef3c7'),   # amber
+            'unchanged': ('#0ea5e9', '#e0f2fe'),  # sky
+        }
+        fg, bg = chip_colors.get(status, ('#6b7280', '#f3f4f6'))
+
+        class StatusChip(Flowable):
+            def __init__(self, text: str, fg_hex: str, bg_hex: str):
+                super().__init__()
+                self.text = text
+                self.fg = HexColor(fg_hex)
+                self.bg = HexColor(bg_hex)
+                self.height = 16
+            def draw(self):
+                c = self.canv
+                w = c.stringWidth(self.text, 'Helvetica-Bold', 9) + 12
+                c.setFillColor(self.bg)
+                c.roundRect(0, 0, w, self.height, 6, fill=1, stroke=0)
+                c.setFillColor(self.fg)
+                c.setFont('Helvetica-Bold', 9)
+                c.drawString(6, 4, self.text)
+                self.width = w
+
+        # Title + chip
+        elements.append(Paragraph(f"<b>{section_name}</b>", styles['Heading2']))
+        elements.append(StatusChip(status.upper(), fg, bg))
+        elements.append(Spacer(1, 0.06 * inch))
+
+        if status == 'added':
+            elements.append(Paragraph("Section added in newer version.", styles['Normal']))
+        elif status == 'removed':
+            elements.append(Paragraph("Section removed from newer version.", styles['Normal']))
+        elif status == 'unchanged':
+            elements.append(Paragraph("No changes detected.", styles['Normal']))
+        elif status == 'modified':
             changes = section_data.get('changes', {})
-            
             if changes.get('added'):
                 elements.append(Paragraph("<b>Added:</b>", styles['Normal']))
-                for line in changes['added'][:5]:
+                for line in changes['added'][:6]:
                     elements.append(Paragraph(f"+ {line}", styles['Normal']))
-            
+                elements.append(Spacer(1, 0.04 * inch))
             if changes.get('removed'):
                 elements.append(Paragraph("<b>Removed:</b>", styles['Normal']))
-                for line in changes['removed'][:5]:
+                for line in changes['removed'][:6]:
                     elements.append(Paragraph(f"- {line}", styles['Normal']))
-        
-        elements.append(Spacer(1, 0.2 * inch))
+                elements.append(Spacer(1, 0.04 * inch))
+            if changes.get('changed'):
+                elements.append(Paragraph("<b>Modified:</b>", styles['Normal']))
+                for ch in changes['changed'][:4]:
+                    elements.append(Paragraph(f"<b>Old:</b> {ch.get('old','')}", styles['Normal']))
+                    elements.append(Paragraph(f"<b>New:</b> {ch.get('new','')}", styles['Normal']))
+                    elements.append(Spacer(1, 0.02 * inch))
+
+        elements.append(Spacer(1, 0.18 * inch))
         return elements

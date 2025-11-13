@@ -112,27 +112,15 @@ def main():
     # Display version count
     st.success(f"✅ Found {len(versions)} version(s) for case {case_id}")
     
-    # Comparison mode selection
+    # Comparison mode with tabs
     st.markdown("#### Comparison Mode")
-    comparison_mode = st.radio(
-        "Choose comparison type:",
-        options=['selective', 'all'],
-        format_func=lambda x: {
-            'selective': '🎯 Selective Comparison (Choose specific versions)',
-            'all': '📊 Overall Comparison (Compare all versions sequentially)'
-        }[x],
-        horizontal=True
-    )
+    tab_selective, tab_overall = st.tabs(["🎯 Selective", "📊 Overall"])
     
-    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+    selected_versions = []
     
-    # Display versions in a nice format
-    if comparison_mode == 'selective':
+    with tab_selective:
         st.markdown("#### Select Versions to Compare")
         st.caption("Choose at least 2 versions to compare")
-        
-        selected_versions = []
-        
         # Create a grid layout for version cards
         cols_per_row = 3
         for i in range(0, len(versions), cols_per_row):
@@ -142,33 +130,35 @@ def main():
                 if idx < len(versions):
                     version = versions[idx]
                     with col:
-                        # Version card
                         is_selected = st.checkbox(
                             f"**{version['filename'][:30]}...**" if len(version['filename']) > 30 else f"**{version['filename']}**",
                             key=f"version_{idx}",
                             help=f"Full name: {version['filename']}"
                         )
-                        
                         if is_selected:
                             selected_versions.append(version['s3_key'])
-                        
                         st.caption(f"📅 {version['timestamp']}")
                         st.caption(f"📦 {format_file_size(version['size'])}")
                         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-        
-        # Store selected versions
-        st.session_state['selected_versions'] = selected_versions
-        
-        if len(selected_versions) < 2:
+        # Update session state for selective mode when valid
+        if len(selected_versions) >= 2:
+            st.session_state['selected_versions'] = selected_versions
+            st.session_state['comparison_mode'] = 'selective'
+            st.success(f"✅ Selected {len(selected_versions)} versions for comparison")
+        else:
             st.info("ℹ️ Please select at least 2 versions to compare")
-            return
-        
-        st.success(f"✅ Selected {len(selected_versions)} versions for comparison")
-        
-    else:  # all mode
-        st.info(f"📊 Will compare all {len(versions)} versions sequentially")
-        selected_versions = [v['s3_key'] for v in versions]
-        st.session_state['selected_versions'] = selected_versions
+    
+    with tab_overall:
+        st.markdown("#### Compare All Versions")
+        st.info(f"This will compare all {len(versions)} versions sequentially (newest to oldest).")
+        # Prepare all versions list
+        all_version_keys = [v['s3_key'] for v in versions]
+        # Provide an explicit toggle to activate overall mode
+        use_overall = st.checkbox("Use overall comparison (all versions)", key="use_overall_mode")
+        if use_overall:
+            st.session_state['selected_versions'] = all_version_keys
+            st.session_state['comparison_mode'] = 'all'
+            st.success("✅ Overall mode active")
     
     # Step 3: Run comparison
     st.markdown("---")
@@ -208,10 +198,13 @@ def main():
         with st.spinner("🔄 Comparing versions... This may take a moment..."):
             try:
                 # Perform comparison
+                # Resolve mode and versions from session state (set by tabs above)
+                mode_effective = st.session_state.get('comparison_mode') or 'selective'
+                versions_effective = st.session_state.get('selected_versions') or []
                 comparison_results = comparator.compare_versions(
                     case_id=case_id,
-                    version_keys=selected_versions,
-                    mode=comparison_mode
+                    version_keys=versions_effective,
+                    mode=mode_effective
                 )
                 
                 # Check for errors
