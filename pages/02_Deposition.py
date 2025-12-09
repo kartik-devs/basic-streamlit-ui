@@ -37,6 +37,77 @@ def get_case_report(case_id: str) -> Dict[str, Any]:
     except Exception as e:
         return {"error": f"Error connecting to backend: {str(e)}"}
 
+
+def _render_report_html(report_html: str, *, height: int = 800) -> None:
+    """Render deposition HTML with theme-aware background/text colors."""
+    if not report_html:
+        return
+
+    theme = st.session_state.get("theme", "dark")
+    doc_bg = "#ffffff" if theme == "light" else "#0b1120"
+    doc_text = "#0f172a" if theme == "light" else "#f8fafc"
+    accent = "#2563eb" if theme == "light" else "#93c5fd"
+
+    # Strip outer <body> wrappers so we can safely nest content
+    body_match = re.search(r"<body[^>]*>([\\s\\S]*?)</body>", report_html, flags=re.IGNORECASE)
+    cleaned = body_match.group(1) if body_match else report_html
+
+    styled_html = f"""<!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset=\"utf-8\" />
+      <style>
+        :root {{ color-scheme: {'light' if theme == 'light' else 'dark'}; }}
+        body {{
+          margin: 0;
+          background: {doc_bg};
+          color: {doc_text};
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }}
+        .doc-wrapper {{
+          background: {doc_bg};
+          color: {doc_text};
+          padding: 24px;
+          line-height: 1.65;
+        }}
+        .doc-wrapper *,
+        .doc-wrapper h1,
+        .doc-wrapper h2,
+        .doc-wrapper h3,
+        .doc-wrapper h4,
+        .doc-wrapper h5,
+        .doc-wrapper h6,
+        .doc-wrapper p,
+        .doc-wrapper span,
+        .doc-wrapper li,
+        .doc-wrapper td,
+        .doc-wrapper th {{
+          color: inherit !important;
+          background: transparent !important;
+        }}
+        .doc-wrapper table {{
+          width: 100%;
+          border-collapse: collapse;
+        }}
+        .doc-wrapper table td,
+        .doc-wrapper table th {{
+          border: 1px solid rgba(148, 163, 184, 0.35);
+          padding: 0.35rem 0.5rem;
+        }}
+        a {{
+          color: {accent};
+        }}
+      </style>
+    </head>
+    <body>
+      <div class=\"doc-wrapper\">
+        {cleaned}
+      </div>
+    </body>
+    </html>"""
+
+    st.components.v1.html(styled_html, height=height, scrolling=True)
+
 @st.cache_data(ttl=120)
 def fetch_deposition_cases() -> List[str]:
     backend = _get_backend_base()
@@ -185,8 +256,7 @@ def main():
         st.markdown("---")
         
         if report_html:
-            # Display HTML content directly with iframe
-            st.components.v1.html(report_html, height=800, scrolling=True)
+            _render_report_html(report_html, height=820)
         elif report_url:
             # Display using iframe with presigned URL
             st.markdown(f"""

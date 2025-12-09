@@ -1,0 +1,192 @@
+{
+  "name": "My workflow 7",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "getAll",
+        "bucketName": "finallcpreports",
+        "options": {
+          "folderKey": "={{$json[\"case_id\"]}}/Output/"
+        }
+      },
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        240
+      ],
+      "id": "0ff62966-b26d-4dfd-b67f-600d11ab9626",
+      "name": "Get many files",
+      "credentials": {
+        "aws": {
+          "id": "aeV7VLudk24AEj9Q",
+          "name": "AWS account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Function node after Get many files\nconst regex = /^(\\d{12})-\\d{4}-CompleteAIGeneratedReport\\.pdf$/i;\nreturn items\n  .filter(item => {\n    const key = item.json.Key || item.json.key || '';\n    return regex.test(key.split('/').pop());   // look only at filename\n  })\n  .map(item => ({ json: { s3Key: item.json.Key || item.json.key } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        240
+      ],
+      "id": "c0b71a30-9e0a-4eec-b654-0894fd26dee1",
+      "name": "Code in JavaScript5"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -272,
+        240
+      ],
+      "id": "5b23e53a-4b2a-42fc-8336-16f507d0442d",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "bucketName": "finallcpreports",
+        "fileKey": "={{$json.s3Key}}"
+      },
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        128,
+        256
+      ],
+      "id": "ca10f98e-7886-4f52-b04c-b1a2718ba32c",
+      "name": "Download a file1",
+      "credentials": {
+        "aws": {
+          "id": "aeV7VLudk24AEj9Q",
+          "name": "AWS account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "50569277-87c1-466f-a939-4aedca044860",
+              "name": "Filename",
+              "value": "={{$json.s3Key.split('/').pop()}}",
+              "type": "string"
+            },
+            {
+              "id": "298fd10d-60cc-42f7-9082-be1e05edabf3",
+              "name": "TimeStamp",
+              "value": "={{ $json.s3Key.match(/\\d{12}/)?.[0] || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        256
+      ],
+      "id": "9b156779-9e87-4453-abee-e1fd189ff1f8",
+      "name": "Edit Fields23"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        592,
+        144
+      ],
+      "id": "1f6cd74c-0f53-4ae7-a720-f8c41fa4bf10",
+      "name": "Extract from File1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Get many files": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Download a file1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download a file1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields23",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract from File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields23": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "709a453e-d075-4750-8439-81a59184cbf1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0838e49b5a99e8b04e5448637c544da7dba327c03ad9eda5f199450cb3092b4f"
+  },
+  "id": "iCvfVWwYVUKQy3Xy",
+  "tags": []
+}

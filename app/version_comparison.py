@@ -379,6 +379,11 @@ class LCPVersionComparator:
                         break
             # If no regex matched at all, still try label-only mapping on this line
             if not is_section:
+                norm_line = self._norm_heading(line)
+                if re.match(r'^(table|total)\b', norm_line) or re.search(r'(start\s*year|end\s*year|frequency\s*per\s*year|cost\s*per\s*item|annual\s*cost|lifetime)', norm_line, re.IGNORECASE):
+                    if current_section:
+                        current_content.append(line)
+                    continue
                 l2_try = self._map_to_level2(line, threshold=0.85)
                 if l2_try:
                     # Save previous section
@@ -725,6 +730,7 @@ class LCPVersionComparator:
                     text = self.extract_text_from_pdf(pdf_bytes)
                     pages = self._extract_page_texts(pdf_bytes)
                     sections = self.extract_sections(text)
+                    sections = self._reassign_s9_blocks_for_sections(sections)
                     section_pages = self._infer_section_pages(pages)
                     # Try to parse timestamp from filename to establish chronological order
                     fname = key.split('/')[-1]
@@ -851,6 +857,10 @@ class LCPVersionComparator:
         for section_name in sorted(all_sections, key=self._toc_sort_key):
             text1 = sections1.get(section_name, '')
             text2 = sections2.get(section_name, '')
+            # Prevent S9 cost rows from polluting non-2/9 sections (e.g., Section 3)
+            if not self._is_tables_section(section_name) and not self._is_section2(section_name):
+                text1 = self._strip_s9_table_lines(text1)
+                text2 = self._strip_s9_table_lines(text2)
             
             if not text1:
                 comparison[section_name] = {
@@ -873,7 +883,7 @@ class LCPVersionComparator:
                         'changes': diff,
                         'pages': {'old': pages1.get(section_name), 'new': pages2.get(section_name)}
                     }
-                    if self._is_tables_section(section_name):
+                    if self._is_tables_section(section_name) or self._is_section2(section_name):
                         entry['old_content'] = text1
                         entry['new_content'] = text2
                     comparison[section_name] = entry
@@ -884,6 +894,32 @@ class LCPVersionComparator:
                     }
         
         return comparison
+
+    def _strip_s9_table_lines(self, text: str) -> str:
+        if not text:
+            return ''
+        out_lines: List[str] = []
+        # Patterns characteristic of Section 9 cost rows
+        header_tokens = re.compile(r'(start\s*year|end\s*year|frequency\s*per\s*year|cost\s*per\s*item|annual\s*cost|lifetime)', re.IGNORECASE)
+        triple_num = re.compile(r'\b\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\s+\d+(?:\.\d+)?\b')
+        currency_tail = re.compile(r'(\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$')
+        table_hdr = re.compile(r'^table\s+\d+\b', re.IGNORECASE)
+        total_line = re.compile(r'^total\b', re.IGNORECASE)
+        for ln in text.split('\n'):
+            s = (ln or '').strip()
+            if not s:
+                out_lines.append(ln)
+                continue
+            # If it looks like a Section 9 table header/row, drop it
+            if table_hdr.search(s) or total_line.search(s) or header_tokens.search(s):
+                continue
+            # rows with multiple numeric columns or currency at end are likely S9 rows
+            if triple_num.search(s) or currency_tail.search(s):
+                # Allow simple narrative with currency (e.g., one $ amount) by requiring also long tokens like 'per year' or CPT code pattern
+                if re.search(r'per\s+year|\(\d{5}\)', s, re.IGNORECASE):
+                    continue
+            out_lines.append(ln)
+        return '\n'.join(out_lines)
     
     def generate_comparison_report(
         self,
@@ -1065,17 +1101,23 @@ class LCPVersionComparator:
                 if len(changes['changed']) > 10:
                     html += f"<p><em>... and {len(changes['changed']) - 10} more changes</em></p>"
                 html += '</div>'
-            # Simplified table handling for Section 9: show notice + latest table only
-            num = changes.get('numeric', {}) if isinstance(changes, dict) else {}
-            if (num.get('changed') or num.get('added') or num.get('removed')) and self._is_tables_section(section_name):
+            # If Section 2 or 9 changed, render the newer table as an actual table
+            if status == 'modified':
                 new_txt = section_data.get('new_content') or ''
-                new_tables = self._extract_table_blocks(new_txt)
-                def _esc(x: str) -> str:
-                    return x.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
-                html += "<div class='change-item changed'><div class='change-label'>📌 Summary cost table changed (showing latest)</div>"
-                if new_tables:
-                    html += f"<pre style='white-space: pre-wrap; background:#f6f8fa; padding:10px; border-radius:6px;'>{_esc('\n'.join(new_tables))}</pre>"
-                html += "</div>"
+                # Section 9: Summary Cost Projection single-table render
+                if self._is_tables_section(section_name) and new_txt:
+                    rows = self._extract_summary_rows(new_txt)
+                    if rows:
+                        html += "<div class='change-item changed'><div class='change-label'>🧮 Summary Cost Projection (new version)</div>"
+                        html += self._render_summary_cost_single_html(rows)
+                        html += "</div>"
+                # Section 2: Medical records table render
+                if self._is_section2(section_name) and new_txt:
+                    table = self._parse_section2_table(new_txt)
+                    if table and table.get('rows'):
+                        html += "<div class='change-item changed'><div class='change-label'>📚 Medical Records Table (new version)</div>"
+                        html += self._render_section2_table_html(table)
+                        html += "</div>"
         
         html += "</div>"
         return html
@@ -1340,17 +1382,45 @@ class LCPVersionComparator:
         # Body flowables directly (allow page splitting)
         elements.extend(body_flow)
 
-        # If tables section with numeric diffs, append only latest (new) table block
-        changes = section_data.get('changes', {}) if status == 'modified' else {}
-        num = changes.get('numeric', {}) if isinstance(changes, dict) else {}
-        has_num = any(num.get(k) for k in ('changed','added','removed'))
-        if has_num and self._is_tables_section(section_name):
+        # If modified and Section 2 or 9, render actual table from newer content
+        if status == 'modified':
             new_txt = section_data.get('new_content') or ''
-            new_tables = self._extract_table_blocks(new_txt)
-            if new_tables:
-                elements.append(Spacer(1, 0.06 * inch))
-                elements.append(Paragraph('<b>Summary cost table changed (latest)</b>', styles['Normal']))
-                elements.append(Preformatted('\n'.join(new_tables), styles['Mono']))
+            if self._is_tables_section(section_name) and new_txt:
+                rows = self._extract_summary_rows(new_txt)
+                if rows:
+                    elements.append(Spacer(1, 0.06 * inch))
+                    elements.append(Paragraph('<b>Summary Cost Projection (new version)</b>', styles['Normal']))
+                    data = [[Paragraph('<b>#</b>', styles['Normal']), Paragraph('<b>Title</b>', styles['Normal']), Paragraph('<b>Total</b>', styles['Normal'])]]
+                    for r in rows:
+                        num = r.get('num', '')
+                        title = r.get('title', '')
+                        amt = r.get('amount', '')
+                        data.append([str(num), Paragraph(title, styles['Normal']), f"${amt:,.2f}" if isinstance(amt, (int,float)) else str(amt)])
+                    tbl = Table(data, repeatRows=1)
+                    tbl.setStyle(TableStyle([
+                        ('GRID', (0,0), (-1,-1), 0.3, HexColor('#e5e7eb')),
+                        ('BACKGROUND', (0,0), (-1,0), HexColor('#f8fafc')),
+                        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                        ('ALIGN', (2,1), (2,-1), 'RIGHT'),
+                    ]))
+                    elements.append(tbl)
+            if self._is_section2(section_name) and new_txt:
+                table = self._parse_section2_table(new_txt)
+                if table and table.get('rows'):
+                    elements.append(Spacer(1, 0.06 * inch))
+                    elements.append(Paragraph('<b>Medical Records (new version)</b>', styles['Normal']))
+                    headers = table.get('headers') or []
+                    data = [[Paragraph(f'<b>{h}</b>', styles['Normal']) for h in headers]]
+                    for row in table['rows']:
+                        cells = [Paragraph(str(row.get(h,'') or ''), styles['Normal']) for h in headers]
+                        data.append(cells)
+                    tbl = Table(data, repeatRows=1)
+                    tbl.setStyle(TableStyle([
+                        ('GRID', (0,0), (-1,-1), 0.3, HexColor('#e5e7eb')),
+                        ('BACKGROUND', (0,0), (-1,0), HexColor('#f8fafc')),
+                        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                    ]))
+                    elements.append(tbl)
         elements.append(Spacer(1, 0.14 * inch))
         return elements
 
@@ -1360,6 +1430,73 @@ class LCPVersionComparator:
         if re.match(r'^9(\.|\s)', name):
             return True
         return 'summary cost projection' in name.lower()
+
+    def _is_section2(self, section_name: str) -> bool:
+        name = section_name or ''
+        if re.match(r'^2(\.|\s)', name):
+            return True
+        low = name.lower()
+        return ('summary of medical records' in low) or ('chronological synopsis' in low)
+
+    def _reassign_s9_blocks_for_sections(self, sections: Dict[str, str]) -> Dict[str, str]:
+        if not isinstance(sections, dict):
+            return sections
+        s9_blocks: List[str] = []
+        updated: Dict[str, str] = {}
+        for name, content in sections.items():
+            if not content or self._is_tables_section(name):
+                updated[name] = content
+                continue
+            if not re.match(r'^3(\.|\s)', name):
+                updated[name] = content
+                continue
+            blocks = self._extract_table_blocks(content)
+            if not blocks:
+                updated[name] = content
+                continue
+            kept = content
+            for blk in blocks:
+                if self._block_is_s9(blk):
+                    kept = kept.replace(blk, '').strip()
+                    s9_blocks.append(blk)
+            updated[name] = kept
+        # attach aggregated S9 blocks to section 9
+        if s9_blocks:
+            s9_key = None
+            for k in sections.keys():
+                if re.match(r'^9(\.|\s)', k):
+                    s9_key = k
+                    break
+            if not s9_key:
+                s9_key = '9. Summary Cost Projection Tables'
+            existing = sections.get(s9_key, '')
+            combined = (existing + ('\n' if existing else '') + '\n'.join(s9_blocks)).strip()
+            updated[s9_key] = combined
+        # preserve other sections not processed
+        for name, content in sections.items():
+            if name not in updated:
+                updated[name] = content
+        return updated
+
+    def _block_is_s9(self, block: str) -> bool:
+        if not block:
+            return False
+        head = (block.split('\n', 1)[0] or '').lower()
+        if not re.match(r'^table\s+\d+\b', head) and 'table number' not in head:
+            return False
+        sig_cols = 0
+        for token in ['start year', 'end year', 'frequency per year', 'cost per item', 'annual cost', 'lifetime']:
+            if re.search(re.escape(token), block, re.IGNORECASE):
+                sig_cols += 1
+        if sig_cols < 2:
+            return False
+        categories = [
+            'routine medical evaluation', 'therapeutic evaluation', 'therapeutic modalities',
+            'diagnostic testing', 'equipment and aids', 'pharmacology',
+            'future aggressive care', 'surgical intervention', 'home care', 'home services', 'labs'
+        ]
+        norm = self._norm_heading(block)
+        return any(cat in norm for cat in categories)
 
     def _extract_table_blocks(self, text: str) -> List[str]:
         """Extract contiguous blocks representing the summary tables.
@@ -1561,3 +1698,104 @@ class LCPVersionComparator:
                 old_out.append(f"<span style='background:#fee2e2'>{seg_old}</span>")
                 new_out.append(f"<span style='background:#dcfce7'>{seg_new}</span>")
         return ''.join(old_out), ''.join(new_out)
+
+    def _render_summary_cost_single_html(self, rows: List[Dict[str, Any]]) -> str:
+        def fmt_money(v):
+            return '-' if v is None else f"${v:,.2f}"
+        head = (
+            "<table style=\"width:100%; border-collapse:collapse; font-size:0.92em;\">"
+            "<thead><tr>"
+            "<th style='border:1px solid #e5e7eb; background:#f8fafc; padding:6px 8px; width:80px;'>#</th>"
+            "<th style='border:1px solid #e5e7eb; background:#f8fafc; padding:6px 8px;'>Title</th>"
+            "<th style='border:1px solid #e5e7eb; background:#f8fafc; padding:6px 8px; text-align:right;'>Total</th>"
+            "</tr></thead><tbody>"
+        )
+        body = []
+        for r in rows:
+            body.append(
+                "<tr>"
+                f"<td style='border:1px solid #e5e7eb; padding:6px 8px;'>{r.get('num','')}</td>"
+                f"<td style='border:1px solid #e5e7eb; padding:6px 8px;'>{self._html_escape(r.get('title','') or '')}</td>"
+                f"<td style='border:1px solid #e5e7eb; padding:6px 8px; text-align:right;'>{fmt_money(r.get('amount'))}</td>"
+                "</tr>"
+            )
+        foot = "</tbody></table>"
+        return head + ''.join(body) + foot
+
+    def _parse_section2_table(self, text: str) -> Optional[Dict[str, Any]]:
+        if not text:
+            return None
+        lines = [ln.rstrip() for ln in text.split('\n')]
+        # locate header line containing expected tokens
+        header_idx = None
+        for i, ln in enumerate(lines):
+            low = ln.lower()
+            if ('date' in low) and (('type' in low) or ('visit' in low)) and ('provider' in low):
+                header_idx = i
+                break
+        if header_idx is None:
+            return None
+        headers_line = lines[header_idx]
+        # split headers by 2+ spaces
+        headers = [h.strip() for h in re.split(r'\s{2,}', headers_line) if h.strip()]
+        # enforce canonical header order if recognizable
+        canonical = ['Date','Type of Visit','Facility Name','Provider','Specialty']
+        if all(any(h.lower() in hh.lower() for hh in headers) for h in ['date','type','provider']):
+            # map existing headers to canonical where possible
+            pass
+        # collect table lines until next heading or end
+        table_lines = []
+        for ln in lines[header_idx+1:]:
+            if re.match(r'^\s*$', ln):
+                # allow blank lines inside table: treat as row separator
+                table_lines.append(ln)
+                continue
+            if re.match(r'^(\d+(?:\.\d+)*)\s', ln):
+                break
+            table_lines.append(ln)
+        # parse rows: new row when a date-like token appears at line start
+        rows: List[Dict[str, str]] = []
+        cur: List[str] = []
+        date_re = re.compile(r'^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2}|[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4})\b')
+        for ln in table_lines:
+            if not ln.strip():
+                # push current row if any
+                if cur:
+                    rows.append(cur)
+                    cur = []
+                continue
+            if date_re.search(ln):
+                if cur:
+                    rows.append(cur)
+                # start new row
+                parts = [p.strip() for p in re.split(r'\s{2,}', ln) if p.strip()]
+                cur = parts
+            else:
+                # continuation of last cell
+                if not cur:
+                    continue
+                cur[-1] = (cur[-1] + ' ' + ln.strip()).strip()
+        if cur:
+            rows.append(cur)
+        if not rows:
+            return None
+        # normalize to header length by padding/truncating
+        col_n = max(len(headers), 5)
+        headers = (headers + canonical)[:col_n]
+        out_rows: List[Dict[str, Any]] = []
+        for r in rows:
+            cells = r + [''] * (col_n - len(r))
+            out_rows.append({headers[i]: cells[i] for i in range(col_n)})
+        return {'headers': headers, 'rows': out_rows}
+
+    def _render_section2_table_html(self, table: Dict[str, Any]) -> str:
+        headers = table.get('headers') or []
+        rows = table.get('rows') or []
+        head = "<table style=\"width:100%; border-collapse:collapse; font-size:0.92em;\"><thead><tr>" + \
+            ''.join([f"<th style='border:1px solid #e5e7eb; background:#f8fafc; padding:6px 8px;'>{self._html_escape(h)}</th>" for h in headers]) + \
+            "</tr></thead><tbody>"
+        body = []
+        for row in rows:
+            body.append("<tr>" + ''.join([f"<td style='border:1px solid #e5e7eb; padding:6px 8px;'>{self._html_escape(str(row.get(h,'') or ''))}</td>" for h in headers]) + "</tr>")
+        foot = "</tbody></table>"
+        return head + ''.join(body) + foot
