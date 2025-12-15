@@ -671,7 +671,7 @@ def main() -> None:
         if generate_mcp_redacted:
             cid = case_id_mcp.strip()
             patient_name = patient_name_mcp.strip() if patient_name_mcp else ""
-            webhook_url = "https://n8n.datakernels.in/workflow/W4NNf6JM0Bn6eYHS"
+            webhook_url = "https://n8n.datakernels.in/webhook/mcp"
             
             st.success(f"🚀 Starting MCP redacted report for Case ID: {cid} and patient: {patient_name}")
             st.session_state["last_case_id"] = cid
