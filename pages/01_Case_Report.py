@@ -400,7 +400,7 @@ def main() -> None:
         col_left, col_center, col_right = st.columns([1, 3, 1])
         with col_center:
             # Modern tabbed interface
-            tab1, tab2, tab3, tab4 = st.tabs(["📄 Standard Report", "🔒 Redacted Report", "📋 Deposition Document", "🧪 MCP Redacted"])
+            tab1, tab2, tab3 = st.tabs(["📄 Standard Report", "🔒 Redacted Report", "📋 Deposition Document"])
         
             # ========== TAB 1: STANDARD REPORT ==========
             with tab1:
@@ -526,56 +526,6 @@ def main() -> None:
                     disabled=not case_valid_deposition,
                     key="btn_deposition"
                 )
-
-            # ========== TAB 4: MCP REDACTED WITH PATIENT ==========
-            with tab4:
-                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
-                
-                patient_name_mcp = st.text_input(
-                    "Patient Name",
-                    key="patient_name_mcp",
-                    placeholder="Enter patient full name"
-                )
-
-                case_id_mcp = st.selectbox(
-                    "Case ID",
-                    options=[""] + available_cases,
-                    index=0,
-                    key="case_id_mcp",
-                    placeholder="Select or type case ID (4 digits)",
-                    help="Enter a 4-digit case ID to generate a redacted report with patient name"
-                )
-                
-                batching_mcp = st.toggle("Enable Batching", value=False, key="batching_mcp")
-                batch_flag_mcp = 0 if batching_mcp else 1
-
-                case_valid_mcp = False
-                if case_id_mcp:
-                    if not case_id_mcp.isdigit() or len(case_id_mcp) != 4:
-                        st.error("⚠️ Case ID must be a 4-digit number")
-                    else:
-                        with st.spinner("Validating..."):
-                            validation = _validate_case_id_exists(case_id_mcp)
-                        if validation.get("exists"):
-                            if not patient_name_mcp or not patient_name_mcp.strip():
-                                st.error("⚠️ Patient name is required")
-                            else:
-                                st.success(f"✅ Case {case_id_mcp} verified for patient {patient_name_mcp}")
-                                case_valid_mcp = True
-                        else:
-                            st.error("❌ Case ID not found in database")
-                elif patient_name_mcp:
-                    st.error("⚠️ Please select a Case ID")
-
-                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
-
-                generate_mcp_redacted = st.button(
-                    "🔒 Generate MCP Redacted Report",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=not case_valid_mcp,
-                    key="btn_mcp_redacted"
-                )
         
         # Available cases expander (outside tabs, below)
         with st.expander("📋 Browse Available Case IDs", expanded=False):
@@ -637,7 +587,7 @@ def main() -> None:
         # Handle button actions - Redacted Report
         if generate_redacted:
             cid = case_id_redacted.strip()
-            webhook_url = "https://n8n.datakernels.in/webhook/MCPRedacted"
+            webhook_url = "https://n8n.datakernels.in/workflow/W4NNf6JM0Bn6eYHS"
             
             st.success(f"🚀 Starting redacted report for Case ID: {cid}")
             st.session_state["last_case_id"] = cid
@@ -654,46 +604,6 @@ def main() -> None:
                     webhook_url,
                     json={"case_id": cid, "username": "demo", "batching": batch_flag_redacted},
                     timeout=15
-                )
-                if response.ok:
-                    st.success("✅ Workflow triggered successfully!")
-                else:
-                    st.error(f"⚠️ Workflow failed: {response.status_code}")
-            except requests.exceptions.Timeout:
-                st.success("⏱️ Workflow triggered (running in background)")
-            except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
-            
-            if scriptrunner.get_script_run_ctx():
-                time.sleep(0.3)
-                st.rerun()
-
-        if generate_mcp_redacted:
-            cid = case_id_mcp.strip()
-            patient_name = patient_name_mcp.strip() if patient_name_mcp else ""
-            webhook_url = "https://n8n.datakernels.in/webhook/MCPRedacted"
-            
-            st.success(f"🚀 Starting MCP redacted report for Case ID: {cid} and patient: {patient_name}")
-            st.session_state["last_case_id"] = cid
-            st.session_state["generation_start"] = datetime.now()
-            st.session_state["generation_in_progress"] = True
-            st.session_state["generation_progress"] = 1
-            st.session_state["generation_step"] = 0
-            st.session_state["generation_complete"] = False
-            st.session_state["current_case_id"] = cid
-            st.session_state["report_type"] = "mcp_redacted"
-            st.session_state["patient_name"] = patient_name
-            
-            try:
-                response = requests.post(
-                    webhook_url,
-                    json={
-                        "case_id": cid,
-                        "patient_name": patient_name,
-                        "username": "demo",
-                        "batching": batch_flag_mcp,
-                    },
-                    timeout=15,
                 )
                 if response.ok:
                     st.success("✅ Workflow triggered successfully!")
