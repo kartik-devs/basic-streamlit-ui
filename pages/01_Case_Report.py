@@ -637,7 +637,7 @@ def main() -> None:
         # Handle button actions - Redacted Report
         if generate_redacted:
             cid = case_id_redacted.strip()
-            webhook_url = https://n8n.datakernels.in/webhook/mcp
+            webhook_url = "https://n8n.datakernels.in/webhook/mcp"
             
             st.success(f"🚀 Starting redacted report for Case ID: {cid}")
             st.session_state["last_case_id"] = cid
