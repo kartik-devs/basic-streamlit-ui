@@ -10,81 +10,88 @@ from app.ui import inject_base_styles, show_header
 from app.auth import is_authenticated, show_login_page, get_current_user, logout
 
 # --- CONFIGURATION ---
-# Points to your deployed backend. 
-# Change to "http://localhost:8000" if you are running the backend locally.
 BACKEND_URL = "https://basic-streamlit-ui.onrender.com"  
 
 # =========================================================
-# 🔒 SECURE DOCUMENT GATEKEEPER (TOP LEVEL EXECUTION)
+# 🔒 SECURE DOCUMENT GATEKEEPER
 # =========================================================
-# This runs immediately. If a document ID is found in the URL,
-# it hijacks the app to show the secure viewer and then stops execution.
 query_params = st.query_params
 doc_id = query_params.get("doc_id", None)
 
 if doc_id:
-    # 1. Configure page for Secure Viewing
     st.set_page_config(page_title="Secure Evidence Viewer", layout="centered")
     
-    # 2. Secure UI Header
     st.title("🔒 Secure Evidence Gateway")
-    st.info(f"Incoming Request for Evidence ID: **{doc_id}**")
+    st.info(f"Requesting Evidence File: **{doc_id}**")
     st.markdown("---")
 
-    # 3. Authentication
-    password = st.text_input("Enter Case Access Code to view this file:", type="password")
+    # 1. We need the Case ID to find the correct folder in S3
+    case_id_input = st.text_input("Enter Case ID (e.g., 4788):")
     
-    if password == "legal2025":  
-        with st.spinner("Authenticating & Retrieving Evidence..."):
-            time.sleep(1) # Small security delay
-            
-            # --- REAL APP LOGIC: Fetch from Backend ---
-            try:
-                # Call the backend endpoint to get secure URLs for this case
-                api_url = f"{BACKEND_URL}/s3/{doc_id}/latest/assets"
-                response = requests.get(api_url, timeout=15)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    # Priority: Generated PDF -> Ground Truth -> Doctor Report
-                    file_url = data.get("generated_pdf") or data.get("ground_truth_pdf") or data.get("doctor_pdf")
-                    
-                    if file_url:
-                        st.success("Access Granted.")
-                        
-                        # Detect if it is a PDF or Image
-                        if ".pdf" in file_url.lower():
-                            # Display PDF using an iframe
-                            st.markdown(
-                                f'<iframe src="{file_url}" width="100%" height="800px" style="border:none;"></iframe>', 
-                                unsafe_allow_html=True
-                            )
-                        else:
-                            # Display Image
-                            st.image(file_url, caption=f"Evidence ID: {doc_id}", use_container_width=True)
-                            
-                        st.warning("⚠️ CONFIDENTIAL: Access logged. Do not distribute.")
-                    else:
-                        st.warning(f"⚠️ Access Granted, but no document files were found for Case ID: {doc_id}")
-                else:
-                    st.error(f"Server Error: Backend returned status {response.status_code}")
-                    
-            except requests.exceptions.ConnectionError:
-                st.error("❌ Connection Error: Could not reach the backend server. Is it running?")
-            except Exception as e:
-                st.error(f"❌ Error: {e}")
+    # 2. Access Code
+    password = st.text_input("Enter Access Code:", type="password")
+    
+    if st.button("Authenticate & View"):
+        if password == "legal2025":  
+            if not case_id_input:
+                st.error("⚠️ Please enter the Case ID.")
+                st.stop()
 
-            # Return Button
-            st.markdown("---")
-            if st.button("Return to Dashboard"):
-                st.query_params.clear()
-                st.rerun()
+            with st.spinner("Locating evidence file..."):
+                time.sleep(1) 
                 
-    elif password:
-        st.error("⛔ Access Denied: Invalid Credentials")
-        
-    # 4. STOP execution so the main dashboard doesn't load in the background
+                # --- NEW LOGIC: Fetch Evidence (Input) Documents ---
+                try:
+                    # We use the endpoint that lists ALL input pages for a case
+                    api_url = f"{BACKEND_URL}/s3/case/{case_id_input}/documents"
+                    response = requests.get(api_url, timeout=15)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        documents = data.get("documents", [])
+                        
+                        # Find the specific file that matches 'doc_id'
+                        target_file = None
+                        
+                        # Loose matching: check if doc_id is inside the filename
+                        for doc in documents:
+                            if doc_id in doc.get("filename", ""):
+                                target_file = doc
+                                break
+                        
+                        # If not found, just default to the first document or show error
+                        if not target_file and documents:
+                            st.warning(f"File '{doc_id}' not explicitly found in Case {case_id_input}. Showing first available document.")
+                            target_file = documents[0]
+
+                        if target_file:
+                            file_url = target_file.get("url")
+                            st.success("Access Granted.")
+                            
+                            # Display
+                            if ".pdf" in target_file.get("filename", "").lower():
+                                st.markdown(f'<iframe src="{file_url}" width="100%" height="800px" style="border:none;"></iframe>', unsafe_allow_html=True)
+                            else:
+                                st.image(file_url, caption=f"Evidence: {target_file['filename']}", use_container_width=True)
+                                
+                            st.warning("⚠️ CONFIDENTIAL: Access logged. Do not distribute.")
+                        else:
+                            st.error(f"❌ No documents found in Case {case_id_input}. Check the Case ID.")
+                    else:
+                        st.error(f"Server Error: Backend returned status {response.status_code}")
+                        
+                except Exception as e:
+                    st.error(f"❌ Connection Error: {e}")
+
+        elif password:
+            st.error("⛔ Access Denied: Invalid Credentials")
+            
+    # Return Button
+    st.markdown("---")
+    if st.button("Return to Dashboard"):
+        st.query_params.clear()
+        st.rerun()
+
     st.stop()
 
 
