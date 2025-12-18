@@ -3,16 +3,69 @@ from streamlit_extras.switch_page_button import switch_page
 import os
 from dotenv import load_dotenv
 import requests
+import time  # Added for the secure viewer delay simulation
+
 # Local modules
 from app.ui import inject_base_styles, show_header
 from app.auth import is_authenticated, show_login_page, get_current_user, logout
 
 def main() -> None:
+    # =========================================================
+    # 🔒 SECURE DOCUMENT GATEKEEPER
+    # Checks if the user arrived via a specific document link
+    # =========================================================
+    query_params = st.query_params
+    doc_id = query_params.get("doc_id", None)
+
+    if doc_id:
+        # --- SECURE VIEWER MODE ---
+        # This block runs ONLY when a user clicks a link from the HTML report
+        st.set_page_config(page_title="Secure Viewer", layout="centered")
+        
+        st.title("🔒 Secure Evidence Gateway")
+        st.info(f"Incoming Request for Evidence ID: **{doc_id}**")
+        st.markdown("---")
+
+        password = st.text_input("Enter Case Access Code to view this file:", type="password")
+        
+        if password == "legal2025":  # <--- ACCESS CODE
+            with st.spinner("Authenticating & Retrieving Evidence..."):
+                time.sleep(1) # Security delay simulation
+                
+                # --- REAL APP: FETCH FROM S3 LOGIC WOULD GO HERE ---
+                # image_data = s3.get_object(...)
+                
+                st.success("Access Granted.")
+                
+                # Display the document securely
+                st.image(
+                    "https://placehold.co/600x800/png?text=Confidential+Medical+Record", 
+                    caption=f"Source ID: {doc_id}",
+                    use_container_width=True
+                )
+                
+                st.warning("⚠️ CONFIDENTIAL: Access logged. Do not distribute.")
+                
+                if st.button("Return to Main Dashboard"):
+                    st.query_params.clear() # Remove ID from URL
+                    st.rerun() # Reload to show normal app
+                    
+        elif password:
+            st.error("⛔ Access Denied: Invalid Credentials")
+            
+        # CRITICAL: Stop execution here so the normal dashboard/login doesn't load
+        st.stop() 
+
+    # =========================================================
+    # 🏠 NORMAL APPLICATION START
+    # =========================================================
+
     # Check authentication first
     if not is_authenticated():
         show_login_page()
         return
     
+    # Standard Dashboard Config
     st.set_page_config(
         page_title="CaseTracker Pro",
         page_icon="📋",
