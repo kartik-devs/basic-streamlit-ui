@@ -9,16 +9,20 @@ import time
 from app.ui import inject_base_styles, show_header
 from app.auth import is_authenticated, show_login_page, get_current_user, logout
 
+# --- CONFIGURATION ---
+# Use your deployed backend URL (based on your files)
+BACKEND_URL = "https://basic-streamlit-ui.onrender.com"  
+
 # =========================================================
 # 🔒 SECURE DOCUMENT GATEKEEPER (TOP LEVEL EXECUTION)
 # =========================================================
 # This runs immediately. If a document ID is found in the URL,
-# it hijack the app to show the secure viewer and stops.
+# it hijacks the app to show the secure viewer and stops.
 query_params = st.query_params
 doc_id = query_params.get("doc_id", None)
 
 if doc_id:
-    # 1. Configure page for Secure Viewing (Centered, Simple)
+    # 1. Configure page for Secure Viewing
     st.set_page_config(page_title="Secure Evidence Viewer", layout="centered")
     
     # 2. Secure UI
@@ -31,22 +35,39 @@ if doc_id:
     
     if password == "legal2025":  
         with st.spinner("Authenticating & Retrieving Evidence..."):
-            time.sleep(1) # Security delay simulation
+            time.sleep(1) 
             
-            # --- REAL APP LOGIC: Fetch from S3 would go here ---
-            # image_data = s3_client.get_object(...)
-            
-            st.success("Access Granted.")
-            
-            # Display the document
-            st.image(
-                "https://placehold.co/600x800/png?text=Confidential+Medical+Record", 
-                caption=f"Source ID: {doc_id}",
-                use_container_width=True
-            )
-            
-            st.warning("⚠️ CONFIDENTIAL: Access logged. Do not distribute.")
-            
+            # --- REAL APP LOGIC: Fetch from Backend ---
+            try:
+                # Call the backend API
+                api_url = f"{BACKEND_URL}/s3/{doc_id}/latest/assets"
+                response = requests.get(api_url, timeout=15)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    # Try to get the Generated PDF first, then Ground Truth, then Doctor
+                    file_url = data.get("generated_pdf") or data.get("ground_truth_pdf") or data.get("doctor_pdf")
+                    
+                    if file_url:
+                        st.success("Access Granted.")
+                        
+                        # Display PDF (using iframe) or Image
+                        if ".pdf" in file_url.lower():
+                            st.markdown(f'<iframe src="{file_url}" width="100%" height="800px" style="border:none;"></iframe>', unsafe_allow_html=True)
+                        else:
+                            st.image(file_url, caption=f"Evidence ID: {doc_id}", use_container_width=True)
+                            
+                        st.warning("⚠️ CONFIDENTIAL: Access logged. Do not distribute.")
+                    else:
+                        st.warning(f"⚠️ Access Granted, but no documents were found for Case {doc_id}.")
+                else:
+                    st.error(f"Server Error: Backend returned status {response.status_code}")
+                    
+            except Exception as e:
+                st.error(f"❌ Connection Error: {e}")
+
+            # Return Button
             if st.button("Return to Dashboard"):
                 st.query_params.clear()
                 st.rerun()
@@ -54,9 +75,8 @@ if doc_id:
     elif password:
         st.error("⛔ Access Denied: Invalid Credentials")
         
-    # 4. STOP execution so the main dashboard doesn't load in the background
+    # 4. STOP execution so the main dashboard doesn't load
     st.stop()
-
 
 # =========================================================
 # 🏠 NORMAL MAIN APPLICATION
