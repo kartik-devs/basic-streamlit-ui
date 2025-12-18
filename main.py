@@ -10,7 +10,8 @@ from app.ui import inject_base_styles, show_header
 from app.auth import is_authenticated, show_login_page, get_current_user, logout
 
 # --- CONFIGURATION ---
-# Points to your deployed backend on Render
+# Points to your deployed backend. 
+# Change to "http://localhost:8000" if you are running the backend locally.
 BACKEND_URL = "https://basic-streamlit-ui.onrender.com"  
 
 # =========================================================
@@ -70,7 +71,7 @@ if doc_id:
                     st.error(f"Server Error: Backend returned status {response.status_code}")
                     
             except requests.exceptions.ConnectionError:
-                st.error("❌ Connection Error: Could not reach the backend server.")
+                st.error("❌ Connection Error: Could not reach the backend server. Is it running?")
             except Exception as e:
                 st.error(f"❌ Error: {e}")
 
