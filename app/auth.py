@@ -9,12 +9,12 @@ from typing import Optional, Dict
 
 CREDENTIALS = {
     "admin@dk_test01.quagsmo.com": {
-        "password_hash": "d4e832168d4de1a9186df3c5312ff3a2d21532bacf26c021f80b6f0f01ad0448", 
+        "password_hash": "418248204297d9d58d9fac6203e91c3ce9d46e9eea9f9b6312bb270c9b8f4f5a",
         "name": "Admin User",
         "role": "admin"
     },
     "analyst@dk_test01.quagsmo.com": {
-        "password_hash": "7565393140a6080c4eb6a7b29f60ca6119e6d61f89e88a6ea9f65a199b4057fc",  
+        "password_hash": "6dd5adf733cc85e638381591202fed0f009502281009be645ae90886de004d4d",
         "name": "Analyst User",
         "role": "analyst"
     }
